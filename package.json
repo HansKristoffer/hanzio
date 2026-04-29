@@ -1,6 +1,6 @@
 {
   "name": "hanset",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A set of utility functions for TypeScript",
   "type": "module",
   "module": "./dist/index.js",
