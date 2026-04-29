@@ -34,42 +34,6 @@
       "bun": "./src/index.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
-    },
-    "./zod": {
-      "types": "./dist/zod/index.d.ts",
-      "bun": "./src/zod/index.ts",
-      "import": "./dist/zod/index.js",
-      "default": "./dist/zod/index.js"
-    },
-    "./api-wrapper": {
-      "types": "./dist/api-wrapper/index.d.ts",
-      "bun": "./src/api-wrapper/index.ts",
-      "import": "./dist/api-wrapper/index.js",
-      "default": "./dist/api-wrapper/index.js"
-    },
-    "./jwt": {
-      "types": "./dist/jwt/index.d.ts",
-      "bun": "./src/jwt/index.ts",
-      "import": "./dist/jwt/index.js",
-      "default": "./dist/jwt/index.js"
-    },
-    "./gzip": {
-      "types": "./dist/gzip/index.d.ts",
-      "bun": "./src/gzip/index.ts",
-      "import": "./dist/gzip/index.js",
-      "default": "./dist/gzip/index.js"
-    },
-    "./sitemap": {
-      "types": "./dist/sitemap/index.d.ts",
-      "bun": "./src/sitemap/index.ts",
-      "import": "./dist/sitemap/index.js",
-      "default": "./dist/sitemap/index.js"
-    },
-    "./p-queue": {
-      "types": "./dist/p-queue/index.d.ts",
-      "bun": "./src/p-queue/index.ts",
-      "import": "./dist/p-queue/index.js",
-      "default": "./dist/p-queue/index.js"
     }
   },
   "scripts": {

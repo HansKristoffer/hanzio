@@ -2,7 +2,7 @@
 
 A small TypeScript-first utility library for common application code: arrays,
 strings, promises, caching, state machines, dates, URLs, Zod helpers, API clients,
-JWTs, gzip, sitemap crawling, and queues.
+JWTs, gzip, sitemap crawling, queues, and colorful terminal logging.
 
 ## Install
 
@@ -30,6 +30,7 @@ import { jwtSign } from 'hanzio/jwt'
 import { compressString } from 'hanzio/gzip'
 import { getDomainSitemap } from 'hanzio/sitemap'
 import PQueue from 'hanzio/p-queue'
+import { createCoolLogger } from 'hanzio/cool-console-log'
 ```
 
 The package currently publishes `src/**/*.ts` intentionally so Bun can consume
@@ -498,6 +499,34 @@ try {
 } catch (error) {
 	if (error instanceof TimeoutError) console.error('Task timed out')
 }
+```
+
+### Cool console log
+
+ANSI-colored logging for terminals. Exports include `terminalColors`, `createCoolLogger`,
+`logOperationSummary`, `colorize`, and `logBanner`. By default colors and banners are
+development-only (`NODE_ENV !== 'production'`); loggers honor `colorsInDevOnly`
+and callbacks via `CoolLoggerOptions.onLog`.
+
+```ts
+import {
+	createCoolLogger,
+	colorize,
+	logBanner,
+	logOperationSummary,
+	terminalColors
+} from 'hanzio'
+
+const log = createCoolLogger()
+log.info('User logged in', { userId: '123' })
+log.warn('Rate limit approaching', { remaining: 10 })
+
+const start = performance.now()
+await doSomething()
+logOperationSummary('user.create', performance.now() - start, true)
+
+console.log(colorize('OK', 'brightGreen'))
+logBanner('Server started', 'cyan')
 ```
 
 ## Development
