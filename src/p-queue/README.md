@@ -2,14 +2,14 @@
 description: Promise queue with concurrency, priority, timeout, cancellation, and rate-limit controls.
 ---
 
-# hanset/p-queue
+# hanzio/p-queue
 
-`hanset/p-queue` is a small dependency-free promise queue inspired by
+`hanzio/p-queue` is a small dependency-free promise queue inspired by
 `p-queue`. Use it when you need to run async work with bounded concurrency,
 priority ordering, basic rate limiting, or queue lifecycle hooks.
 
 ```ts
-import PQueue from 'hanset/p-queue'
+import PQueue from 'hanzio/p-queue'
 
 const queue = new PQueue({ concurrency: 2 })
 
@@ -94,7 +94,7 @@ Timeouts begin when the task starts running, not while it is waiting in the
 queue.
 
 ```ts
-import PQueue, { TimeoutError } from 'hanset/p-queue'
+import PQueue, { TimeoutError } from 'hanzio/p-queue'
 
 const queue = new PQueue({ timeout: 1000 })
 
@@ -233,5 +233,5 @@ import PQueue, {
 	type Queue,
 	type QueueAddOptions,
 	type TaskOptions
-} from 'hanset/p-queue'
+} from 'hanzio/p-queue'
 ```

@@ -1,12 +1,12 @@
 ---
-name: hanset-api-wrapper
-description: Building typed HTTP API wrappers with createApiClient and Zod in hanset/api-wrapper. Covers folder layout, index factory, endpoint files with satisfies ApiEndpoint, shared types, pagination helpers, and common REST API integration patterns.
+name: hanzio-api-wrapper
+description: Building typed HTTP API wrappers with createApiClient and Zod in hanzio/api-wrapper. Covers folder layout, index factory, endpoint files with satisfies ApiEndpoint, shared types, pagination helpers, and common REST API integration patterns.
 ---
 
 # AI Agent Guide: Building API Wrappers
 
 This guide is for AI assistants to follow when building API wrappers using the
-`createApiClient` utility from `hanset/api-wrapper`.
+`createApiClient` utility from `hanzio/api-wrapper`.
 
 ## Folder Structure
 
@@ -51,7 +51,7 @@ mkdir -p src/api-wrapper/{api-name}/utils
 The index file creates and exports the API wrapper instance.
 
 ```ts
-import { createApiClient } from 'hanset/api-wrapper'
+import { createApiClient } from 'hanzio/api-wrapper'
 import { endpointOne } from './endpointOne'
 import { endpointTwo } from './endpointTwo'
 
@@ -111,7 +111,7 @@ Each endpoint gets its own file with request/response schemas and endpoint
 configuration.
 
 ```ts
-import type { ApiEndpoint } from 'hanset/api-wrapper'
+import type { ApiEndpoint } from 'hanzio/api-wrapper'
 import { z } from 'zod'
 
 export const UserResponse = z.object({
@@ -135,7 +135,7 @@ Place reusable helpers in `utils/`. Common helpers include pagination, response
 normalization, and rate-limit handling.
 
 ```ts
-import type { ApiWrapperResponse } from 'hanset/api-wrapper'
+import type { ApiWrapperResponse } from 'hanzio/api-wrapper'
 
 export async function getAllPages<T>(
 	fetchPage: (

@@ -1,4 +1,4 @@
-# hanset
+# hanzio
 
 A small TypeScript-first utility library for common application code: arrays,
 strings, promises, caching, state machines, dates, URLs, Zod helpers, API clients,
@@ -7,7 +7,7 @@ JWTs, gzip, sitemap crawling, and queues.
 ## Install
 
 ```bash
-bun add hanset
+bun add hanzio
 ```
 
 The package is ESM and Bun-friendly. Bun consumers resolve the `bun` export to
@@ -19,17 +19,17 @@ from `dist`.
 Most lightweight utilities are available from the root export:
 
 ```ts
-import { groupBy, typedSwitch, tryCatch } from 'hanset'
+import { groupBy, typedSwitch, tryCatch } from 'hanzio'
 ```
 
 Heavier or dependency-specific modules are also available as subpath exports:
 
 ```ts
-import { createZId } from 'hanset/zod'
-import { jwtSign } from 'hanset/jwt'
-import { compressString } from 'hanset/gzip'
-import { getDomainSitemap } from 'hanset/sitemap'
-import PQueue from 'hanset/p-queue'
+import { createZId } from 'hanzio/zod'
+import { jwtSign } from 'hanzio/jwt'
+import { compressString } from 'hanzio/gzip'
+import { getDomainSitemap } from 'hanzio/sitemap'
+import PQueue from 'hanzio/p-queue'
 ```
 
 The package currently publishes `src/**/*.ts` intentionally so Bun can consume
@@ -42,7 +42,7 @@ the source entrypoints directly. Tests are excluded from the published package.
 `chunkArray` splits a readonly array into fixed-size chunks.
 
 ```ts
-import { chunkArray } from 'hanset'
+import { chunkArray } from 'hanzio'
 
 const pages = chunkArray([1, 2, 3, 4, 5], 2)
 // [[1, 2], [3, 4], [5]]
@@ -52,7 +52,7 @@ const pages = chunkArray([1, 2, 3, 4, 5], 2)
 `new`, `upsert`, and `delete` groups.
 
 ```ts
-import { findArrayDifferenceByKey } from 'hanset'
+import { findArrayDifferenceByKey } from 'hanzio'
 
 const diff = findArrayDifferenceByKey(
 	[{ id: 1, name: 'old' }],
@@ -64,7 +64,7 @@ const diff = findArrayDifferenceByKey(
 `getUniqueValues` keeps the first unique serialized value.
 
 ```ts
-import { getUniqueValues } from 'hanset'
+import { getUniqueValues } from 'hanzio'
 
 const values = getUniqueValues([{ id: 1 }, { id: 1 }, { id: 2 }])
 // [{ id: 1 }, { id: 2 }]
@@ -73,7 +73,7 @@ const values = getUniqueValues([{ id: 1 }, { id: 1 }, { id: 2 }])
 `compact` removes `null` and `undefined` while narrowing the returned type.
 
 ```ts
-import { compact } from 'hanset'
+import { compact } from 'hanzio'
 
 const names = compact(['Ada', null, 'Grace', undefined])
 // string[]
@@ -82,7 +82,7 @@ const names = compact(['Ada', null, 'Grace', undefined])
 `getUniqueValuesByKey` keeps the first item for each key value.
 
 ```ts
-import { getUniqueValuesByKey } from 'hanset'
+import { getUniqueValuesByKey } from 'hanzio'
 
 const users = getUniqueValuesByKey(
 	[{ id: 'a', role: 'admin' }, { id: 'a', role: 'user' }],
@@ -94,7 +94,7 @@ const users = getUniqueValuesByKey(
 when possible.
 
 ```ts
-import { groupBy } from 'hanset'
+import { groupBy } from 'hanzio'
 
 const byType = groupBy(
 	[
@@ -108,7 +108,7 @@ const byType = groupBy(
 `keyBy` indexes items by a property or callback.
 
 ```ts
-import { keyBy } from 'hanset'
+import { keyBy } from 'hanzio'
 
 const byId = keyBy([{ id: 'user_1', name: 'Ada' }], 'id')
 // { user_1: { id: 'user_1', name: 'Ada' } }
@@ -117,7 +117,7 @@ const byId = keyBy([{ id: 'user_1', name: 'Ada' }], 'id')
 `partition` splits an array into matched and unmatched items.
 
 ```ts
-import { partition } from 'hanset'
+import { partition } from 'hanzio'
 
 const [even, odd] = partition([1, 2, 3, 4], (value) => value % 2 === 0)
 ```
@@ -126,7 +126,7 @@ const [even, odd] = partition([1, 2, 3, 4], (value) => value % 2 === 0)
 value lists.
 
 ```ts
-import { pickItemsInArray } from 'hanset'
+import { pickItemsInArray } from 'hanzio'
 
 type Item = { type: 'user'; name: string } | { type: 'team'; members: number }
 const users = pickItemsInArray([] as Item[], 'type', ['user'] as const)
@@ -138,7 +138,7 @@ const users = pickItemsInArray([] as Item[], 'type', ['user'] as const)
 `extractNumber` parses the first number-like value from a string.
 
 ```ts
-import { extractNumber } from 'hanset'
+import { extractNumber } from 'hanzio'
 
 const amount = extractNumber('Total: 123.45 kr')
 // 123.45
@@ -147,7 +147,7 @@ const amount = extractNumber('Total: 123.45 kr')
 `generateId` creates a stable short ID from JSON-like input.
 
 ```ts
-import { generateId } from 'hanset'
+import { generateId } from 'hanzio'
 
 const id = generateId({ page: 1, filters: ['active'] })
 ```
@@ -155,7 +155,7 @@ const id = generateId({ page: 1, filters: ['active'] })
 `slugify` normalizes text for URL slugs.
 
 ```ts
-import { slugify } from 'hanset'
+import { slugify } from 'hanzio'
 
 const slug = slugify('Hello, København!')
 // "hello-kobenhavn"
@@ -166,7 +166,7 @@ const slug = slugify('Hello, København!')
 `tryCatch` converts a promise into a `Result<T, E>` object.
 
 ```ts
-import { tryCatch } from 'hanset'
+import { tryCatch } from 'hanzio'
 
 const result = await tryCatch(fetch('/api/users'))
 ```
@@ -175,7 +175,7 @@ const result = await tryCatch(fetch('/api/users'))
 `Result<T, E>`.
 
 ```ts
-import { isSuccess, unwrapResult } from 'hanset'
+import { isSuccess, unwrapResult } from 'hanzio'
 
 if (isSuccess(result)) {
 	result.data
@@ -187,7 +187,7 @@ const response = unwrapResult(result)
 `backgroundPromise` runs async work and reports success or failure through hooks.
 
 ```ts
-import { backgroundPromise } from 'hanset'
+import { backgroundPromise } from 'hanzio'
 
 backgroundPromise(() => syncAnalytics(), {
 	onError: (error) => console.error(error)
@@ -197,7 +197,7 @@ backgroundPromise(() => syncAnalytics(), {
 `backgroundPromiseSync` schedules background work in a microtask by default.
 
 ```ts
-import { backgroundPromiseSync } from 'hanset'
+import { backgroundPromiseSync } from 'hanzio'
 
 backgroundPromiseSync(() => refreshCache())
 ```
@@ -205,7 +205,7 @@ backgroundPromiseSync(() => refreshCache())
 `promiseTimeout` resolves after a delay.
 
 ```ts
-import { promiseTimeout } from 'hanset'
+import { promiseTimeout } from 'hanzio'
 
 await promiseTimeout(250)
 ```
@@ -216,7 +216,7 @@ await promiseTimeout(250)
 deduplication.
 
 ```ts
-import { cacheFunction } from 'hanset'
+import { cacheFunction } from 'hanzio'
 
 const getUser = cacheFunction({
 	name: 'getUser',
@@ -234,7 +234,7 @@ getUser.clearCache()
 payloads.
 
 ```ts
-import { SimpleStateMachine } from 'hanset'
+import { SimpleStateMachine } from 'hanzio'
 
 type State = 'draft' | 'published'
 type Action = 'publish'
@@ -262,7 +262,7 @@ const result = await machine.executeAction('publish', { notify: true })
 unions.
 
 ```ts
-import { typedSwitch } from 'hanset'
+import { typedSwitch } from 'hanzio'
 
 type Event =
 	| { type: 'click'; x: number; y: number }
@@ -280,7 +280,7 @@ const label = typedSwitch({ type: 'click', x: 10, y: 20 } as Event, 'type', {
 date range.
 
 ```ts
-import { getPreviousReportPeriod } from 'hanset'
+import { getPreviousReportPeriod } from 'hanzio'
 
 const previousMonth = getPreviousReportPeriod('MONTHLY', new Date('2026-04-15'))
 ```
@@ -288,7 +288,7 @@ const previousMonth = getPreviousReportPeriod('MONTHLY', new Date('2026-04-15'))
 `formatPeriodLabel` formats a date range for display.
 
 ```ts
-import { formatPeriodLabel } from 'hanset'
+import { formatPeriodLabel } from 'hanzio'
 
 const label = formatPeriodLabel('2026-01-01', '2026-03-31')
 ```
@@ -298,7 +298,7 @@ const label = formatPeriodLabel('2026-01-01', '2026-03-31')
 `getDomainFaviconUrl` builds a Google favicon URL for a domain.
 
 ```ts
-import { getDomainFaviconUrl } from 'hanset'
+import { getDomainFaviconUrl } from 'hanzio'
 
 const favicon = getDomainFaviconUrl('example.com', 64)
 ```
@@ -308,7 +308,7 @@ const favicon = getDomainFaviconUrl('example.com', 64)
 `linearRegressionTrend` returns fitted trend values for a numeric series.
 
 ```ts
-import { linearRegressionTrend } from 'hanset'
+import { linearRegressionTrend } from 'hanzio'
 
 const trend = linearRegressionTrend([1, 3, 5])
 // [1, 3, 5]
@@ -319,7 +319,7 @@ const trend = linearRegressionTrend([1, 3, 5])
 stable chart colors and heatmap styles.
 
 ```ts
-import { createResolveColorsByKeys, withAlpha } from 'hanset'
+import { createResolveColorsByKeys, withAlpha } from 'hanzio'
 
 const colors = createResolveColorsByKeys(
 	['revenue', 'profit'],
@@ -334,7 +334,7 @@ const faded = withAlpha('#2563eb', 0.4)
 `createZId` and `GenericId` create branded string ID schemas.
 
 ```ts
-import { createZId, type GenericId } from 'hanset/zod'
+import { createZId, type GenericId } from 'hanzio/zod'
 
 const UserId = createZId('User')
 type UserId = GenericId<'User'>
@@ -345,7 +345,7 @@ const userId: UserId = UserId.parse('user_123')
 `zSingleOrArray` accepts either one schema value or an array of schema values.
 
 ```ts
-import { zSingleOrArray } from 'hanset/zod'
+import { zSingleOrArray } from 'hanzio/zod'
 import { z } from 'zod'
 
 const Tags = zSingleOrArray(z.string())
@@ -356,7 +356,7 @@ Tags.parse(['news', 'product'])
 `normalizeSingleOrArray` normalizes nullable single-or-array inputs to an array.
 
 ```ts
-import { normalizeSingleOrArray } from 'hanset/zod'
+import { normalizeSingleOrArray } from 'hanzio/zod'
 
 const values = normalizeSingleOrArray('tag')
 // ['tag']
@@ -365,7 +365,7 @@ const values = normalizeSingleOrArray('tag')
 `zodMinMaxFilter` and `toGteLteFilter` model common min/max filters.
 
 ```ts
-import { toGteLteFilter, zodMinMaxFilter } from 'hanset/zod'
+import { toGteLteFilter, zodMinMaxFilter } from 'hanzio/zod'
 
 const filter = zodMinMaxFilter.parse({ min: 10, max: 20 })
 const query = toGteLteFilter(filter)
@@ -376,7 +376,7 @@ const query = toGteLteFilter(filter)
 mapping.
 
 ```ts
-import { jsonToZodSchemaMapper } from 'hanset/zod'
+import { jsonToZodSchemaMapper } from 'hanzio/zod'
 import { z } from 'zod'
 
 const User = z.object({ id: z.string(), name: z.string() })
@@ -389,7 +389,7 @@ const user = jsonToZodSchemaMapper({ user_id: '1', name: 'Ada' }, User, {
 Zod schemas.
 
 ```ts
-import { zodToExample, zodToTypeString } from 'hanset/zod'
+import { zodToExample, zodToTypeString } from 'hanzio/zod'
 import { z } from 'zod'
 
 const schema = z.object({ id: z.string() })
@@ -403,7 +403,7 @@ const example = zodToExample(schema)
 typed request inputs and response data.
 
 ```ts
-import { createApiClient } from 'hanset/api-wrapper'
+import { createApiClient } from 'hanzio/api-wrapper'
 import { z } from 'zod'
 
 const api = createApiClient({
@@ -425,7 +425,7 @@ const result = await api.request('getUser', { reqParams: { id: 1 } })
 responses and non-OK HTTP statuses.
 
 ```ts
-import { HttpResponseError, ResponseValidationError } from 'hanset/api-wrapper'
+import { HttpResponseError, ResponseValidationError } from 'hanzio/api-wrapper'
 
 try {
 	await api.request('getUser', { reqParams: { id: 1 } })
@@ -443,7 +443,7 @@ try {
 `null`.
 
 ```ts
-import { jwtSign, jwtVerify } from 'hanset/jwt'
+import { jwtSign, jwtVerify } from 'hanzio/jwt'
 
 const token = await jwtSign({ sub: 'user_1' }, 'secret')
 const payload = await jwtVerify<{ sub: string }>(token, 'secret')
@@ -454,7 +454,7 @@ const payload = await jwtVerify<{ sub: string }>(token, 'secret')
 `compressString` and `decompressString` gzip roundtrip strings as base64.
 
 ```ts
-import { compressString, decompressString } from 'hanset/gzip'
+import { compressString, decompressString } from 'hanzio/gzip'
 
 const compressed = compressString('hello')
 const text = decompressString(compressed)
@@ -465,7 +465,7 @@ const text = decompressString(compressed)
 `getDomainSitemap` discovers and crawls sitemap URLs for a domain.
 
 ```ts
-import { getDomainSitemap } from 'hanset/sitemap'
+import { getDomainSitemap } from 'hanzio/sitemap'
 
 const urls = await getDomainSitemap('example.com', {
 	concurrency: 5,
@@ -479,7 +479,7 @@ const urls = await getDomainSitemap('example.com', {
 and rate-limit controls.
 
 ```ts
-import PQueue from 'hanset/p-queue'
+import PQueue from 'hanzio/p-queue'
 
 const queue = new PQueue({ concurrency: 2 })
 
@@ -491,7 +491,7 @@ await queue.onIdle()
 timeout handling.
 
 ```ts
-import PQueue, { TimeoutError } from 'hanset/p-queue'
+import PQueue, { TimeoutError } from 'hanzio/p-queue'
 
 try {
 	await new PQueue({ timeout: 100 }).add(() => new Promise(() => {}))

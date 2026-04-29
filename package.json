@@ -1,6 +1,6 @@
 {
-  "name": "hanset",
-  "version": "1.0.1",
+  "name": "hanzio",
+  "version": "1.0.0",
   "description": "A set of utility functions for TypeScript",
   "type": "module",
   "module": "./dist/index.js",
@@ -9,7 +9,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HansKristoffer/hanset.git"
+    "url": "git+https://github.com/HansKristoffer/hanzio.git"
   },
   "author": "Kristoffer Hansen",
   "keywords": [
