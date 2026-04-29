@@ -1,0 +1,102 @@
+{
+  "name": "hanset",
+  "version": "1.0.3",
+  "description": "A set of utility functions for TypeScript",
+  "type": "module",
+  "module": "./dist/index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HansKristoffer/hanset.git"
+  },
+  "author": "Kristoffer Hansen",
+  "keywords": [
+    "typescript",
+    "utility",
+    "functions",
+    "type-safe",
+    "exhaustive",
+    "union-types"
+  ],
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "files": [
+    "src/**/*.ts",
+    "dist",
+    "!src/**/*.test.ts"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "bun": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./zod": {
+      "types": "./dist/zod/index.d.ts",
+      "bun": "./src/zod/index.ts",
+      "import": "./dist/zod/index.js",
+      "default": "./dist/zod/index.js"
+    },
+    "./api-wrapper": {
+      "types": "./dist/api-wrapper/index.d.ts",
+      "bun": "./src/api-wrapper/index.ts",
+      "import": "./dist/api-wrapper/index.js",
+      "default": "./dist/api-wrapper/index.js"
+    },
+    "./jwt": {
+      "types": "./dist/jwt/index.d.ts",
+      "bun": "./src/jwt/index.ts",
+      "import": "./dist/jwt/index.js",
+      "default": "./dist/jwt/index.js"
+    },
+    "./gzip": {
+      "types": "./dist/gzip/index.d.ts",
+      "bun": "./src/gzip/index.ts",
+      "import": "./dist/gzip/index.js",
+      "default": "./dist/gzip/index.js"
+    },
+    "./sitemap": {
+      "types": "./dist/sitemap/index.d.ts",
+      "bun": "./src/sitemap/index.ts",
+      "import": "./dist/sitemap/index.js",
+      "default": "./dist/sitemap/index.js"
+    },
+    "./p-queue": {
+      "types": "./dist/p-queue/index.d.ts",
+      "bun": "./src/p-queue/index.ts",
+      "import": "./dist/p-queue/index.js",
+      "default": "./dist/p-queue/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun run build:js && bun run build:types",
+    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/jwt/index.ts ./src/gzip/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts --outdir ./dist --target node --packages external",
+    "build:types": "tsgo -p tsconfig.build.json",
+    "prepublishOnly": "bun run build",
+    "publish:patch": "npm version patch && npm publish",
+    "publish:minor": "npm version minor && npm publish",
+    "publish:major": "npm version major && npm publish",
+    "test": "bun test",
+    "lint": "bun run typecheck && bun biome check",
+    "lint:write": "bun run typecheck && bun biome check --write",
+    "typecheck": "tsgo --noEmit",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.6",
+    "@types/bun": "latest",
+    "@types/pako": "^2.0.4",
+    "@typescript/native-preview": "^7.0.0-dev.20260306.1",
+    "husky": "^9.1.7",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "jose": "^6.2.3",
+    "pako": "^2.1.0",
+    "zod": "^4.3.6"
+  }
+}
