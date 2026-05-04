@@ -1,6 +1,6 @@
 {
   "name": "hanzio",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "A set of utility functions for TypeScript",
   "type": "module",
   "module": "./dist/index.js",
