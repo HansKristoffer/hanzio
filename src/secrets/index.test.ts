@@ -27,10 +27,12 @@ const originalEnv = Object.fromEntries(
 
 const originalConsoleInfo = console.info
 const originalConsoleLog = console.log
+const originalFetch = globalThis.fetch
 
 afterEach(() => {
 	console.info = originalConsoleInfo
 	console.log = originalConsoleLog
+	globalThis.fetch = originalFetch
 
 	for (const key of ENV_KEYS) {
 		const value = originalEnv[key]
@@ -203,6 +205,69 @@ describe('defineSecretSet', () => {
 		expect(output).toContain('2')
 		expect(output).not.toContain('app-secret')
 		expect(output).not.toContain('postgres://db')
+	})
+
+	test('loads missing secrets from Infisical over direct HTTP', async () => {
+		console.log = mock(() => {})
+		process.env.INFISICAL_CLIENT_ID = 'client-id'
+		process.env.INFISICAL_CLIENT_SECRET = 'client-secret'
+
+		const fetchMock = mock(
+			async (url: string | URL | Request, init: RequestInit = {}) => {
+				const requestUrl = String(url)
+				if (
+					requestUrl ===
+					'https://eu.infisical.com/api/v1/auth/universal-auth/login'
+				) {
+					expect(init?.method).toBe('POST')
+					expect(JSON.parse(String(init.body))).toEqual({
+						clientId: 'client-id',
+						clientSecret: 'client-secret'
+					})
+					return Response.json({ accessToken: 'access-token' })
+				}
+
+				if (requestUrl.startsWith('https://eu.infisical.com/api/v4/secrets?')) {
+					expect(init?.method).toBe('GET')
+					expect(init?.headers).toMatchObject({
+						Authorization: 'Bearer access-token'
+					})
+
+					const parsedUrl = new URL(requestUrl)
+					expect(parsedUrl.searchParams.get('projectId')).toBe('project-id')
+					expect(parsedUrl.searchParams.get('environment')).toBe('dev')
+					expect(parsedUrl.searchParams.get('secretPath')).toBe('/')
+					expect(parsedUrl.searchParams.get('viewSecretValue')).toBe('true')
+					expect(parsedUrl.searchParams.get('expandSecretReferences')).toBe(
+						'true'
+					)
+					expect(parsedUrl.searchParams.get('includeImports')).toBe('true')
+
+					return Response.json({
+						secrets: [
+							{
+								secretKey: 'APP_SECRET',
+								secretValue: 'from-infisical'
+							},
+							{
+								secretKey: 'IGNORED_SECRET',
+								secretValue: 'ignored'
+							}
+						]
+					})
+				}
+
+				throw new Error(`Unexpected request: ${requestUrl}`)
+			}
+		) as unknown as typeof fetch
+		globalThis.fetch = fetchMock
+
+		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
+			projectId: 'project-id'
+		})
+
+		expect(secretSet.secret('APP_SECRET')).toBe('from-infisical')
+		expect(fetchMock).toHaveBeenCalledTimes(2)
 	})
 })
 

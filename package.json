@@ -1,7 +1,7 @@
 {
   "name": "hanzio",
   "version": "1.0.8",
-  "description": "A set of utility functions for TypeScript",
+  "description": "A lightweight set of utility functions for TypeScript",
   "type": "module",
   "module": "./dist/src/index.js",
   "main": "./dist/src/index.js",
@@ -50,7 +50,7 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/jwt/index.ts ./src/gzip/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/secrets/index.ts ./src/secrets/vite.ts --outdir ./dist --target node --packages external",
+    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/secrets/index.ts ./src/secrets/infisical.ts ./src/secrets/vite.ts --outdir ./dist --target node --packages external",
     "build:types": "tsgo -p tsconfig.build.json",
     "prepublishOnly": "bun run build",
     "publish:patch": "npm version patch && npm publish",
@@ -65,15 +65,12 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
     "@types/bun": "latest",
-    "@types/pako": "^2.0.4",
     "@typescript/native-preview": "^7.0.0-dev.20260306.1",
     "husky": "^9.1.7",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "zod": "^4.3.6"
   },
-  "dependencies": {
-    "@infisical/sdk": "^5.0.2",
-    "jose": "^6.2.3",
-    "pako": "^2.1.0",
+  "peerDependencies": {
     "zod": "^4.3.6"
   }
 }

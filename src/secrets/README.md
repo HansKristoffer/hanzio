@@ -8,7 +8,7 @@ description: Typed Infisical-backed secret sets with fail-fast startup loading.
 load them before the rest of the program starts.
 
 ```ts
-import { defineSecretSet } from 'hanzio'
+import { defineSecretSet } from 'hanzio/secrets'
 
 export const backendSecrets = await defineSecretSet(
 	['DATABASE_URL', 'APP_SECRET'] as const,
@@ -32,7 +32,8 @@ Use `viteSecretSetPlugin` when secrets should be exposed through
 
 ```ts
 import { defineConfig } from 'vite'
-import { defineSecretSet, viteSecretSetPlugin } from 'hanzio'
+import { defineSecretSet } from 'hanzio/secrets'
+import { viteSecretSetPlugin } from 'hanzio/secrets/vite'
 
 const frontendSecrets = await defineSecretSet(
 	['VITE_POSTHOG_API_KEY', 'VITE_POSTHOG_HOST'] as const,

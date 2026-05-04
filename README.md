@@ -2,17 +2,19 @@
 
 A small TypeScript-first utility library for common application code: arrays,
 strings, promises, caching, state machines, dates, URLs, Zod helpers, API clients,
-JWTs, gzip, sitemap crawling, queues, secrets, and colorful terminal logging.
+JWTs, sitemap crawling, queues, secrets, and colorful terminal logging.
 
 ## Install
 
 ```bash
-bun add hanzio
+bun add hanzio zod
 ```
 
 The package is ESM and Bun-friendly. Bun consumers resolve the `bun` export to
 the source TypeScript files, while Node/bundler consumers resolve built files
 from `dist`.
+`zod` is a peer dependency because the Zod helpers and API wrapper share the
+consumer application's Zod instance.
 
 ## Imports
 
@@ -27,10 +29,10 @@ Heavier or dependency-specific modules are also available as subpath exports:
 ```ts
 import { createZId } from 'hanzio/zod'
 import { jwtSign } from 'hanzio/jwt'
-import { compressString } from 'hanzio/gzip'
 import { getDomainSitemap } from 'hanzio/sitemap'
 import PQueue from 'hanzio/p-queue'
 import { createCoolLogger } from 'hanzio/cool-console-log'
+import { defineSecretSet } from 'hanzio/secrets'
 ```
 
 The package currently publishes `src/**/*.ts` intentionally so Bun can consume
@@ -217,7 +219,7 @@ await promiseTimeout(250)
 Infisical before the rest of the program starts.
 
 ```ts
-import { defineSecretSet } from 'hanzio'
+import { defineSecretSet } from 'hanzio/secrets'
 
 export const backendSecrets = await defineSecretSet(
 	['DATABASE_URL', 'APP_SECRET'] as const,
@@ -229,7 +231,8 @@ const databaseUrl = backendSecrets.secret('DATABASE_URL')
 
 For Vite config, `viteSecretSetPlugin(secretSet)` exposes the loaded values as
 `import.meta.env.*` replacements. Use `getViteDefine(secretSet)` if you need the
-raw `define` object.
+raw `define` object. Import Vite helpers from `hanzio/secrets/vite` so browser
+bundles do not pull in the Infisical SDK.
 
 ### Cache
 
@@ -468,17 +471,6 @@ import { jwtSign, jwtVerify } from 'hanzio/jwt'
 
 const token = await jwtSign({ sub: 'user_1' }, 'secret')
 const payload = await jwtVerify<{ sub: string }>(token, 'secret')
-```
-
-### Gzip
-
-`compressString` and `decompressString` gzip roundtrip strings as base64.
-
-```ts
-import { compressString, decompressString } from 'hanzio/gzip'
-
-const compressed = compressString('hello')
-const text = decompressString(compressed)
 ```
 
 ### Sitemap

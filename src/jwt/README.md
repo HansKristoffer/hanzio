@@ -1,5 +1,5 @@
 ---
-description: JWT sign/verify using jose (HS256). Install `jose` alongside consumers if tree-shaking your deps; `hanzio` lists it as a dependency.
+description: JWT sign/verify using built-in Web Crypto HS256 helpers.
 ---
 
 # hanzio/jwt

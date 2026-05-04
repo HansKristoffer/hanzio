@@ -1,6 +1,6 @@
-import { InfisicalSDK } from '@infisical/sdk'
 import { networkInterfaces } from 'node:os'
 import { colorize, createCoolLogger } from '../cool-console-log'
+import { loadInfisicalSecrets } from './infisical'
 
 const DEFAULT_INFISICAL_SITE_URL = 'https://eu.infisical.com'
 const LOCAL_IP_VALUE = 'LOCAL_IP'
@@ -38,11 +38,7 @@ export type SecretSet<SecretKey extends string> = {
 	reload: () => Promise<SecretSet<SecretKey>>
 }
 
-type InfisicalSecret = {
-	secretKey: string
-	secretValue: string
-}
-
+export * from './infisical'
 export * from './vite'
 
 export function getSecretEnvironment(): SecretEnvironment {
@@ -133,43 +129,6 @@ export async function defineSecretSet<
 
 	await loadSecrets()
 	return secretSet
-}
-
-async function loadInfisicalSecrets<SecretKey extends string>({
-	keys,
-	projectId,
-	environment,
-	siteUrl,
-	clientIdEnvKey,
-	clientSecretEnvKey
-}: SecretSetLoaderContext<SecretKey>): Promise<
-	Partial<Record<SecretKey, string>>
-> {
-	const clientId = process.env[clientIdEnvKey]
-	const clientSecret = process.env[clientSecretEnvKey]
-
-	if (!clientId || !clientSecret) {
-		throw new Error('Missing Infisical credentials')
-	}
-
-	const client = new InfisicalSDK({ siteUrl })
-
-	await client.auth().universalAuth.login({
-		clientId,
-		clientSecret
-	})
-
-	const { secrets } = (await client.secrets().listSecrets({
-		environment,
-		projectId
-	})) as { secrets: InfisicalSecret[] }
-
-	const wantedKeys = new Set<string>(keys)
-	return Object.fromEntries(
-		secrets
-			.filter((secret) => wantedKeys.has(secret.secretKey))
-			.map((secret) => [secret.secretKey, secret.secretValue])
-	) as Partial<Record<SecretKey, string>>
 }
 
 function resolveEnvironment(
