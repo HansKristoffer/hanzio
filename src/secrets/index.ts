@@ -1,10 +1,7 @@
-import { networkInterfaces } from 'node:os'
 import { colorize, createCoolLogger } from '../cool-console-log'
 import { loadInfisicalSecrets } from './infisical'
 
 const DEFAULT_INFISICAL_SITE_URL = 'https://eu.infisical.com'
-const LOCAL_IP_VALUE = 'LOCAL_IP'
-const VPN_INTERFACE_RE = /^(utun|tun|tailscale|wg|ipsec|ppp)/i
 const logger = createCoolLogger()
 
 export type SecretEnvironment = 'dev' | 'staging' | 'prod'
@@ -16,7 +13,6 @@ export type DefineSecretSetOptions<SecretKey extends string> = {
 	readonly clientIdEnvKey?: string
 	readonly clientSecretEnvKey?: string
 	readonly loader?: SecretSetLoader<SecretKey>
-	readonly getLocalIp?: () => string
 }
 
 export type SecretSetLoaderContext<SecretKey extends string> = {
@@ -58,13 +54,7 @@ export async function defineSecretSet<
 
 	const keySet = [...new Set(keys)] as SecretKey[]
 	const loader = options.loader ?? loadInfisicalSecrets
-	const getLocalIp = options.getLocalIp ?? getLocalIpAddress
 	let cachedSecrets: Record<SecretKey, string> | null = null
-
-	const resolveValue = (value: string) => {
-		if (value === LOCAL_IP_VALUE) return getLocalIp()
-		return value
-	}
 
 	const loadSecrets = async (force = false) => {
 		const envSecrets = readEnvSecrets(keySet, force ? cachedSecrets : null)
@@ -96,7 +86,7 @@ export async function defineSecretSet<
 		const nextSecrets = Object.fromEntries(
 			keySet.map((key) => [
 				key,
-				resolveValue((envSecrets[key] ?? loadedSecrets[key]) as string)
+				(envSecrets[key] ?? loadedSecrets[key]) as string
 			])
 		) as Record<SecretKey, string>
 
@@ -113,7 +103,7 @@ export async function defineSecretSet<
 			if (!value) {
 				throw new Error(`Secret ${key} not found`)
 			}
-			return resolveValue(value)
+			return value
 		},
 		secrets() {
 			if (!cachedSecrets) {
@@ -160,22 +150,4 @@ function readEnvSecrets<SecretKey extends string>(
 			})
 			.map((key) => [key, process.env[key] as string])
 	) as Partial<Record<SecretKey, string>>
-}
-
-function getLocalIpAddress(): string {
-	const interfaces = networkInterfaces()
-
-	for (const name of Object.keys(interfaces)) {
-		if (VPN_INTERFACE_RE.test(name)) continue
-		const nets = interfaces[name]
-		if (!nets) continue
-
-		for (const net of nets) {
-			if (net.family === 'IPv4' && !net.internal) {
-				return net.address
-			}
-		}
-	}
-
-	return '127.0.0.1'
 }

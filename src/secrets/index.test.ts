@@ -17,8 +17,7 @@ const ENV_KEYS = [
 	'OTHER_MISSING_SECRET',
 	'NODE_ENV',
 	'REMOTE_ONLY',
-	'SECRETS_ENV',
-	'SERVICE_URL'
+	'SECRETS_ENV'
 ] as const
 
 const originalEnv = Object.fromEntries(
@@ -138,19 +137,6 @@ describe('defineSecretSet', () => {
 
 		expect(secretSet.secret('REMOTE_ONLY')).toBe('value-2')
 		expect(calls).toBe(2)
-	})
-
-	test('substitutes LOCAL_IP values', async () => {
-		console.log = mock(() => {})
-
-		const secretSet = await defineSecretSet(['SERVICE_URL'] as const, {
-			projectId: 'project-id',
-			getLocalIp: () => '192.168.1.10',
-			loader: async () => ({ SERVICE_URL: 'LOCAL_IP' })
-		})
-
-		expect(secretSet.secret('SERVICE_URL')).toBe('192.168.1.10')
-		expect(process.env.SERVICE_URL).toBe('192.168.1.10')
 	})
 
 	test('exposes loaded secrets as Vite define values', async () => {
