@@ -1,9 +1,11 @@
 import { InfisicalSDK } from '@infisical/sdk'
 import { networkInterfaces } from 'node:os'
+import { colorize, createCoolLogger } from '../cool-console-log'
 
 const DEFAULT_INFISICAL_SITE_URL = 'https://eu.infisical.com'
 const LOCAL_IP_VALUE = 'LOCAL_IP'
 const VPN_INTERFACE_RE = /^(utun|tun|tailscale|wg|ipsec|ppp)/i
+const logger = createCoolLogger()
 
 export type SecretEnvironment = 'dev' | 'staging' | 'prod'
 
@@ -71,13 +73,17 @@ export async function defineSecretSet<
 	const loadSecrets = async (force = false) => {
 		const envSecrets = readEnvSecrets(keySet, force ? cachedSecrets : null)
 		const keysMissingFromEnv = keySet.filter((key) => !envSecrets[key])
+		const environment = resolveEnvironment(options.environment)
+
+		logSecretEnvironment(environment, keySet.length)
+
 		const loadedSecrets: Partial<Record<SecretKey, string>> =
 			keysMissingFromEnv.length === 0 && !force
 				? {}
 				: await loader({
 						keys: keySet,
 						projectId: options.projectId,
-						environment: resolveEnvironment(options.environment),
+						environment,
 						siteUrl: options.siteUrl ?? DEFAULT_INFISICAL_SITE_URL,
 						clientIdEnvKey: options.clientIdEnvKey ?? 'INFISICAL_CLIENT_ID',
 						clientSecretEnvKey:
@@ -171,6 +177,16 @@ function resolveEnvironment(
 ): SecretEnvironment {
 	if (typeof environment === 'function') return environment()
 	return environment ?? getSecretEnvironment()
+}
+
+function logSecretEnvironment(
+	environment: SecretEnvironment,
+	secretCount: number
+): void {
+	logger.info(colorize('Loading secrets', 'cyan', 'bold'), {
+		environment: colorize(environment, 'brightCyan', 'bold'),
+		count: secretCount
+	})
 }
 
 function readEnvSecrets<SecretKey extends string>(

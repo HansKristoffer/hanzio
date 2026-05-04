@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
 import {
 	defineSecretSet,
 	getSecretEnvironment,
@@ -25,7 +25,13 @@ const originalEnv = Object.fromEntries(
 	ENV_KEYS.map((key) => [key, process.env[key]])
 )
 
+const originalConsoleInfo = console.info
+const originalConsoleLog = console.log
+
 afterEach(() => {
+	console.info = originalConsoleInfo
+	console.log = originalConsoleLog
+
 	for (const key of ENV_KEYS) {
 		const value = originalEnv[key]
 		if (value === undefined) {
@@ -38,6 +44,7 @@ afterEach(() => {
 
 describe('defineSecretSet', () => {
 	test('loads all configured secrets before resolving', async () => {
+		console.log = mock(() => {})
 		const loader: SecretSetLoader<
 			'APP_SECRET' | 'DATABASE_URL'
 		> = async () => ({
@@ -63,6 +70,7 @@ describe('defineSecretSet', () => {
 	})
 
 	test('uses process.env values without calling the loader', async () => {
+		console.log = mock(() => {})
 		process.env.LOCAL_ONLY = 'from-env'
 		let calls = 0
 
@@ -79,6 +87,7 @@ describe('defineSecretSet', () => {
 	})
 
 	test('process.env values override loaded values', async () => {
+		console.log = mock(() => {})
 		process.env.APP_SECRET = 'from-env'
 
 		const secretSet = await defineSecretSet(
@@ -97,6 +106,8 @@ describe('defineSecretSet', () => {
 	})
 
 	test('fails fast with all missing configured secrets', async () => {
+		console.log = mock(() => {})
+
 		await expect(
 			defineSecretSet(['MISSING_SECRET', 'OTHER_MISSING_SECRET'] as const, {
 				projectId: 'project-id',
@@ -106,6 +117,7 @@ describe('defineSecretSet', () => {
 	})
 
 	test('caches secrets and can reload them', async () => {
+		console.log = mock(() => {})
 		let calls = 0
 
 		const secretSet = await defineSecretSet(['REMOTE_ONLY'] as const, {
@@ -127,6 +139,8 @@ describe('defineSecretSet', () => {
 	})
 
 	test('substitutes LOCAL_IP values', async () => {
+		console.log = mock(() => {})
+
 		const secretSet = await defineSecretSet(['SERVICE_URL'] as const, {
 			projectId: 'project-id',
 			getLocalIp: () => '192.168.1.10',
@@ -138,6 +152,8 @@ describe('defineSecretSet', () => {
 	})
 
 	test('exposes loaded secrets as Vite define values', async () => {
+		console.log = mock(() => {})
+
 		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
 			projectId: 'project-id',
 			loader: async () => ({ APP_SECRET: 'app-secret' })
@@ -149,6 +165,8 @@ describe('defineSecretSet', () => {
 	})
 
 	test('creates a Vite plugin that returns define config', async () => {
+		console.log = mock(() => {})
+
 		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
 			projectId: 'project-id',
 			loader: async () => ({ APP_SECRET: 'app-secret' })
@@ -162,6 +180,29 @@ describe('defineSecretSet', () => {
 				'import.meta.env.APP_SECRET': JSON.stringify('app-secret')
 			}
 		})
+	})
+
+	test('logs the selected secrets environment without secret values', async () => {
+		const log = mock(() => {})
+		console.log = log
+
+		await defineSecretSet(['APP_SECRET', 'DATABASE_URL'] as const, {
+			projectId: 'project-id',
+			environment: 'staging',
+			loader: async () => ({
+				APP_SECRET: 'app-secret',
+				DATABASE_URL: 'postgres://db'
+			})
+		})
+
+		const output = log.mock.calls.join(' ')
+		expect(output).toContain('Loading secrets')
+		expect(output).toContain('environment=')
+		expect(output).toContain('staging')
+		expect(output).toContain('count=')
+		expect(output).toContain('2')
+		expect(output).not.toContain('app-secret')
+		expect(output).not.toContain('postgres://db')
 	})
 })
 
