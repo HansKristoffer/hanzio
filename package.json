@@ -3,8 +3,8 @@
   "version": "1.0.7",
   "description": "A set of utility functions for TypeScript",
   "type": "module",
-  "module": "./dist/index.js",
-  "main": "./dist/index.js",
+  "module": "./dist/src/index.js",
+  "main": "./dist/src/index.js",
   "types": "./dist/index.d.ts",
   "license": "MIT",
   "repository": {
@@ -32,8 +32,20 @@
     ".": {
       "types": "./dist/index.d.ts",
       "bun": "./src/index.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
+      "import": "./dist/src/index.js",
+      "default": "./dist/src/index.js"
+    },
+    "./secrets": {
+      "types": "./dist/secrets/index.d.ts",
+      "bun": "./src/secrets/index.ts",
+      "import": "./dist/src/secrets/index.js",
+      "default": "./dist/src/secrets/index.js"
+    },
+    "./secrets/vite": {
+      "types": "./dist/secrets/vite.d.ts",
+      "bun": "./src/secrets/vite.ts",
+      "import": "./dist/src/secrets/vite.js",
+      "default": "./dist/src/secrets/vite.js"
     }
   },
   "scripts": {
