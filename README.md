@@ -2,7 +2,7 @@
 
 A small TypeScript-first utility library for common application code: arrays,
 strings, promises, caching, state machines, dates, URLs, Zod helpers, API clients,
-JWTs, gzip, sitemap crawling, queues, and colorful terminal logging.
+JWTs, gzip, sitemap crawling, queues, secrets, and colorful terminal logging.
 
 ## Install
 
@@ -210,6 +210,26 @@ import { promiseTimeout } from 'hanzio'
 
 await promiseTimeout(250)
 ```
+
+### Secrets
+
+`defineSecretSet` loads a typed set of required secrets from `process.env` or
+Infisical before the rest of the program starts.
+
+```ts
+import { defineSecretSet } from 'hanzio'
+
+export const backendSecrets = await defineSecretSet(
+	['DATABASE_URL', 'APP_SECRET'] as const,
+	{ projectId: 'infisical-project-id' }
+)
+
+const databaseUrl = backendSecrets.secret('DATABASE_URL')
+```
+
+For Vite config, `viteSecretSetPlugin(secretSet)` exposes the loaded values as
+`import.meta.env.*` replacements. Use `getViteDefine(secretSet)` if you need the
+raw `define` object.
 
 ### Cache
 
