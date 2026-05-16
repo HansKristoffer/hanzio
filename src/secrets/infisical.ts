@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { createApiClient } from '../api-wrapper'
-import type { SecretSetLoaderContext } from '.'
+import type { SecretEnvironment } from '.'
+
+export const DEFAULT_INFISICAL_SITE_URL = 'https://eu.infisical.com'
 
 const defaultFetch = globalThis.fetch
 
@@ -17,23 +19,21 @@ const infisicalSecretsResponseSchema = z.object({
 	secrets: z.array(infisicalSecretSchema)
 })
 
-export async function loadInfisicalSecrets<SecretKey extends string>({
+export async function fetchInfisicalSecrets<SecretKey extends string>({
 	keys,
 	projectId,
 	environment,
 	siteUrl,
-	clientIdEnvKey,
-	clientSecretEnvKey
-}: SecretSetLoaderContext<SecretKey>): Promise<
-	Partial<Record<SecretKey, string>>
-> {
-	const clientId = process.env[clientIdEnvKey]
-	const clientSecret = process.env[clientSecretEnvKey]
-
-	if (!clientId || !clientSecret) {
-		throw new Error('Missing Infisical credentials')
-	}
-
+	clientId,
+	clientSecret
+}: {
+	readonly keys: readonly SecretKey[]
+	readonly projectId: string
+	readonly environment: SecretEnvironment
+	readonly siteUrl: string
+	readonly clientId: string
+	readonly clientSecret: string
+}): Promise<Partial<Record<SecretKey, string>>> {
 	const infisical = createInfisicalApiClient(siteUrl)
 	const { data: auth } = await infisical.request('login', {
 		reqBody: {
@@ -61,6 +61,42 @@ export async function loadInfisicalSecrets<SecretKey extends string>({
 			.filter((secret) => wantedKeys.has(secret.secretKey))
 			.map((secret) => [secret.secretKey, secret.secretValue])
 	) as Partial<Record<SecretKey, string>>
+}
+
+export type LoadInfisicalSecretsFromEnvOptions<SecretKey extends string> = {
+	readonly keys: readonly SecretKey[]
+	readonly projectId: string
+	readonly environment: SecretEnvironment
+	readonly siteUrl: string
+	readonly clientIdEnvKey: string
+	readonly clientSecretEnvKey: string
+}
+
+export async function loadInfisicalSecrets<SecretKey extends string>({
+	keys,
+	projectId,
+	environment,
+	siteUrl,
+	clientIdEnvKey,
+	clientSecretEnvKey
+}: LoadInfisicalSecretsFromEnvOptions<SecretKey>): Promise<
+	Partial<Record<SecretKey, string>>
+> {
+	const clientId = process.env[clientIdEnvKey]
+	const clientSecret = process.env[clientSecretEnvKey]
+
+	if (!clientId || !clientSecret) {
+		throw new Error('Missing Infisical credentials')
+	}
+
+	return fetchInfisicalSecrets({
+		keys,
+		projectId,
+		environment,
+		siteUrl,
+		clientId,
+		clientSecret
+	})
 }
 
 function createInfisicalApiClient(siteUrl: string) {

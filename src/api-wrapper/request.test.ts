@@ -1,32 +1,14 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { z } from 'zod'
-import { createApiClient, HttpResponseError, ResponseValidationError } from '.'
+import {
+	createApiClient,
+	HttpResponseError,
+	type ApiError,
+	isApiError
+} from '.'
+import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
 
-const originalFetch = globalThis.fetch
-
-const createMockResponse = (
-	body: unknown,
-	options: { status?: number; contentType?: string } = {}
-) => {
-	const { status = 200, contentType = 'application/json' } = options
-	return new Response(
-		contentType.includes('application/json')
-			? JSON.stringify(body)
-			: String(body),
-		{
-			status,
-			headers: { 'content-type': contentType }
-		}
-	)
-}
-
-const mockFetch = (
-	fn: (url: string, options?: RequestInit) => Promise<Response>
-) => {
-	globalThis.fetch = mock(fn) as unknown as typeof fetch
-}
-
-describe('createApiClient', () => {
+describe('createApiClient — request & hooks', () => {
 	afterEach(() => {
 		globalThis.fetch = originalFetch
 	})
@@ -49,12 +31,6 @@ describe('createApiClient', () => {
 		const result = await api.request('getUser', { reqParams: { id: 1 } })
 		const typedData: { id: number; name: string } = result.data
 
-		const assertRequestParamTypes = async () => {
-			// @ts-expect-error endpoint request params are inferred from reqParamsSchema.
-			await api.request('getUser', { reqParams: { id: '1' } })
-		}
-
-		expect(assertRequestParamTypes).toBeInstanceOf(Function)
 		expect(typedData).toEqual({ id: 1, name: 'Ada' })
 		expect(result.httpStatus).toBe(200)
 		expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -125,59 +101,70 @@ describe('createApiClient', () => {
 		)
 	})
 
-	test('throws ResponseValidationError for invalid responses', async () => {
-		mockFetch(() => Promise.resolve(createMockResponse({ id: 'bad' })))
+	test('onRequest can mutate headers and body; onError fires on failure', async () => {
+		let capturedHeaders: RequestInit['headers']
+		let capturedBody: RequestInit['body']
+		mockFetch((_url, options) => {
+			capturedHeaders = options?.headers
+			capturedBody = options?.body
+			return Promise.resolve(
+				new Response('boom', {
+					status: 500,
+					headers: { 'content-type': 'text/plain' }
+				})
+			)
+		})
+
+		const errors: ApiError[] = []
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			retries: 0,
+			onRequest: ({ headers }) => ({
+				headers: { ...headers, Authorization: 'Bearer token' },
+				body: { name: 'override' }
+			}),
+			onError: (err) => {
+				errors.push(err)
+			},
+			endpoints: {
+				createUser: {
+					method: 'POST',
+					path: '/users',
+					reqBodyFormat: 'json',
+					reqBodySchema: z.object({ name: z.string() }),
+					resSchema: z.object({ ok: z.boolean() })
+				}
+			}
+		})
+
+		await expect(
+			api.request('createUser', { reqBody: { name: 'orig' } })
+		).rejects.toBeInstanceOf(HttpResponseError)
+		expect(capturedBody).toBe(JSON.stringify({ name: 'override' }))
+		expect((capturedHeaders as Record<string, string>).Authorization).toBe(
+			'Bearer token'
+		)
+		expect(errors).toHaveLength(1)
+		expect(isApiError(errors[0])).toBe(true)
+	})
+
+	test('proxy-based endpoint helpers call request', async () => {
+		mockFetch(() => Promise.resolve(createMockResponse({ id: 7, name: 'Z' })))
 
 		const api = createApiClient({
 			baseApiUrls: { default: 'https://api.example.com' },
 			endpoints: {
 				getUser: {
 					method: 'GET',
-					path: '/users/1',
-					resSchema: z.object({ id: z.number() })
+					path: '/users/:id',
+					reqParamsSchema: z.object({ id: z.number() }),
+					resSchema: z.object({ id: z.number(), name: z.string() })
 				}
 			}
 		})
 
-		await expect(api.request('getUser')).rejects.toThrow(
-			ResponseValidationError
-		)
-	})
-
-	test('retries server errors by default but not client errors', async () => {
-		let callCount = 0
-		mockFetch(() => {
-			callCount++
-			if (callCount === 1) {
-				return Promise.resolve(createMockResponse({}, { status: 500 }))
-			}
-			return Promise.resolve(createMockResponse({ ok: true }))
-		})
-
-		const api = createApiClient({
-			baseApiUrls: { default: 'https://api.example.com' },
-			retryDelayMs: 0,
-			endpoints: {
-				getData: {
-					method: 'GET',
-					path: '/data',
-					resSchema: z.object({ ok: z.boolean() })
-				}
-			}
-		})
-
-		const result = await api.request('getData')
-		expect(result.retryCount).toBe(1)
-		expect(callCount).toBe(2)
-
-		mockFetch(() =>
-			Promise.resolve(createMockResponse({ error: 'nope' }, { status: 404 }))
-		)
-
-		await expect(api.request('getData')).rejects.toBeInstanceOf(
-			HttpResponseError
-		)
-		expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+		const result = await api.getUser({ reqParams: { id: 7 } })
+		expect(result.data).toEqual({ id: 7, name: 'Z' })
 	})
 
 	test('throws for unknown endpoints', async () => {
@@ -186,7 +173,8 @@ describe('createApiClient', () => {
 			endpoints: {}
 		})
 
-		// @ts-expect-error testing runtime behavior for invalid endpoint keys
-		await expect(api.request('missing')).rejects.toThrow('Unknown API endpoint')
+		await expect(
+			(api.request as (key: string) => Promise<unknown>)('missing')
+		).rejects.toThrow('Unknown API endpoint')
 	})
 })

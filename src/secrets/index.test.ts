@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import {
+	cloudflareWorkerEnvLoader,
 	defineSecretSet,
 	getSecretEnvironment,
 	getViteDefine,
+	infisicalLoader,
+	processEnvLoader,
 	viteSecretSetPlugin
 } from '.'
 import type { SecretSetLoader } from '.'
@@ -55,10 +58,7 @@ describe('defineSecretSet', () => {
 
 		const backendSecrets = await defineSecretSet(
 			['APP_SECRET', 'DATABASE_URL'] as const,
-			{
-				projectId: 'project-id',
-				loader
-			}
+			{ loader }
 		)
 
 		expect(backendSecrets.secret('APP_SECRET')).toBe('app-secret')
@@ -76,7 +76,6 @@ describe('defineSecretSet', () => {
 		let calls = 0
 
 		const secretSet = await defineSecretSet(['LOCAL_ONLY'] as const, {
-			projectId: 'project-id',
 			loader: async () => {
 				calls++
 				return { LOCAL_ONLY: 'from-loader' }
@@ -94,7 +93,6 @@ describe('defineSecretSet', () => {
 		const secretSet = await defineSecretSet(
 			['APP_SECRET', 'REMOTE_ONLY'] as const,
 			{
-				projectId: 'project-id',
 				loader: async () => ({
 					APP_SECRET: 'from-loader',
 					REMOTE_ONLY: 'from-loader'
@@ -111,7 +109,6 @@ describe('defineSecretSet', () => {
 
 		await expect(
 			defineSecretSet(['MISSING_SECRET', 'OTHER_MISSING_SECRET'] as const, {
-				projectId: 'project-id',
 				loader: async () => ({})
 			})
 		).rejects.toThrow('Missing secrets: MISSING_SECRET, OTHER_MISSING_SECRET')
@@ -122,7 +119,6 @@ describe('defineSecretSet', () => {
 		let calls = 0
 
 		const secretSet = await defineSecretSet(['REMOTE_ONLY'] as const, {
-			projectId: 'project-id',
 			loader: async () => {
 				calls++
 				return { REMOTE_ONLY: `value-${calls}` }
@@ -139,11 +135,45 @@ describe('defineSecretSet', () => {
 		expect(calls).toBe(2)
 	})
 
+	test('secrets returns a copy of cached values', async () => {
+		console.log = mock(() => {})
+
+		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
+			loader: async () => ({ APP_SECRET: 'app-secret' })
+		})
+
+		const secrets = secretSet.secrets()
+		secrets.APP_SECRET = 'mutated'
+
+		expect(secretSet.secret('APP_SECRET')).toBe('app-secret')
+		expect(secretSet.secrets()).toEqual({ APP_SECRET: 'app-secret' })
+	})
+
+	test('custom loaders receive only missing keys and environment', async () => {
+		console.log = mock(() => {})
+		process.env.APP_SECRET = 'from-env'
+		const contexts: unknown[] = []
+
+		await defineSecretSet(['APP_SECRET', 'REMOTE_ONLY'] as const, {
+			environment: 'staging',
+			loader: async (context) => {
+				contexts.push(context)
+				return { REMOTE_ONLY: 'from-loader' }
+			}
+		})
+
+		expect(contexts).toEqual([
+			{
+				keys: ['REMOTE_ONLY'],
+				environment: 'staging'
+			}
+		])
+	})
+
 	test('exposes loaded secrets as Vite define values', async () => {
 		console.log = mock(() => {})
 
 		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
-			projectId: 'project-id',
 			loader: async () => ({ APP_SECRET: 'app-secret' })
 		})
 
@@ -156,7 +186,6 @@ describe('defineSecretSet', () => {
 		console.log = mock(() => {})
 
 		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
-			projectId: 'project-id',
 			loader: async () => ({ APP_SECRET: 'app-secret' })
 		})
 
@@ -175,7 +204,6 @@ describe('defineSecretSet', () => {
 		console.log = log
 
 		await defineSecretSet(['APP_SECRET', 'DATABASE_URL'] as const, {
-			projectId: 'project-id',
 			environment: 'staging',
 			loader: async () => ({
 				APP_SECRET: 'app-secret',
@@ -253,6 +281,102 @@ describe('defineSecretSet', () => {
 		})
 
 		expect(secretSet.secret('APP_SECRET')).toBe('from-infisical')
+		expect(fetchMock).toHaveBeenCalledTimes(2)
+	})
+
+	test('cloudflareWorkerEnvLoader reads from the passed Worker env object', async () => {
+		console.log = mock(() => {})
+		delete process.env.REMOTE_ONLY
+
+		const fetchMock = mock(async () => {
+			throw new Error('fetch should not be called')
+		}) as unknown as typeof fetch
+		globalThis.fetch = fetchMock
+
+		const secretSet = await defineSecretSet(['REMOTE_ONLY'] as const, {
+			loader: cloudflareWorkerEnvLoader({
+				REMOTE_ONLY: 'from-worker-env'
+			})
+		})
+
+		expect(secretSet.secret('REMOTE_ONLY')).toBe('from-worker-env')
+		expect(fetchMock).toHaveBeenCalledTimes(0)
+	})
+
+	test('cloudflareWorkerEnvLoader is overridden by process.env when set', async () => {
+		console.log = mock(() => {})
+		process.env.REMOTE_ONLY = 'from-process'
+
+		const secretSet = await defineSecretSet(['REMOTE_ONLY'] as const, {
+			loader: cloudflareWorkerEnvLoader({
+				REMOTE_ONLY: 'from-worker-env'
+			})
+		})
+
+		expect(secretSet.secret('REMOTE_ONLY')).toBe('from-process')
+	})
+
+	test('processEnvLoader resolves from process.env only without fetch', async () => {
+		console.log = mock(() => {})
+		process.env.REMOTE_ONLY = 'from-env-direct'
+
+		const fetchMock = mock(async () => {
+			throw new Error('fetch should not be called')
+		}) as unknown as typeof fetch
+		globalThis.fetch = fetchMock
+
+		const secretSet = await defineSecretSet(['REMOTE_ONLY'] as const, {
+			loader: processEnvLoader
+		})
+
+		expect(secretSet.secret('REMOTE_ONLY')).toBe('from-env-direct')
+		expect(fetchMock).toHaveBeenCalledTimes(0)
+	})
+
+	test('infisicalLoader uses explicit client credentials', async () => {
+		console.log = mock(() => {})
+		delete process.env.INFISICAL_CLIENT_ID
+		delete process.env.INFISICAL_CLIENT_SECRET
+
+		const fetchMock = mock(
+			async (url: string | URL | Request, init: RequestInit = {}) => {
+				const requestUrl = String(url)
+				if (
+					requestUrl ===
+					'https://eu.infisical.com/api/v1/auth/universal-auth/login'
+				) {
+					expect(JSON.parse(String(init.body))).toEqual({
+						clientId: 'explicit-id',
+						clientSecret: 'explicit-secret'
+					})
+					return Response.json({ accessToken: 'access-token' })
+				}
+
+				if (requestUrl.startsWith('https://eu.infisical.com/api/v4/secrets?')) {
+					return Response.json({
+						secrets: [
+							{
+								secretKey: 'APP_SECRET',
+								secretValue: 'from-infisical-explicit'
+							}
+						]
+					})
+				}
+
+				throw new Error(`Unexpected request: ${requestUrl}`)
+			}
+		) as unknown as typeof fetch
+		globalThis.fetch = fetchMock
+
+		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
+			loader: infisicalLoader({
+				projectId: 'project-id',
+				clientId: 'explicit-id',
+				clientSecret: 'explicit-secret'
+			})
+		})
+
+		expect(secretSet.secret('APP_SECRET')).toBe('from-infisical-explicit')
 		expect(fetchMock).toHaveBeenCalledTimes(2)
 	})
 })

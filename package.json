@@ -50,7 +50,7 @@
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/secrets/index.ts ./src/secrets/infisical.ts ./src/secrets/vite.ts --outdir ./dist --target node --packages external",
+    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/secrets/index.ts ./src/secrets/infisical.ts ./src/secrets/loaders.ts ./src/secrets/vite.ts --outdir ./dist --target node --packages external",
     "build:types": "tsgo -p tsconfig.build.json",
     "prepublishOnly": "bun run build",
     "publish:patch": "npm version patch && npm publish",
