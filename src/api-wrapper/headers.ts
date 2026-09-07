@@ -1,3 +1,5 @@
+import type { ConfigError } from './errors'
+
 const CANONICAL_HEADER_NAMES: Record<string, string> = {
 	'content-type': 'Content-Type',
 	authorization: 'Authorization',
@@ -49,11 +51,22 @@ export function hasJsonContentType(headers: Record<string, string>): boolean {
 
 export function buildFetchBody(
 	body: unknown,
-	headers: Record<string, string>
+	headers: Record<string, string>,
+	configError?: (msg: string) => ConfigError
 ): RequestInit['body'] {
 	if (body === undefined || body === null) return undefined
 	if (body instanceof FormData || body instanceof Blob) return body
 	if (hasJsonContentType(headers)) return JSON.stringify(body)
+	if (
+		typeof body === 'object' &&
+		(Object.getPrototypeOf(body) === Object.prototype ||
+			Object.getPrototypeOf(body) === null) &&
+		configError
+	) {
+		throw configError(
+			'Request body is a plain object but Content-Type is not application/json'
+		)
+	}
 	return body as RequestInit['body']
 }
 

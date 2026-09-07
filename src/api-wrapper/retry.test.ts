@@ -8,6 +8,7 @@ import {
 	ResponseValidationError
 } from '.'
 import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
+import { getRetryDelay } from './transport'
 
 describe('createApiClient — retries & transport', () => {
 	afterEach(() => {
@@ -175,6 +176,38 @@ describe('createApiClient — retries & transport', () => {
 		expect(calls).toBe(1)
 	})
 
+	test('validation errors after retries include the correct attempt count', async () => {
+		let calls = 0
+		mockFetch(() => {
+			calls++
+			if (calls < 3) {
+				return Promise.resolve(createMockResponse({}, { status: 500 }))
+			}
+			return Promise.resolve(createMockResponse({ id: 'wrong' }))
+		})
+
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			retryDelayMs: 0,
+			endpoints: {
+				getUser: {
+					method: 'GET',
+					path: '/user',
+					resSchema: z.object({ id: z.number() })
+				}
+			}
+		})
+
+		try {
+			await api.request('getUser')
+			throw new Error('expected throw')
+		} catch (err) {
+			expect(err).toBeInstanceOf(ResponseValidationError)
+			expect((err as ResponseValidationError).context.attempt).toBe(2)
+		}
+		expect(calls).toBe(3)
+	})
+
 	test('onRetry is invoked with retry context', async () => {
 		let calls = 0
 		mockFetch(() => {
@@ -203,5 +236,99 @@ describe('createApiClient — retries & transport', () => {
 
 		await api.request('get')
 		expect(retries).toEqual([1, 2])
+	})
+
+	test('invalid Retry-After falls back to the configured delay and cap', () => {
+		for (const status of [429, 503]) {
+			const response = new Response('', {
+				status,
+				headers: { 'retry-after': 'invalid' }
+			})
+			expect(getRetryDelay({ response, attempt: 2, retryDelay: 2000 })).toBe(
+				2000
+			)
+			expect(
+				getRetryDelay({
+					response,
+					attempt: 2,
+					retryDelay: (attempt) => attempt * 1000
+				})
+			).toBe(2000)
+			expect(
+				getRetryDelay({
+					response,
+					attempt: 2,
+					retryDelay: 2000,
+					maxRetryDelayMs: 500
+				})
+			).toBe(500)
+		}
+	})
+
+	test('caps Retry-After delay to maxRetryDelayMs', async () => {
+		const timestamps: number[] = []
+		let calls = 0
+		mockFetch(() => {
+			timestamps.push(Date.now())
+			calls++
+			if (calls === 1) {
+				return Promise.resolve(
+					new Response('rate limited', {
+						status: 429,
+						headers: { 'retry-after': '3600' }
+					})
+				)
+			}
+			return Promise.resolve(createMockResponse({ ok: true }))
+		})
+
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			maxRetryDelayMs: 50,
+			endpoints: {
+				ping: {
+					method: 'GET',
+					path: '/ping',
+					resSchema: z.object({ ok: z.boolean() })
+				}
+			}
+		})
+
+		const result = await api.request('ping')
+		expect(result.retryCount).toBe(1)
+		expect(timestamps[1]! - timestamps[0]!).toBeLessThan(500)
+	})
+
+	test('error context url matches the actual request url including query params', async () => {
+		mockFetch(() =>
+			Promise.resolve(createMockResponse({ error: 'nope' }, { status: 404 }))
+		)
+
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			retries: 0,
+			endpoints: {
+				search: {
+					method: 'GET',
+					path: '/search',
+					reqQuerySchema: z.object({ q: z.string() }),
+					resSchema: z.object({ ok: z.boolean() })
+				}
+			}
+		})
+
+		try {
+			await api.request('search', { reqQuery: { q: 'hello world' } })
+			throw new Error('expected throw')
+		} catch (err) {
+			expect(err).toBeInstanceOf(HttpResponseError)
+			expect((err as HttpResponseError).context.url).toBe(
+				'https://api.example.com/search?q=hello+world'
+			)
+			expect(globalThis.fetch).toHaveBeenCalledWith(
+				'https://api.example.com/search?q=hello+world',
+				expect.anything()
+			)
+		}
 	})
 })

@@ -9,6 +9,25 @@ type CachedFunction<T extends AnyFunction> = {
 	clearCache: () => void
 }
 
+export type CacheStoreEntry = {
+	value: unknown
+	timestamp: number
+}
+
+/**
+ * Contract for external cache stores (e.g. a Redis adapter).
+ * Serialization is the adapter's responsibility; this library never imports
+ * the underlying client.
+ */
+export type CacheStore = {
+	get: (key: string) => Promise<CacheStoreEntry | undefined>
+	/** `ttlMs` maps to the store's native expiry (e.g. Redis `PX`). */
+	set: (key: string, entry: CacheStoreEntry, ttlMs: number) => Promise<void>
+	delete: (key: string) => Promise<void>
+	/** Optional; called by clearCache when defined. */
+	clear?: () => Promise<void>
+}
+
 export type CacheFunctionOptions<T extends AnyFunction> = {
 	name: string
 	fn: T
@@ -18,6 +37,13 @@ export type CacheFunctionOptions<T extends AnyFunction> = {
 	cacheKeyFn?: (...args: Parameters<T>) => unknown[]
 	/** Called when a background refresh fails (default: silent). */
 	onBackgroundRefreshError?: (error: unknown, context: { name: string }) => void
+	/**
+	 * External cache store (e.g. a Redis adapter). Only supported for async
+	 * functions; when omitted the built-in in-memory cache is used.
+	 */
+	store?: ReturnType<T> extends Promise<unknown> ? CacheStore : never
+	/** Called when a store get/set/delete/clear fails (default: silent). */
+	onStoreError?: (error: unknown, context: { name: string }) => void
 }
 
 export function cacheFunction<T extends AnyFunction>(
@@ -30,115 +56,256 @@ export function cacheFunction<T extends AnyFunction>(
 		refreshInBackground = false,
 		cacheKeyArgs,
 		cacheKeyFn,
-		onBackgroundRefreshError
+		onBackgroundRefreshError,
+		store,
+		onStoreError
 	} = options
+
+	const externalStore = store as CacheStore | undefined
 
 	const cache = new Map<string, CacheEntry<ReturnType<T>>>()
 	const pendingPromises = new Map<string, Promise<unknown>>()
 
-	const cleanupInterval = setInterval(
-		() => {
-			const now = Date.now()
-			for (const [key, entry] of cache.entries()) {
-				if (now - entry.timestamp >= cacheTimeMs) {
-					cache.delete(key)
-				}
-			}
-		},
-		Math.min(cacheTimeMs / 2, 5 * 60 * 1000)
-	)
+	// Stale entries are kept for an extra TTL so refreshInBackground can serve
+	// them while revalidating.
+	const entryLifetimeMs = refreshInBackground ? cacheTimeMs * 2 : cacheTimeMs
 
-	const wrappedFn = (...args: Parameters<T>): ReturnType<T> => {
+	let cleanupInterval: ReturnType<typeof setInterval> | undefined
+
+	const stopCleanup = () => {
+		if (cleanupInterval !== undefined) {
+			clearInterval(cleanupInterval)
+			cleanupInterval = undefined
+		}
+	}
+
+	// Created lazily on first write and unref'd so it never keeps the process
+	// alive. Stops itself once the cache is empty and restarts on the next
+	// write, so clearCache does not permanently disable sweeping.
+	const ensureCleanup = () => {
+		if (cleanupInterval !== undefined) {
+			return
+		}
+		cleanupInterval = setInterval(
+			() => {
+				const now = Date.now()
+				for (const [key, entry] of cache.entries()) {
+					if (now - entry.timestamp >= entryLifetimeMs) {
+						cache.delete(key)
+					}
+				}
+				if (cache.size === 0) {
+					stopCleanup()
+				}
+			},
+			Math.min(cacheTimeMs / 2, 5 * 60 * 1000)
+		)
+		cleanupInterval.unref?.()
+	}
+
+	const buildKey = (args: Parameters<T>): string => {
 		const keyArgs = cacheKeyFn
 			? cacheKeyFn(...args)
 			: cacheKeyArgs
 				? cacheKeyArgs.map((i) => args[i])
 				: args
-		const key = `${name}:${JSON.stringify(keyArgs)}`
-		const now = Date.now()
+		return `${name}:${JSON.stringify(keyArgs)}`
+	}
+
+	const saveEntry = (key: string, value: ReturnType<T>) => {
+		cache.set(key, { value, timestamp: Date.now() })
+		ensureCleanup()
+	}
+
+	const fetchAndPopulate = (
+		key: string,
+		args: Parameters<T>
+	): ReturnType<T> => {
+		const result = fn(...args)
+
+		if (!isPromiseLike(result)) {
+			saveEntry(key, result as ReturnType<T>)
+			return result as ReturnType<T>
+		}
+
+		const promise = (result as Promise<ReturnType<T>>)
+			.then((value) => {
+				saveEntry(key, value)
+				pendingPromises.delete(key)
+				return value
+			})
+			.catch((error: unknown) => {
+				pendingPromises.delete(key)
+				throw error
+			})
+
+		pendingPromises.set(key, promise)
+		return promise as ReturnType<T>
+	}
+
+	const startBackgroundRefresh = (
+		key: string,
+		args: Parameters<T>,
+		staleValue: ReturnType<T>
+	) => {
+		const result = fn(...args)
+
+		if (!isPromiseLike(result)) {
+			saveEntry(key, result as ReturnType<T>)
+			return
+		}
+
+		const promise = (result as Promise<ReturnType<T>>)
+			.then((value) => {
+				saveEntry(key, value)
+				pendingPromises.delete(key)
+				return value
+			})
+			.catch((error: unknown) => {
+				pendingPromises.delete(key)
+				onBackgroundRefreshError?.(error, { name })
+				// Anyone awaiting this promise gets the stale value instead of
+				// undefined or a rejection.
+				return staleValue
+			})
+
+		pendingPromises.set(key, promise)
+	}
+
+	const saveToStore = async (
+		cacheStore: CacheStore,
+		key: string,
+		value: unknown
+	) => {
+		try {
+			await cacheStore.set(
+				key,
+				{ value, timestamp: Date.now() },
+				entryLifetimeMs
+			)
+		} catch (error) {
+			onStoreError?.(error, { name })
+		}
+	}
+
+	const callWithStore = (
+		cacheStore: CacheStore,
+		args: Parameters<T>
+	): Promise<unknown> => {
+		const key = buildKey(args)
+
+		const pending = pendingPromises.get(key)
+		// Background refresh callers can still use an entry from the store.
+		if (pending && !refreshInBackground) {
+			return pending
+		}
+
+		return (async () => {
+			let entry: CacheStoreEntry | undefined
+			try {
+				entry = await cacheStore.get(key)
+			} catch (error) {
+				onStoreError?.(error, { name })
+			}
+
+			if (entry) {
+				const isFresh = Date.now() - entry.timestamp < cacheTimeMs
+
+				if (isFresh) {
+					return entry.value
+				}
+
+				if (refreshInBackground) {
+					if (!pendingPromises.has(key)) {
+						const staleValue = entry.value
+						const refresh = (fn(...args) as Promise<unknown>)
+							.then(async (value) => {
+								await saveToStore(cacheStore, key, value)
+								pendingPromises.delete(key)
+								return value
+							})
+							.catch((error: unknown) => {
+								pendingPromises.delete(key)
+								onBackgroundRefreshError?.(error, { name })
+								return staleValue
+							})
+						pendingPromises.set(key, refresh)
+					}
+					return entry.value
+				}
+
+				try {
+					await cacheStore.delete(key)
+				} catch (error) {
+					onStoreError?.(error, { name })
+				}
+			}
+
+			// A concurrent caller may have started a fetch while we awaited the
+			// store lookup.
+			const existing = pendingPromises.get(key)
+			if (existing) {
+				return existing
+			}
+
+			const promise = (fn(...args) as Promise<unknown>)
+				.then(async (value) => {
+					await saveToStore(cacheStore, key, value)
+					pendingPromises.delete(key)
+					return value
+				})
+				.catch((error: unknown) => {
+					pendingPromises.delete(key)
+					throw error
+				})
+
+			pendingPromises.set(key, promise)
+			return promise
+		})()
+	}
+
+	const wrappedFn = (...args: Parameters<T>): ReturnType<T> => {
+		if (externalStore) {
+			return callWithStore(externalStore, args) as ReturnType<T>
+		}
+
+		const key = buildKey(args)
+		const cached = cache.get(key)
+
+		if (cached) {
+			const isFresh = Date.now() - cached.timestamp < cacheTimeMs
+
+			if (isFresh) {
+				return cached.value
+			}
+
+			if (refreshInBackground) {
+				if (!pendingPromises.has(key)) {
+					startBackgroundRefresh(key, args, cached.value)
+				}
+				return cached.value
+			}
+
+			cache.delete(key)
+		}
 
 		const pending = pendingPromises.get(key)
 		if (pending) {
 			return pending as ReturnType<T>
 		}
 
-		const cached = cache.get(key)
-
-		if (cached) {
-			const isCacheFresh = now - cached.timestamp < cacheTimeMs
-
-			if (!isCacheFresh && !refreshInBackground) {
-				cache.delete(key)
-			} else {
-				if (isCacheFresh && !refreshInBackground) {
-					return cached.value
-				}
-
-				if (refreshInBackground) {
-					const existingPending = pendingPromises.get(key)
-					if (existingPending) {
-						return existingPending as ReturnType<T>
-					}
-
-					const backgroundUpdate = fn(...args)
-
-					if (isPromiseLike(backgroundUpdate)) {
-						const backgroundPromise = (
-							backgroundUpdate as Promise<ReturnType<T>>
-						)
-							.then((resolvedValue) => {
-								cache.set(key, { value: resolvedValue, timestamp: now })
-								pendingPromises.delete(key)
-								return resolvedValue
-							})
-							.catch((error: unknown) => {
-								pendingPromises.delete(key)
-								onBackgroundRefreshError?.(error, { name })
-							})
-
-						pendingPromises.set(key, backgroundPromise)
-					} else {
-						cache.set(key, {
-							value: backgroundUpdate as ReturnType<T>,
-							timestamp: now
-						})
-					}
-
-					return cached.value
-				}
-
-				if (isCacheFresh) {
-					return cached.value
-				}
-			}
-		}
-
-		const result = fn(...args)
-
-		if (isPromiseLike(result)) {
-			const promise = (result as Promise<ReturnType<T>>)
-				.then((resolvedValue) => {
-					cache.set(key, { value: resolvedValue, timestamp: now })
-					pendingPromises.delete(key)
-					return resolvedValue
-				})
-				.catch((error) => {
-					pendingPromises.delete(key)
-					throw error
-				})
-
-			pendingPromises.set(key, promise)
-			return promise as ReturnType<T>
-		}
-
-		cache.set(key, { value: result as ReturnType<T>, timestamp: now })
-		return result as ReturnType<T>
+		return fetchAndPopulate(key, args)
 	}
 
 	wrappedFn.clearCache = () => {
 		cache.clear()
 		pendingPromises.clear()
-		clearInterval(cleanupInterval)
+		stopCleanup()
+		if (externalStore?.clear) {
+			externalStore.clear().catch((error: unknown) => {
+				onStoreError?.(error, { name })
+			})
+		}
 	}
 
 	return wrappedFn

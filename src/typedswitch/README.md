@@ -111,10 +111,15 @@ const message = typedSwitch(
     success: () => 'Done!',
     error: () => 'Failed!',
   },
-  (val) => `Unhandled status: ${val}`  // val: Status (full union)
+  (val) => `Unhandled status: ${val}`  // val: 'pending' | 'cancelled' (unhandled cases only)
 )
 // message: string
 ```
+
+Only required, defined handlers narrow the default handler's input. Optional
+handlers (including reusable `PartialStringSwitchCases` and
+`PartialObjectSwitchCases` maps) can be absent, so their cases remain in the
+default handler's input type.
 
 Works with discriminated unions too:
 
@@ -125,7 +130,7 @@ const description = typedSwitch(
   {
     click: (e) => `Clicked at (${e.x}, ${e.y})`,
   },
-  (e) => `Unhandled event: ${e.type}`  // e: Event (full union)
+  (e) => `Unhandled event: ${e.type}`  // e: scroll or keypress event (unhandled members only)
 )
 ```
 

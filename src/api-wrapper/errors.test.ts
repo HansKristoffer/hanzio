@@ -236,4 +236,33 @@ describe('createApiClient — validation & HTTP errors', () => {
 			expect((err as RequestValidationError).target).toBe('body')
 		}
 	})
+
+	test('throws RequestValidationError for invalid path params', async () => {
+		mockFetch(() => Promise.resolve(createMockResponse({ ok: true })))
+
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			endpoints: {
+				getItem: {
+					method: 'GET',
+					path: '/items/:id',
+					reqParamsSchema: z.object({ id: z.number() }),
+					resSchema: z.object({ ok: z.boolean() })
+				}
+			}
+		})
+
+		try {
+			await api.request('getItem', {
+				reqParams: { id: 'bad' as unknown as number }
+			})
+			throw new Error('expected throw')
+		} catch (err) {
+			expect(err).toBeInstanceOf(RequestValidationError)
+			const e = err as RequestValidationError
+			expect(e.target).toBe('params')
+			expect(e.message).toContain('Request params validation failed')
+			expect(globalThis.fetch).not.toHaveBeenCalled()
+		}
+	})
 })

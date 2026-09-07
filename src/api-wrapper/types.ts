@@ -225,6 +225,7 @@ export interface ApiClientConfig<
 	timeoutMs?: number
 	retries?: number
 	retryDelayMs?: number | ((attempt: number) => number)
+	maxRetryDelayMs?: number
 	shouldRetry?: (context: RetryContext) => boolean
 	logger?: Pick<Console, 'debug' | 'error'>
 	fetch?: typeof fetch

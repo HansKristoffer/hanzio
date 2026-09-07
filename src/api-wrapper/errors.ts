@@ -219,3 +219,13 @@ export const isConfigError = (e: unknown): e is ConfigError =>
 	e instanceof ConfigError
 export const isActionError = (e: unknown): e is ActionError =>
 	e instanceof ActionError
+
+export function isNonRetryableApiError(error: unknown): boolean {
+	return (
+		error instanceof HttpResponseError ||
+		error instanceof ResponseValidationError ||
+		error instanceof RequestValidationError ||
+		error instanceof ConfigError ||
+		error instanceof RequestAbortedError
+	)
+}

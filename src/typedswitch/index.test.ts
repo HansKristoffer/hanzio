@@ -143,6 +143,40 @@ describe('typedSwitch runtime behavior', () => {
 			})
 			expect(result).toBe('empty')
 		})
+
+		test('does not treat inherited Object.prototype keys as cases', () => {
+			const status = 'toString' as 'success' | 'error'
+
+			expect(() =>
+				typedSwitch(status, {
+					success: () => 'ok',
+					error: () => 'err'
+				})
+			).toThrow('Unhandled case: toString')
+
+			const protoStatus = '__proto__' as 'success' | 'error'
+
+			expect(() =>
+				typedSwitch(protoStatus, {
+					success: () => 'ok',
+					error: () => 'err'
+				})
+			).toThrow('Unhandled case: __proto__')
+		})
+
+		test('inherited Object.prototype keys fall through to default', async () => {
+			const status = 'hasOwnProperty' as 'success' | 'error'
+
+			const result = await typedSwitch(
+				status,
+				{
+					success: () => 'ok'
+				},
+				(val) => `default: ${val}`
+			)
+
+			expect(result).toBe('default: hasOwnProperty')
+		})
 	})
 
 	describe('object input mode', () => {
@@ -260,6 +294,34 @@ describe('typedSwitch runtime behavior', () => {
 			)
 		})
 
+		test('works with unions of interface declarations', async () => {
+			interface Circle {
+				kind: 'circle'
+				radius: number
+			}
+			interface Square {
+				kind: 'square'
+				size: number
+			}
+			type Shape = Circle | Square
+
+			const shape = asType<Shape>({ kind: 'circle', radius: 2 })
+
+			const result = await typedSwitch(shape, 'kind', {
+				circle: (s) => {
+					expectTypeOf(s).toEqualTypeOf<Circle>()
+					return s.radius * 2
+				},
+				square: (s) => {
+					expectTypeOf(s).toEqualTypeOf<Square>()
+					return s.size
+				}
+			})
+
+			expect(result).toBe(4)
+			expectTypeOf(result).toEqualTypeOf<number>()
+		})
+
 		test('throws clear error when object mode is called without a string discriminant key', () => {
 			const event = getEvent({ type: 'click', x: 10, y: 20 })
 
@@ -338,18 +400,43 @@ describe('typedSwitch string mode type inference', () => {
 		expectTypeOf(result).toEqualTypeOf<'ok' | 'default'>()
 	})
 
-	test('with default: default handler receives full union type', async () => {
+	test('with default: default handler receives only unhandled cases', async () => {
 		await typedSwitch(
 			getTriStatus('pending'),
 			{
 				success: () => 'ok'
 			},
 			(val) => {
-				// Default handler receives the full union type
-				expectTypeOf(val).toEqualTypeOf<'success' | 'error' | 'pending'>()
+				// Default handler receives only the cases not covered above
+				expectTypeOf(val).toEqualTypeOf<'error' | 'pending'>()
 				return 'default'
 			}
 		)
+	})
+
+	test('with default: optional and undefined handlers remain unhandled', () => {
+		const cases: {
+			success?: (value: 'success') => string
+			error: ((value: 'error') => string) | undefined
+			pending: (value: 'pending') => string
+		} = { error: undefined, pending: () => 'waiting' }
+
+		for (const status of ['success', 'error'] as const) {
+			const result = typedSwitch(getTriStatus(status), cases, (value) => {
+				expectTypeOf(value).toEqualTypeOf<'success' | 'error'>()
+				return `default: ${value}`
+			})
+			expect(result).toBe(`default: ${status}`)
+		}
+	})
+
+	test('with default: reusable partial maps preserve the full union', () => {
+		const cases: PartialStringSwitchCases<'success' | 'error', string> = {}
+		const result = typedSwitch(getStatus('success'), cases, (value) => {
+			expectTypeOf(value).toEqualTypeOf<'success' | 'error'>()
+			return value
+		})
+		expect(result).toBe('success')
 	})
 
 	test('async handlers preserve promise return type when awaited', async () => {
@@ -470,7 +557,7 @@ describe('typedSwitch object mode type inference', () => {
 		expectTypeOf(result).toEqualTypeOf<'clicked' | 'unhandled'>()
 	})
 
-	test('with default: default handler receives full union type', async () => {
+	test('with default: default handler receives only unhandled union members', async () => {
 		await typedSwitch(
 			getEvent({ type: 'scroll', offset: 50 }),
 			'type',
@@ -478,11 +565,44 @@ describe('typedSwitch object mode type inference', () => {
 				click: () => 'handled'
 			},
 			(e) => {
-				// Default handler receives the full Event union
-				expectTypeOf(e).toEqualTypeOf<Event>()
+				// Default handler receives only the members not covered above
+				expectTypeOf(e).toEqualTypeOf<ScrollEvent | KeyEvent>()
 				return 'default'
 			}
 		)
+	})
+
+	test('with default: optional object handlers remain in the fallback union', () => {
+		const cases: {
+			click?: (event: ClickEvent) => number
+			scroll: ((event: ScrollEvent) => number) | undefined
+			key: (event: KeyEvent) => number
+		} = { scroll: undefined, key: () => 0 }
+
+		const result = typedSwitch(
+			getEvent({ type: 'click', x: 10, y: 20 }),
+			'type',
+			cases,
+			(event) => {
+				expectTypeOf(event).toEqualTypeOf<ClickEvent | ScrollEvent>()
+				return event.type === 'click' ? event.x : event.offset
+			}
+		)
+		expect(result).toBe(10)
+	})
+
+	test('with default: reusable partial object maps preserve the full union', () => {
+		const cases: PartialObjectSwitchCases<Event, 'type', string> = {}
+		const result = typedSwitch(
+			getEvent({ type: 'click', x: 10, y: 20 }),
+			'type',
+			cases,
+			(event) => {
+				expectTypeOf(event).toEqualTypeOf<Event>()
+				return event.type
+			}
+		)
+		expect(result).toBe('click')
 	})
 
 	test('async handlers are properly unwrapped in return type', async () => {

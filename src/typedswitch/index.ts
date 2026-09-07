@@ -74,14 +74,26 @@ type RawHandlerReturnType<T> = T extends (...args: any[]) => infer R ? R : never
 
 /** Get union of all raw return types from a cases object's values */
 type RawCasesReturnType<Cases> = {
-	[K in keyof Cases]: Cases[K] extends undefined
+	[K in keyof Cases]: RawHandlerReturnType<Cases[K]>
+}[keyof Cases]
+
+/** Only required, defined handlers guarantee that a case is handled. */
+type HandledCaseKeys<Cases> = {
+	// biome-ignore lint/complexity/noBannedTypes: Empty-object assignability detects optional keys and index signatures.
+	[K in keyof Cases]-?: {} extends Pick<Cases, K>
 		? never
-		: RawHandlerReturnType<Cases[K]>
+		: undefined extends Cases[K]
+			? never
+			: K
 }[keyof Cases]
 
 // ═══════════════════════════════════════════════════════════════════════════
 // String input mode types
 // ═══════════════════════════════════════════════════════════════════════════
+
+// The exported case-map types below are annotation helpers for consumers who
+// want to type reusable case maps. The typedSwitch overloads infer their own
+// shapes and do not depend on these types.
 
 /** Cases for string input - all cases required */
 export type StringSwitchCases<T extends string, R> = {
@@ -118,67 +130,6 @@ export type PartialObjectSwitchCases<
 type Handler = (value: unknown) => unknown
 type CasesRecord = Record<string, Handler | undefined>
 
-function runSwitch(
-	value: string | Record<string, unknown>,
-	keyOrCases: string | CasesRecord,
-	casesOrDefault?: CasesRecord | Handler,
-	defaultCase?: Handler
-): unknown {
-	let key: string
-	let cases: CasesRecord
-	let defaultHandler: Handler | undefined
-	let discriminantKey: string | undefined
-
-	if (typeof value === 'string') {
-		// String input: typedSwitch(string, cases, default?)
-		key = value
-		cases = keyOrCases as CasesRecord
-		defaultHandler = casesOrDefault as Handler | undefined
-	} else {
-		// Object input: typedSwitch(obj, key, cases, default?)
-		if (typeof keyOrCases !== 'string') {
-			throw new Error(
-				'Invalid typedSwitch call: object mode requires a string discriminant key'
-			)
-		}
-
-		discriminantKey = keyOrCases
-		const discriminantValue = value[discriminantKey]
-		if (typeof discriminantValue !== 'string') {
-			throw new Error(
-				`Invalid discriminant value for key "${discriminantKey}": expected string, received ${typeof discriminantValue}`
-			)
-		}
-
-		key = discriminantValue
-		cases = casesOrDefault as CasesRecord
-		defaultHandler = defaultCase
-	}
-
-	const handler = cases[key]
-
-	if (handler) {
-		return handler(value)
-	}
-
-	if (defaultHandler) {
-		return defaultHandler(value)
-	}
-
-	const availableCases = Object.keys(cases).join(', ')
-	const availableCasesSuffix =
-		availableCases.length > 0
-			? ` Available cases: ${availableCases}`
-			: ' Available cases: (none)'
-	const contextSuffix = discriminantKey
-		? ` (discriminant key: "${discriminantKey}")`
-		: ''
-
-	throw new Error(
-		`Unhandled case: ${key}${contextSuffix}.${availableCasesSuffix}`
-	)
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Function overloads
 // ═══════════════════════════════════════════════════════════════════════════
@@ -190,10 +141,11 @@ export function typedSwitch<
 >(value: T, cases: Cases): RawCasesReturnType<Cases>
 
 // String input - partial cases allowed (with default)
+// The default handler only receives the cases not covered by `cases`.
 export function typedSwitch<
 	T extends string,
 	Cases extends { [K in T]?: (value: K) => unknown },
-	DefaultCase extends (value: T) => unknown
+	DefaultCase extends (value: Exclude<T, HandledCaseKeys<Cases>>) => unknown
 >(
 	value: T,
 	cases: Cases,
@@ -202,19 +154,22 @@ export function typedSwitch<
 
 // Object input with key - all cases required (no default)
 export function typedSwitch<
-	T extends Record<string, unknown>,
+	T extends object,
 	K extends keyof T,
 	TKey extends T[K] & string,
 	Cases extends { [V in TKey]: (value: Extract<T, Record<K, V>>) => unknown }
 >(value: T, key: K, cases: Cases): RawCasesReturnType<Cases>
 
 // Object input with key - partial cases allowed (with default)
+// The default handler only receives the union members not covered by `cases`.
 export function typedSwitch<
-	T extends Record<string, unknown>,
+	T extends object,
 	K extends keyof T,
 	TKey extends T[K] & string,
 	Cases extends { [V in TKey]?: (value: Extract<T, Record<K, V>>) => unknown },
-	DefaultCase extends (value: T) => unknown
+	DefaultCase extends (
+		value: Exclude<T, Record<K, HandledCaseKeys<Cases> & string>>
+	) => unknown
 >(
 	value: T,
 	key: K,
@@ -300,10 +255,66 @@ export function typedSwitch<
 
 // Implementation
 export function typedSwitch(
-	value: string | Record<string, unknown>,
+	value: string | object,
 	keyOrCases: string | CasesRecord,
 	casesOrDefault?: CasesRecord | Handler,
 	defaultCase?: Handler
 ): unknown {
-	return runSwitch(value, keyOrCases, casesOrDefault, defaultCase)
+	let key: string
+	let cases: CasesRecord
+	let defaultHandler: Handler | undefined
+	let discriminantKey: string | undefined
+
+	if (typeof value === 'string') {
+		// String input: typedSwitch(string, cases, default?)
+		key = value
+		cases = keyOrCases as CasesRecord
+		defaultHandler = casesOrDefault as Handler | undefined
+	} else {
+		// Object input: typedSwitch(obj, key, cases, default?)
+		if (typeof keyOrCases !== 'string') {
+			throw new Error(
+				'Invalid typedSwitch call: object mode requires a string discriminant key'
+			)
+		}
+
+		discriminantKey = keyOrCases
+		const discriminantValue = (value as Record<string, unknown>)[
+			discriminantKey
+		]
+		if (typeof discriminantValue !== 'string') {
+			throw new Error(
+				`Invalid discriminant value for key "${discriminantKey}": expected string, received ${typeof discriminantValue}`
+			)
+		}
+
+		key = discriminantValue
+		cases = casesOrDefault as CasesRecord
+		defaultHandler = defaultCase
+	}
+
+	// Only own properties count as cases - a key like 'toString' must not
+	// resolve to an inherited Object.prototype method.
+	const handler = Object.hasOwn(cases, key) ? cases[key] : undefined
+
+	if (handler) {
+		return handler(value)
+	}
+
+	if (defaultHandler) {
+		return defaultHandler(value)
+	}
+
+	const availableCases = Object.keys(cases).join(', ')
+	const availableCasesSuffix =
+		availableCases.length > 0
+			? ` Available cases: ${availableCases}`
+			: ' Available cases: (none)'
+	const contextSuffix = discriminantKey
+		? ` (discriminant key: "${discriminantKey}")`
+		: ''
+
+	throw new Error(
+		`Unhandled case: ${key}${contextSuffix}.${availableCasesSuffix}`
+	)
 }

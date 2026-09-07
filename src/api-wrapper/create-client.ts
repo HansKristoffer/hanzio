@@ -15,6 +15,7 @@ import type { PathParams, QueryParams } from './shared'
 import type { ApiErrorContext } from './shared'
 import {
 	buildHeaders,
+	buildPathParams,
 	buildQueryParams,
 	buildRequestBody,
 	buildUrl
@@ -48,6 +49,39 @@ function isActionInvokeOptionsOnly(
 	if (typeof value !== 'object' || Array.isArray(value)) return false
 	return Object.keys(value as object).every(
 		(k) => k === 'signal' || k === 'meta'
+	)
+}
+
+function resolveActionInvocation(
+	action: AnyApiAction,
+	actionName: string,
+	first: unknown,
+	second?: ActionInvokeOptions
+): { input: unknown; options: ActionInvokeOptions } {
+	if (!action.noRuntimeInput) {
+		return { input: first, options: second ?? {} }
+	}
+
+	if (first === undefined || first === null) {
+		return { input: undefined, options: second ?? {} }
+	}
+	if (second !== undefined) {
+		return { input: undefined, options: second }
+	}
+	if (isActionInvokeOptionsOnly(first)) {
+		return { input: undefined, options: first }
+	}
+
+	throw new ConfigError(
+		`Action "${actionName}" does not accept input; pass only optional { signal, meta }`,
+		{
+			endpoint: actionName,
+			method: 'GET',
+			url: '',
+			attempt: 0,
+			maxRetries: 0,
+			elapsedMs: 0
+		}
 	)
 }
 
@@ -102,31 +136,12 @@ function createApiClientImpl<
 
 		baseContext.method = endpoint.method
 
-		let finalUrl: string
-		let fullUrl: string
-		try {
-			const built = buildUrl(
-				endpoint,
-				rawInput.reqParams,
-				rawInput.reqQuery,
-				apiConfig.baseApiUrls,
-				apiConfig.defaultBaseApiUrl,
-				input.url,
-				(msg) => new ConfigError(msg, ctx())
-			)
-			finalUrl = built.finalUrl
-			fullUrl = built.fullUrl
-		} catch (e) {
-			if (e instanceof ApiError) throw await reportApiError(e, apiConfig)
-			throw e
-		}
-
-		baseContext.url = fullUrl
-
+		let pathParams: PathParams | undefined
 		let queryParams: Record<string, string>
 		let body: unknown
 		let headers: Record<string, string>
 		try {
+			pathParams = buildPathParams(endpoint, rawInput.reqParams, ctx)
 			queryParams = buildQueryParams(endpoint, rawInput.reqQuery, ctx)
 			body = buildRequestBody(endpoint, rawInput.reqBody, ctx)
 			headers = buildHeaders(
@@ -140,6 +155,25 @@ function createApiClientImpl<
 			throw e
 		}
 
+		let fullUrl: string
+		try {
+			const built = buildUrl({
+				endpoint,
+				params: pathParams,
+				queryParams,
+				baseApiUrls: apiConfig.baseApiUrls,
+				defaultBaseApiUrl: apiConfig.defaultBaseApiUrl,
+				url: input.url,
+				doNotEncodeQueryParams: endpoint.doNotEncodeQueryParams,
+				configError: (msg) => new ConfigError(msg, ctx())
+			})
+			fullUrl = built.fullUrl
+		} catch (e) {
+			if (e instanceof ApiError) throw await reportApiError(e, apiConfig)
+			throw e
+		}
+
+		baseContext.url = fullUrl
 		baseContext.requestHeaders = headers
 		baseContext.requestBody = body
 
@@ -163,11 +197,9 @@ function createApiClientImpl<
 
 		const config: RequestConfig = {
 			method: endpoint.method,
-			url: finalUrl,
-			queryParams,
+			fullUrl,
 			body,
 			headers,
-			doNotEncodeQueryParams: endpoint.doNotEncodeQueryParams,
 			timeoutMs: input.timeoutMs ?? apiConfig.timeoutMs,
 			fetchFn: input.fetch ?? apiConfig.fetch ?? fetch,
 			userSignal: input.signal
@@ -178,8 +210,11 @@ function createApiClientImpl<
 				config,
 				maxRetries,
 				retryDelay: apiConfig.retryDelayMs ?? 300,
-				validateFn: (response) =>
-					validateAndTransformResponse(endpoint, response, ctx),
+				maxRetryDelayMs: apiConfig.maxRetryDelayMs,
+				validateFn: (response, attempt) =>
+					validateAndTransformResponse(endpoint, response, (over) =>
+						ctx({ attempt, ...over })
+					),
 				shouldRetry: apiConfig.shouldRetry ?? defaultShouldRetry,
 				logger: apiConfig.logger,
 				ctx,
@@ -192,11 +227,12 @@ function createApiClientImpl<
 			})
 
 			const responseTimeMs = elapsed()
-			const responseSizeMb = calculateSizeInMb(result.validatedData)
+			const responseSizeMb =
+				result.validatedData.responseSizeBytes / (1024 * 1024)
 			const requestBodySizeMb = calculateSizeInMb(config.body)
 
 			return {
-				data: result.validatedData as z.infer<T[K]['resSchema']>,
+				data: result.validatedData.data as z.infer<T[K]['resSchema']>,
 				requestBodySizeMb,
 				responseSizeMb,
 				responseTimeMs,
@@ -264,26 +300,28 @@ function createApiClientImpl<
 		}
 	}
 
+	async function dispatchAction(
+		name: string,
+		first?: unknown,
+		second?: ActionInvokeOptions
+	): Promise<unknown> {
+		const action = actions[name]!
+		const { input, options } = resolveActionInvocation(
+			action,
+			name,
+			first,
+			second
+		)
+		return invokeAction(name, input, options)
+	}
+
 	const request = (async (
 		key: string,
 		input?: unknown,
 		options?: ActionInvokeOptions
 	): Promise<unknown> => {
 		if (key in actions) {
-			const action = actions[key]!
-			if (action.noRuntimeInput) {
-				if (input === undefined || input === null) {
-					return invokeAction(key, undefined, options ?? {})
-				}
-				if (options !== undefined) {
-					return invokeAction(key, undefined, options)
-				}
-				if (isActionInvokeOptionsOnly(input)) {
-					return invokeAction(key, undefined, input)
-				}
-				return invokeAction(key, undefined, {})
-			}
-			return invokeAction(key, input, options)
+			return dispatchAction(key, input, options)
 		}
 		return invokeEndpoint(
 			key as keyof T,
@@ -305,26 +343,8 @@ function createApiClientImpl<
 					)
 			}
 			if (prop in actions) {
-				const action = actions[prop]!
-				if (action.noRuntimeInput) {
-					return (
-						first?: unknown,
-						second?: ActionInvokeOptions
-					): Promise<unknown> => {
-						if (first === undefined || first === null) {
-							return invokeAction(prop, undefined, second ?? {})
-						}
-						if (second !== undefined) {
-							return invokeAction(prop, undefined, second)
-						}
-						if (isActionInvokeOptionsOnly(first)) {
-							return invokeAction(prop, undefined, first)
-						}
-						return invokeAction(prop, undefined, {})
-					}
-				}
-				return (input?: unknown, opt?: ActionInvokeOptions) =>
-					invokeAction(prop, input, opt)
+				return (first?: unknown, second?: ActionInvokeOptions) =>
+					dispatchAction(prop, first, second)
 			}
 			return undefined
 		}

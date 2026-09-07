@@ -284,9 +284,10 @@ accepts:
 | --- | --- |
 | `name` | Prefix used in error/log context, e.g. `exampleApi.usersGet`. |
 | `defaultBaseApiUrl` | Key in `baseApiUrls` to use when an endpoint doesn't specify one. |
-| `timeoutMs` | Default per-request timeout (uses `AbortController`). |
+| `timeoutMs` | Default per-request timeout (uses `AbortController`). Applied **per attempt** — each retry gets its own timeout window, not a cumulative budget across retries. |
 | `retries` | Default retry count (default `3`). |
 | `retryDelayMs` | Delay between retries. `number \| (attempt) => number`. |
+| `maxRetryDelayMs` | Upper bound on retry delay (default `30000`). Caps `Retry-After` headers on `429`/`503` responses. |
 | `shouldRetry` | `(ctx) => boolean` to override the default retry policy. |
 | `fetch` | Custom fetch implementation. |
 | `logger` | `Pick<Console, 'debug' \| 'error'>` for debug + error logging. |
@@ -298,7 +299,7 @@ accepts:
 
 The default retry policy retries network errors and `5xx`/`429` responses, and
 **does not retry** validation, abort, config, or `4xx` errors. `Retry-After`
-headers on `429`/`503` are respected.
+headers on `429`/`503` are respected up to `maxRetryDelayMs`.
 
 ## Errors
 
@@ -327,12 +328,17 @@ type ApiErrorContext = {
 | `RequestTimeoutError` | Internal `timeoutMs` exceeded. Exposes `timeoutMs`. |
 | `RequestAbortedError` | The caller's `signal` aborted the request. |
 | `NetworkError` | `fetch` itself threw (DNS, TCP, etc.). |
-| `ConfigError` | Misconfiguration: unknown endpoint, missing base URL, missing path parameter. |
+| `ConfigError` | Misconfiguration: unknown endpoint, missing base URL, missing path parameter, invalid action input, or plain-object body without JSON content type. |
+| `ActionError` | A composite action handler threw a non-`ApiError`. Wraps the original cause. `ApiError` subclasses thrown inside actions propagate unchanged. |
 
 Type guards are exported for all of them: `isApiError`, `isHttpResponseError`,
 `isResponseValidationError`, `isRequestValidationError`,
 `isRequestTimeoutError`, `isRequestAbortedError`, `isNetworkError`,
-`isConfigError`.
+`isConfigError`, `isActionError`.
+
+`isNonRetryableApiError` returns `true` for errors that the default retry
+policy will not retry (`HttpResponseError`, `ResponseValidationError`,
+`RequestValidationError`, `ConfigError`, `RequestAbortedError`).
 
 Every `ApiError` implements `toJSON()` so loggers (Sentry, Datadog) capture the
 full structured payload, not just the message.

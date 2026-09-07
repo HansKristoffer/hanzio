@@ -9,10 +9,10 @@ import type { ApiErrorContext, HttpMethod } from './shared'
 import {
 	ConfigError,
 	HttpResponseError,
+	isNonRetryableApiError,
 	NetworkError,
 	RequestAbortedError,
 	RequestTimeoutError,
-	RequestValidationError,
 	ResponseValidationError
 } from './errors'
 import {
@@ -24,11 +24,9 @@ import { makeJsonParseZodError } from './zod-issues'
 
 export type RequestConfig = {
 	method: HttpMethod
-	url: string
-	queryParams: Record<string, string>
+	fullUrl: string
 	body: unknown
 	headers: Record<string, string>
-	doNotEncodeQueryParams?: boolean
 	timeoutMs?: number
 	fetchFn: typeof fetch
 	userSignal?: AbortSignal
@@ -53,13 +51,6 @@ export async function httpRequest(
 	config: RequestConfig,
 	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
 ): Promise<Response> {
-	const queryString = config.doNotEncodeQueryParams
-		? Object.entries(config.queryParams)
-				.map(([key, value]) => `${key}=${value}`)
-				.join('&')
-		: new URLSearchParams(config.queryParams).toString()
-	const fullUrl = queryString ? `${config.url}?${queryString}` : config.url
-
 	const timeoutController = new AbortController()
 	const timeout =
 		config.timeoutMs === undefined
@@ -69,10 +60,14 @@ export async function httpRequest(
 	const signal = mergeSignals(timeoutController.signal, config.userSignal)
 
 	try {
-		return await config.fetchFn(fullUrl, {
+		return await config.fetchFn(config.fullUrl, {
 			method: config.method,
 			headers: config.headers,
-			body: buildFetchBody(config.body, config.headers),
+			body: buildFetchBody(
+				config.body,
+				config.headers,
+				(msg) => new ConfigError(msg, ctx())
+			),
 			signal
 		})
 	} catch (error) {
@@ -85,6 +80,7 @@ export async function httpRequest(
 			}
 			throw new RequestAbortedError(ctx(), error)
 		}
+		if (error instanceof ConfigError) throw error
 		throw new NetworkError(
 			error instanceof Error ? error.message : String(error),
 			ctx(),
@@ -142,30 +138,30 @@ export function getRetryDelay(params: {
 	retryDelay: number | ((attempt: number) => number)
 	attempt: number
 	response?: Response
+	maxRetryDelayMs?: number
 }): number {
+	const maxDelay = params.maxRetryDelayMs ?? 30_000
 	const { retryDelay, attempt, response } = params
 	if (response && (response.status === 429 || response.status === 503)) {
 		const retryAfter = response.headers.get('retry-after')
 		if (retryAfter) {
 			const seconds = Number(retryAfter)
-			if (Number.isFinite(seconds)) return seconds * 1000
+			if (Number.isFinite(seconds)) {
+				return Math.min(Math.max(0, seconds * 1000), maxDelay)
+			}
 			const dateMs = Date.parse(retryAfter)
 			if (!Number.isNaN(dateMs)) {
-				return Math.max(0, dateMs - Date.now())
+				return Math.min(Math.max(0, dateMs - Date.now()), maxDelay)
 			}
 		}
 	}
-	if (typeof retryDelay === 'function') return retryDelay(attempt)
-	return retryDelay
+	const delayMs =
+		typeof retryDelay === 'function' ? retryDelay(attempt) : retryDelay
+	return Math.min(delayMs, maxDelay)
 }
 
 export function shouldAttemptRetryOnError(error: unknown): boolean {
-	if (error instanceof HttpResponseError) return false
-	if (error instanceof ResponseValidationError) return false
-	if (error instanceof RequestValidationError) return false
-	if (error instanceof ConfigError) return false
-	if (error instanceof RequestAbortedError) return false
-	return true
+	return !isNonRetryableApiError(error)
 }
 
 export function shouldAttemptRetryOnHttp(retryCtx: RetryContext): boolean {
@@ -178,7 +174,8 @@ type MakeRequestArgs<TValidated> = {
 	config: RequestConfig
 	maxRetries: number
 	retryDelay: number | ((attempt: number) => number)
-	validateFn: (response: Response) => Promise<TValidated>
+	maxRetryDelayMs?: number
+	validateFn: (response: Response, attempt: number) => Promise<TValidated>
 	shouldRetry: (context: RetryContext) => boolean
 	logger?: Pick<Console, 'debug'>
 	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
@@ -201,6 +198,7 @@ export async function makeRequestWithRetry<TValidated>(
 		config,
 		maxRetries,
 		retryDelay,
+		maxRetryDelayMs,
 		validateFn,
 		shouldRetry,
 		logger,
@@ -244,7 +242,8 @@ export async function makeRequestWithRetry<TValidated>(
 					const delayMs = getRetryDelay({
 						retryDelay,
 						attempt: retryCount,
-						response
+						response,
+						maxRetryDelayMs
 					})
 					await onRetry?.({
 						...retryCtx,
@@ -267,18 +266,12 @@ export async function makeRequestWithRetry<TValidated>(
 			}
 
 			return {
-				validatedData: await validateFn(response),
+				validatedData: await validateFn(response, retryCount),
 				retryCount,
 				httpStatus: response.status
 			}
 		} catch (error) {
-			if (
-				error instanceof HttpResponseError ||
-				error instanceof ResponseValidationError ||
-				error instanceof RequestValidationError ||
-				error instanceof ConfigError ||
-				error instanceof RequestAbortedError
-			) {
+			if (isNonRetryableApiError(error)) {
 				throw error
 			}
 
@@ -297,7 +290,8 @@ export async function makeRequestWithRetry<TValidated>(
 			const delayMs = getRetryDelay({
 				retryDelay,
 				attempt: retryCount,
-				response: undefined
+				response: undefined,
+				maxRetryDelayMs
 			})
 			await onRetry?.({
 				...retryCtx,
@@ -320,11 +314,12 @@ export async function validateAndTransformResponse<T extends z.ZodType>(
 	>,
 	response: Response,
 	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
-): Promise<z.infer<T>> {
+): Promise<{ data: z.infer<T>; responseSizeBytes: number }> {
 	const responseHeaders = getHeadersAsObject(response.headers)
+	const text = await response.text()
+	const responseSizeBytes = new TextEncoder().encode(text).length
 	let responseData: unknown
 	if (hasJsonContentType(responseHeaders)) {
-		const text = await response.text()
 		try {
 			responseData = text === '' ? undefined : JSON.parse(text)
 		} catch (error) {
@@ -335,13 +330,14 @@ export async function validateAndTransformResponse<T extends z.ZodType>(
 			)
 		}
 	} else {
-		responseData = await response.text()
+		responseData = text
 	}
 	const transformedData = endpoint.resFormatter
 		? endpoint.resFormatter(responseData, responseHeaders)
 		: responseData
 
-	return validateResponse(endpoint.resSchema, transformedData, ctx)
+	const data = await validateResponse(endpoint.resSchema, transformedData, ctx)
+	return { data, responseSizeBytes }
 }
 
 export function defaultShouldRetry(ctx: RetryContext): boolean {

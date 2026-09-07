@@ -260,7 +260,9 @@ validation and browser exposure rules.
 ### Cache
 
 `cacheFunction` wraps sync or async functions with TTL caching and request
-deduplication.
+deduplication. With `refreshInBackground: true`, stale entries are served
+immediately while a background refresh updates the cache
+(stale-while-revalidate).
 
 ```ts
 import { cacheFunction } from 'hanzio'
@@ -274,6 +276,47 @@ const getUser = cacheFunction({
 const user = await getUser('user_1')
 getUser.clearCache()
 ```
+
+#### External stores (e.g. Redis)
+
+By default entries live in an in-memory `Map`. Pass a `store` to keep entries
+in an external cache instead. A store implements `get`, `set`, and `delete`
+(plus an optional `clear`, used by `clearCache`); hanzio never imports the
+underlying client, so any backend works. Serialization is the adapter's
+responsibility, and the `ttlMs` passed to `set` maps to the store's native
+expiry. External stores are only supported for async functions.
+
+```ts
+import { cacheFunction, type CacheStore, type CacheStoreEntry } from 'hanzio'
+import Redis from 'ioredis'
+
+const redis = new Redis()
+
+const redisStore: CacheStore = {
+	get: async (key) => {
+		const raw = await redis.get(key)
+		return raw ? (JSON.parse(raw) as CacheStoreEntry) : undefined
+	},
+	set: async (key, entry, ttlMs) => {
+		await redis.set(key, JSON.stringify(entry), 'PX', ttlMs)
+	},
+	delete: async (key) => {
+		await redis.del(key)
+	}
+}
+
+const getUser = cacheFunction({
+	name: 'getUser',
+	fn: async (id: string) => ({ id, name: 'Ada' }),
+	cacheTimeMs: 60_000,
+	store: redisStore,
+	onStoreError: (error) => console.error('cache store failed', error)
+})
+```
+
+Store failures never break the cached function: on a failed `get` or `set`
+the wrapped function falls back to calling `fn` directly, and the optional
+`onStoreError` callback is invoked.
 
 ### State Machine
 

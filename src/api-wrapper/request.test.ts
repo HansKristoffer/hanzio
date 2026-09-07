@@ -4,6 +4,7 @@ import {
 	createApiClient,
 	HttpResponseError,
 	type ApiError,
+	ConfigError,
 	isApiError
 } from '.'
 import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
@@ -202,5 +203,60 @@ describe('createApiClient — request & hooks', () => {
 		await expect(
 			(api.request as (key: string) => Promise<unknown>)('missing')
 		).rejects.toThrow('Unknown API endpoint')
+	})
+
+	test('passes supported non-JSON bodies through to fetch unchanged', async () => {
+		let capturedBody: RequestInit['body']
+		mockFetch((_url, options) => {
+			capturedBody = options?.body
+			return Promise.resolve(createMockResponse({ ok: true }))
+		})
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			retries: 0,
+			endpoints: {
+				upload: {
+					method: 'POST',
+					path: '/upload',
+					reqBodySchema: z.unknown(),
+					resSchema: z.object({ ok: z.boolean() })
+				}
+			}
+		})
+		for (const body of [
+			new URLSearchParams({ name: 'Ada' }),
+			new Uint8Array([1, 2, 3]),
+			new ArrayBuffer(3),
+			new DataView(new ArrayBuffer(3)),
+			new ReadableStream(),
+			new Blob(['hello']),
+			new FormData(),
+			'hello'
+		]) {
+			await api.request('upload', { reqBody: body })
+			expect(capturedBody).toBe(body)
+		}
+	})
+
+	test('throws ConfigError for plain-object body without JSON content type', async () => {
+		mockFetch(() => Promise.resolve(createMockResponse({ ok: true })))
+
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			retries: 0,
+			endpoints: {
+				upload: {
+					method: 'POST',
+					path: '/upload',
+					reqBodySchema: z.object({ name: z.string() }),
+					resSchema: z.object({ ok: z.boolean() })
+				}
+			}
+		})
+
+		await expect(
+			api.request('upload', { reqBody: { name: 'file.txt' } })
+		).rejects.toBeInstanceOf(ConfigError)
+		expect(globalThis.fetch).not.toHaveBeenCalled()
 	})
 })

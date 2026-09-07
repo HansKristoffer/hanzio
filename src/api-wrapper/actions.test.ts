@@ -223,4 +223,25 @@ describe('createApiClient — actions', () => {
 		await expect(api.boom()).rejects.toBeInstanceOf(ActionError)
 		await expect(api.fwd()).rejects.toBeInstanceOf(HttpResponseError)
 	})
+
+	test('throws ConfigError when no-input action receives unexpected input', async () => {
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			endpoints: {},
+			actions: {
+				refresh: defineAction({
+					handler: () => 'ok'
+				})
+			}
+		})
+
+		// @ts-expect-error exercise runtime rejection of invalid action options
+		await expect(api.refresh({ foo: 'bar' })).rejects.toBeInstanceOf(
+			ConfigError
+		)
+		// @ts-expect-error exercise runtime rejection of invalid action options
+		await expect(api.refresh({ foo: 'bar' })).rejects.toThrow(
+			'does not accept input'
+		)
+	})
 })

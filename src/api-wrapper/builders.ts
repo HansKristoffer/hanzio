@@ -9,64 +9,88 @@ import type {
 } from './shared'
 import type { ApiEndpoint } from './types'
 
-export function buildUrl(
-	endpoint: ApiEndpoint,
-	params: PathParams | undefined,
-	reqQuery: QueryParams | undefined,
-	baseApiUrls: Record<string, BaseApiUrl>,
-	defaultBaseApiUrl: string | undefined,
-	url: string | undefined,
+export type BuildUrlOptions = {
+	endpoint: ApiEndpoint
+	params: PathParams | undefined
+	queryParams: Record<string, string>
+	baseApiUrls: Record<string, BaseApiUrl>
+	defaultBaseApiUrl: string | undefined
+	url: string | undefined
+	doNotEncodeQueryParams?: boolean
 	configError: (msg: string) => ConfigError
-) {
+}
+
+export function formatQueryString(
+	queryParams: Record<string, string>,
+	doNotEncode?: boolean
+): string {
+	if (Object.keys(queryParams).length === 0) return ''
+	return doNotEncode
+		? Object.entries(queryParams)
+				.map(([key, value]) => `${key}=${value}`)
+				.join('&')
+		: new URLSearchParams(queryParams).toString()
+}
+
+export function buildUrl(options: BuildUrlOptions) {
+	const {
+		endpoint,
+		params,
+		queryParams,
+		baseApiUrls,
+		defaultBaseApiUrl,
+		url,
+		doNotEncodeQueryParams,
+		configError
+	} = options
+
+	let finalUrl: string
 	if (url) {
-		const finalUrl = replacePathParams(url, params, configError)
-		const queryString = new URLSearchParams(
-			buildQueryParamsRaw(endpoint, reqQuery)
-		).toString()
-		return {
-			finalUrl,
-			fullUrl: queryString ? `${finalUrl}?${queryString}` : finalUrl
+		finalUrl = replacePathParams(url, params, configError)
+	} else {
+		const defaultBaseUrl = defaultBaseApiUrl ?? Object.keys(baseApiUrls)[0]
+		if (!defaultBaseUrl) {
+			throw configError('At least one base API URL is required')
 		}
+
+		const baseUrlKey = endpoint.baseApiUrl ?? defaultBaseUrl
+		const configBaseUrl = baseApiUrls[baseUrlKey]
+		if (!configBaseUrl) {
+			throw configError(`Unknown base API URL: ${baseUrlKey}`)
+		}
+
+		const baseUrl =
+			typeof configBaseUrl === 'function' ? configBaseUrl() : configBaseUrl
+		const path =
+			typeof endpoint.path === 'function'
+				? endpoint.path(baseUrl)
+				: endpoint.path
+		// Substitute endpoint parameters without interpreting a port or IPv6 host as one.
+		finalUrl = `${baseUrl}${replacePathParams(path, params, configError)}`
 	}
 
-	const defaultBaseUrl = defaultBaseApiUrl ?? Object.keys(baseApiUrls)[0]
-	if (!defaultBaseUrl) {
-		throw configError('At least one base API URL is required')
-	}
-
-	const baseUrlKey = endpoint.baseApiUrl ?? defaultBaseUrl
-	const configBaseUrl = baseApiUrls[baseUrlKey]
-	if (!configBaseUrl) {
-		throw configError(`Unknown base API URL: ${baseUrlKey}`)
-	}
-
-	const baseUrl =
-		typeof configBaseUrl === 'function' ? configBaseUrl() : configBaseUrl
-	const path =
-		typeof endpoint.path === 'function' ? endpoint.path(baseUrl) : endpoint.path
-	// Substitute endpoint parameters without interpreting a port or IPv6 host as one.
-	const finalUrl = `${baseUrl}${replacePathParams(path, params, configError)}`
-	const queryString = new URLSearchParams(
-		buildQueryParamsRaw(endpoint, reqQuery)
-	).toString()
-
+	const queryString = formatQueryString(queryParams, doNotEncodeQueryParams)
 	return {
 		finalUrl,
 		fullUrl: queryString ? `${finalUrl}?${queryString}` : finalUrl
 	}
 }
 
-export function buildQueryParamsRaw(
+export function buildPathParams(
 	endpoint: ApiEndpoint,
-	query: QueryParams | undefined
-): Record<string, string> {
-	const defaultParams = endpoint.reqDefaultQueryParams ?? {}
-	const merged = { ...defaultParams, ...(query ?? {}) }
-	return Object.fromEntries(
-		Object.entries(merged)
-			.filter(([, value]) => value !== undefined)
-			.map(([key, value]) => [key, String(value)])
-	)
+	params: PathParams | undefined,
+	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
+): PathParams | undefined {
+	if (!endpoint.reqParamsSchema) return params
+
+	try {
+		return endpoint.reqParamsSchema.parse(params) as PathParams
+	} catch (error) {
+		if (error instanceof ZodError) {
+			throw new RequestValidationError(error, 'params', params, ctx())
+		}
+		throw error
+	}
 }
 
 export function buildQueryParams(
