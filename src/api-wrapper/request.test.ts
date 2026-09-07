@@ -39,6 +39,32 @@ describe('createApiClient — request & hooks', () => {
 		)
 	})
 
+	test.each([
+		'http://127.0.0.1:8080',
+		'http://[::1]:8080'
+	])('preserves ports and hosts when replacing endpoint parameters: %s', async (baseUrl) => {
+		mockFetch(() => Promise.resolve(createMockResponse({ ok: true })))
+
+		const api = createApiClient({
+			baseApiUrls: { default: () => baseUrl },
+			endpoints: {
+				getProject: {
+					method: 'GET',
+					path: '/projects/:id',
+					reqParamsSchema: z.object({ id: z.string() }),
+					resSchema: z.object({ ok: z.boolean() })
+				}
+			}
+		})
+
+		await api.request('getProject', { reqParams: { id: 'project/name' } })
+
+		expect(globalThis.fetch).toHaveBeenCalledWith(
+			`${baseUrl}/projects/project%2Fname`,
+			expect.objectContaining({ method: 'GET' })
+		)
+	})
+
 	test('sends JSON bodies and query params', async () => {
 		let capturedUrl = ''
 		let capturedBody: RequestInit['body']

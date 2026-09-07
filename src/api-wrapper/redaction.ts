@@ -17,6 +17,7 @@ const SENSITIVE_BODY_KEYS = new Set([
 	'refresh_token',
 	'secret',
 	'client_secret',
+	'clientsecret',
 	'apikey',
 	'api_key'
 ])
