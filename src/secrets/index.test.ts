@@ -38,6 +38,7 @@ afterEach(() => {
 
 	for (const key of ENV_KEYS) {
 		const value = originalEnv[key]
+
 		if (value === undefined) {
 			delete process.env[key]
 		} else {
@@ -49,6 +50,7 @@ afterEach(() => {
 describe('defineSecretSet', () => {
 	test('loads all configured secrets before resolving', async () => {
 		console.log = mock(() => {})
+
 		const loader: SecretSetLoader<
 			'APP_SECRET' | 'DATABASE_URL'
 		> = async () => ({
@@ -73,11 +75,13 @@ describe('defineSecretSet', () => {
 	test('uses process.env values without calling the loader', async () => {
 		console.log = mock(() => {})
 		process.env.LOCAL_ONLY = 'from-env'
+
 		let calls = 0
 
 		const secretSet = await defineSecretSet(['LOCAL_ONLY'] as const, {
 			loader: async () => {
 				calls++
+
 				return { LOCAL_ONLY: 'from-loader' }
 			}
 		})
@@ -116,11 +120,13 @@ describe('defineSecretSet', () => {
 
 	test('caches secrets and can reload them', async () => {
 		console.log = mock(() => {})
+
 		let calls = 0
 
 		const secretSet = await defineSecretSet(['REMOTE_ONLY'] as const, {
 			loader: async () => {
 				calls++
+
 				return { REMOTE_ONLY: `value-${calls}` }
 			}
 		})
@@ -143,6 +149,7 @@ describe('defineSecretSet', () => {
 		})
 
 		const secrets = secretSet.secrets()
+
 		secrets.APP_SECRET = 'mutated'
 
 		expect(secretSet.secret('APP_SECRET')).toBe('app-secret')
@@ -152,17 +159,19 @@ describe('defineSecretSet', () => {
 	test('custom loaders receive only missing keys and environment', async () => {
 		console.log = mock(() => {})
 		process.env.APP_SECRET = 'from-env'
+
 		const contexts: unknown[] = []
 
 		await defineSecretSet(['APP_SECRET', 'REMOTE_ONLY'] as const, {
 			environment: 'staging',
 			loader: async (context) => {
 				contexts.push(context)
+
 				return { REMOTE_ONLY: 'from-loader' }
 			}
 		})
 
-		expect(contexts).toEqual([
+		expect(contexts).toMatchObject([
 			{
 				keys: ['REMOTE_ONLY'],
 				environment: 'staging'
@@ -177,7 +186,7 @@ describe('defineSecretSet', () => {
 			loader: async () => ({ APP_SECRET: 'app-secret' })
 		})
 
-		expect(getViteDefine(secretSet)).toEqual({
+		expect(getViteDefine(secretSet, { publicKeys: ['APP_SECRET'] })).toEqual({
 			'import.meta.env.APP_SECRET': JSON.stringify('app-secret')
 		})
 	})
@@ -189,7 +198,9 @@ describe('defineSecretSet', () => {
 			loader: async () => ({ APP_SECRET: 'app-secret' })
 		})
 
-		const plugin = viteSecretSetPlugin(secretSet)
+		const plugin = viteSecretSetPlugin(secretSet, {
+			publicKeys: ['APP_SECRET']
+		})
 
 		expect(plugin.name).toBe('hanzio-secret-set')
 		expect(plugin.config()).toEqual({
@@ -201,6 +212,7 @@ describe('defineSecretSet', () => {
 
 	test('logs the selected secrets environment without secret values', async () => {
 		const log = mock(() => {})
+
 		console.log = log
 
 		await defineSecretSet(['APP_SECRET', 'DATABASE_URL'] as const, {
@@ -212,10 +224,13 @@ describe('defineSecretSet', () => {
 		})
 
 		const output = log.mock.calls.join(' ')
-		expect(output).toContain('Loading secrets')
+
+		expect(output).toContain('Loaded secrets')
 		expect(output).toContain('environment=')
 		expect(output).toContain('staging')
 		expect(output).toContain('count=')
+		expect(output).toContain('source=')
+		expect(output).toContain('custom loader')
 		expect(output).toContain('2')
 		expect(output).not.toContain('app-secret')
 		expect(output).not.toContain('postgres://db')
@@ -229,6 +244,7 @@ describe('defineSecretSet', () => {
 		const fetchMock = mock(
 			async (url: string | URL | Request, init: RequestInit = {}) => {
 				const requestUrl = String(url)
+
 				if (
 					requestUrl ===
 					'https://eu.infisical.com/api/v1/auth/universal-auth/login'
@@ -238,6 +254,7 @@ describe('defineSecretSet', () => {
 						clientId: 'client-id',
 						clientSecret: 'client-secret'
 					})
+
 					return Response.json({ accessToken: 'access-token' })
 				}
 
@@ -248,6 +265,7 @@ describe('defineSecretSet', () => {
 					})
 
 					const parsedUrl = new URL(requestUrl)
+
 					expect(parsedUrl.searchParams.get('projectId')).toBe('project-id')
 					expect(parsedUrl.searchParams.get('environment')).toBe('dev')
 					expect(parsedUrl.searchParams.get('secretPath')).toBe('/')
@@ -274,13 +292,18 @@ describe('defineSecretSet', () => {
 				throw new Error(`Unexpected request: ${requestUrl}`)
 			}
 		) as unknown as typeof fetch
+
 		globalThis.fetch = fetchMock
 
 		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
+			organizationId: 'org-a',
 			projectId: 'project-id'
 		})
 
 		expect(secretSet.secret('APP_SECRET')).toBe('from-infisical')
+		expect(
+			(console.log as ReturnType<typeof mock>).mock.calls.join(' ')
+		).toContain('Infisical HTTP')
 		expect(fetchMock).toHaveBeenCalledTimes(2)
 	})
 
@@ -291,6 +314,7 @@ describe('defineSecretSet', () => {
 		const fetchMock = mock(async () => {
 			throw new Error('fetch should not be called')
 		}) as unknown as typeof fetch
+
 		globalThis.fetch = fetchMock
 
 		const secretSet = await defineSecretSet(['REMOTE_ONLY'] as const, {
@@ -323,6 +347,7 @@ describe('defineSecretSet', () => {
 		const fetchMock = mock(async () => {
 			throw new Error('fetch should not be called')
 		}) as unknown as typeof fetch
+
 		globalThis.fetch = fetchMock
 
 		const secretSet = await defineSecretSet(['REMOTE_ONLY'] as const, {
@@ -341,6 +366,7 @@ describe('defineSecretSet', () => {
 		const fetchMock = mock(
 			async (url: string | URL | Request, init: RequestInit = {}) => {
 				const requestUrl = String(url)
+
 				if (
 					requestUrl ===
 					'https://eu.infisical.com/api/v1/auth/universal-auth/login'
@@ -349,6 +375,7 @@ describe('defineSecretSet', () => {
 						clientId: 'explicit-id',
 						clientSecret: 'explicit-secret'
 					})
+
 					return Response.json({ accessToken: 'access-token' })
 				}
 
@@ -366,10 +393,12 @@ describe('defineSecretSet', () => {
 				throw new Error(`Unexpected request: ${requestUrl}`)
 			}
 		) as unknown as typeof fetch
+
 		globalThis.fetch = fetchMock
 
 		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
 			loader: infisicalLoader({
+				organizationId: 'org-a',
 				projectId: 'project-id',
 				clientId: 'explicit-id',
 				clientSecret: 'explicit-secret'
@@ -391,9 +420,11 @@ describe('getSecretEnvironment', () => {
 
 	test('maps production to prod and defaults to dev', () => {
 		process.env.NODE_ENV = 'production'
+
 		expect(getSecretEnvironment()).toBe('prod')
 
 		delete process.env.NODE_ENV
+
 		expect(getSecretEnvironment()).toBe('dev')
 	})
 })

@@ -44,7 +44,8 @@ export function buildUrl(
 		typeof configBaseUrl === 'function' ? configBaseUrl() : configBaseUrl
 	const path =
 		typeof endpoint.path === 'function' ? endpoint.path(baseUrl) : endpoint.path
-	const finalUrl = replacePathParams(`${baseUrl}${path}`, params, configError)
+	// Substitute endpoint parameters without interpreting a port or IPv6 host as one.
+	const finalUrl = `${baseUrl}${replacePathParams(path, params, configError)}`
 	const queryString = new URLSearchParams(
 		buildQueryParamsRaw(endpoint, reqQuery)
 	).toString()

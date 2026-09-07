@@ -218,21 +218,44 @@ await promiseTimeout(250)
 `defineSecretSet` loads a typed set of required secrets from `process.env` or
 Infisical before the rest of the program starts.
 
+When both `INFISICAL_CLIENT_ID` and `INFISICAL_CLIENT_SECRET` are set, it uses
+Infisical's HTTP API. If either is missing, it uses your signed-in Infisical CLI
+session. For local development, install the CLI and run
+`infisical login --domain=https://eu.infisical.com` (or your configured
+`siteUrl`). See the [secrets documentation](src/secrets/README.md) for details.
+
 ```ts
 import { defineSecretSet } from 'hanzio/secrets'
 
 export const backendSecrets = await defineSecretSet(
 	['DATABASE_URL', 'APP_SECRET'] as const,
-	{ projectId: 'infisical-project-id' }
+	{
+		organizationId: 'infisical-organization-id',
+		projectId: 'infisical-project-id'
+	}
 )
 
 const databaseUrl = backendSecrets.secret('DATABASE_URL')
 ```
 
+The required `organizationId` scopes the CLI session per secret set, allowing projects
+in different organizations to run together without switching the active CLI
+organization. This flow reads the CLI user token and fetches secrets over HTTP;
+tokens remain in memory. Use `writeToProcessEnv: false` for multiple sets in one
+process. Both `organizationId` and `projectId` are required for Infisical loading.
+
 For Vite config, `viteSecretSetPlugin(secretSet)` exposes the loaded values as
 `import.meta.env.*` replacements. Use `getViteDefine(secretSet)` if you need the
-raw `define` object. Import Vite helpers from `hanzio/secrets/vite` so browser
-bundles do not pull in the Infisical SDK.
+raw `define` object. Vite helpers accept only `VITE_` keys by default; use an
+explicit `publicKeys` list to select public values from a mixed set. Import
+these helpers from `hanzio/secrets/vite`.
+
+The helper supports `auth: 'auto' | 'http' | 'cli'`, `secretPath`, deadlines,
+cancellation, optional schema validation, per-key source metadata, and
+`writeToProcessEnv: false` for isolated sets. Use `hanzio/secrets/worker` for
+Cloudflare bindings without Node compatibility. See the
+[migration notes](src/secrets/README.md#migration-notes) for stricter environment
+validation and browser exposure rules.
 
 ### Cache
 

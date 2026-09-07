@@ -46,11 +46,17 @@
       "bun": "./src/secrets/vite.ts",
       "import": "./dist/src/secrets/vite.js",
       "default": "./dist/src/secrets/vite.js"
+    },
+    "./secrets/worker": {
+      "types": "./dist/secrets/worker.d.ts",
+      "bun": "./src/secrets/worker.ts",
+      "import": "./dist/src/secrets/worker.js",
+      "default": "./dist/src/secrets/worker.js"
     }
   },
   "scripts": {
     "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/secrets/index.ts ./src/secrets/infisical.ts ./src/secrets/loaders.ts ./src/secrets/vite.ts --outdir ./dist --target node --packages external",
+    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/secrets/index.ts ./src/secrets/infisical.ts ./src/secrets/loaders.ts ./src/secrets/vite.ts ./src/secrets/worker.ts --outdir ./dist --target node --packages external",
     "build:types": "tsgo -p tsconfig.build.json",
     "prepublishOnly": "bun run build",
     "publish:patch": "npm version patch && npm publish",
@@ -60,14 +66,17 @@
     "lint": "bun run typecheck && bun biome check",
     "lint:write": "bun run typecheck && bun biome check --write",
     "typecheck": "tsgo --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:secrets:runtime": "bun run build && node scripts/verify-secrets.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
     "@types/bun": "latest",
     "@typescript/native-preview": "^7.0.0-dev.20260306.1",
     "husky": "^9.1.7",
+    "miniflare": "^4.20260730.0",
     "typescript": "^5.7.0",
+    "vite": "^8.2.2",
     "zod": "^4.3.6"
   },
   "peerDependencies": {
