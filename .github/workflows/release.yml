@@ -1,19 +1,26 @@
 # Runs on every push to main. Release Please opens or updates the release PR;
 # merging that PR creates the v* tag and GitHub release, and this same run then
-# calls publish.yml. Tags made by the workflow token do not trigger workflows,
-# so the publish is called directly instead of listening for the tag.
+# publishes to npm via trusted publishing (OIDC). Tags made by the workflow
+# token do not trigger workflows, so publish runs here instead of on the tag.
+#
+# workflow_dispatch skips Release Please and publishes the checked-out main by
+# hand. npm validates the *calling* workflow's filename, so the trusted
+# publisher on npmjs.com is release.yml and publish must live in this file.
 name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 concurrency:
   group: release
   cancel-in-progress: false
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 jobs:
   release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       released: ${{ steps.rp.outputs.release_created }}
@@ -22,8 +29,19 @@ jobs:
         id: rp
   publish-npm:
     needs: release-please
-    if: needs.release-please.outputs.released == 'true'
-    uses: ./.github/workflows/publish.yml
-    permissions:
-      contents: read
-      id-token: write
+    if: always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.released == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: bun install --frozen-lockfile
+      # Trusted publishing needs npm >= 11.5.1; Node 22 bundles an older one.
+      - run: npm install -g npm@latest
+      # prepublishOnly runs `bun run build`.
+      - run: npm publish --provenance --access public
