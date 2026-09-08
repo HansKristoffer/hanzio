@@ -615,3 +615,12 @@ bun test
 bun run lint
 bun run build
 ```
+
+## Releasing
+
+Releases are cut by [Release Please](https://github.com/googleapis/release-please)
+from squash-merged PR titles written as conventional commits. `feat:` bumps the
+minor version, `fix:` the patch, `feat!:` or a `BREAKING CHANGE:` footer the
+major. `chore:`, `ci:`, `docs:`, `refactor:` and `test:` do not release. Each
+merge to main updates a release PR; merging that PR tags the version and
+publishes to npm. Nobody runs `npm publish` locally.
