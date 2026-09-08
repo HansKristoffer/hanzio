@@ -44,4 +44,5 @@ jobs:
       # Trusted publishing needs npm >= 11.5.1; Node 22 bundles an older one.
       - run: npm install -g npm@latest
       # prepublishOnly runs `bun run build`.
-      - run: npm publish --provenance --access public
+      # Verbose so the OIDC token exchange result shows up in the job log.
+      - run: npm publish --provenance --access public --loglevel verbose
