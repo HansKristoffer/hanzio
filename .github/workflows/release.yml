@@ -1,0 +1,29 @@
+# Runs on every push to main. Release Please opens or updates the release PR;
+# merging that PR creates the v* tag and GitHub release, and this same run then
+# calls publish.yml. Tags made by the workflow token do not trigger workflows,
+# so the publish is called directly instead of listening for the tag.
+name: Release
+on:
+  push:
+    branches: [main]
+concurrency:
+  group: release
+  cancel-in-progress: false
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.rp.outputs.release_created }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+  publish-npm:
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: read
+      id-token: write
