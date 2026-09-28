@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/HansKristoffer/hanzio/compare/v1.3.0...v2.0.0) (2026-09-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* expand utility exports and split runtime entrypoints ([#6](https://github.com/HansKristoffer/hanzio/issues/6))
+
+### Features
+
+* expand utility exports and split runtime entrypoints ([#6](https://github.com/HansKristoffer/hanzio/issues/6)) ([ac11863](https://github.com/HansKristoffer/hanzio/commit/ac1186340229875b61a917b8ec588064077012d1))
+
 ## [1.3.0](https://github.com/HansKristoffer/hanzio/compare/v1.2.0...v1.3.0) (2026-09-08)
 
 
