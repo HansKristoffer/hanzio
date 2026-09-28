@@ -688,3 +688,5 @@ export default class PQueue<
 		}
 	}
 }
+
+export { PQueue }

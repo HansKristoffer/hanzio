@@ -8,6 +8,7 @@ import type {
 	ApiClientConfigNoActions,
 	ApiClientConfigWithActions,
 	ApiEndpoint,
+	ApiMiddlewareContext,
 	ApiWrapperResponse,
 	RequestInput
 } from './types'
@@ -20,9 +21,16 @@ import {
 	buildRequestBody,
 	buildUrl
 } from './builders'
+import { err, exponentialBackoff, ok } from '../promise'
 import { createActionCache, makeDefineAction } from './actions-impl'
 import { reportApiError } from './error-reporting'
-import { ActionError, ApiError, ConfigError } from './errors'
+import {
+	ActionError,
+	ApiError,
+	ApiResponseError,
+	ConfigError,
+	RequestValidationError
+} from './errors'
 import { calculateSizeInMb } from './size'
 import {
 	defaultShouldRetry,
@@ -33,13 +41,15 @@ import {
 
 type AnyApiAction = ApiAction<unknown, unknown>
 
+// The actions overload comes first: TypeScript fixes a context-sensitive
+// `actions` factory's parameter types on the first overload it tries.
 export interface CreateApiClientFn {
-	<T extends Record<string, ApiEndpoint>>(
-		apiConfig: ApiClientConfigNoActions<T>
-	): ApiClient<T, Record<string, never>>
 	<T extends Record<string, ApiEndpoint>, A extends Record<string, ApiAction>>(
 		apiConfig: ApiClientConfigWithActions<T, A>
 	): ApiClient<T, A>
+	<T extends Record<string, ApiEndpoint>>(
+		apiConfig: ApiClientConfigNoActions<T>
+	): ApiClient<T, Record<string, never>>
 }
 
 function isActionInvokeOptionsOnly(
@@ -135,19 +145,25 @@ function createApiClientImpl<
 		}
 
 		baseContext.method = endpoint.method
+		// Until the full URL is built, errors (e.g. input validation) show the path template.
+		if (typeof endpoint.path === 'string') baseContext.url = endpoint.path
 
 		let pathParams: PathParams | undefined
-		let queryParams: Record<string, string>
+		let queryParams: QueryParams
 		let body: unknown
 		let headers: Record<string, string>
 		try {
 			pathParams = buildPathParams(endpoint, rawInput.reqParams, ctx)
 			queryParams = buildQueryParams(endpoint, rawInput.reqQuery, ctx)
 			body = buildRequestBody(endpoint, rawInput.reqBody, ctx)
+			const defaultHeaders =
+				typeof apiConfig.defaultHeaders === 'function'
+					? await apiConfig.defaultHeaders()
+					: apiConfig.defaultHeaders
 			headers = buildHeaders(
 				endpoint,
 				rawInput.reqHeaders,
-				apiConfig.defaultHeaders ?? {},
+				defaultHeaders ?? {},
 				ctx
 			)
 		} catch (e) {
@@ -177,8 +193,10 @@ function createApiClientImpl<
 		baseContext.requestHeaders = headers
 		baseContext.requestBody = body
 
-		if (apiConfig.onRequest) {
-			try {
+		const execute = async (): Promise<
+			ApiWrapperResponse<z.infer<T[K]['resSchema']>>
+		> => {
+			if (apiConfig.onRequest) {
 				const result = await apiConfig.onRequest({
 					endpoint: endpointName,
 					method: endpoint.method,
@@ -189,32 +207,38 @@ function createApiClientImpl<
 				})
 				if (result?.headers) headers = result.headers
 				if (result && 'body' in result) body = result.body
-			} catch (e) {
-				if (e instanceof ApiError) throw await reportApiError(e, apiConfig)
-				throw e
 			}
-		}
 
-		const config: RequestConfig = {
-			method: endpoint.method,
-			fullUrl,
-			body,
-			headers,
-			timeoutMs: input.timeoutMs ?? apiConfig.timeoutMs,
-			fetchFn: input.fetch ?? apiConfig.fetch ?? fetch,
-			userSignal: input.signal
-		}
+			const config: RequestConfig = {
+				method: endpoint.method,
+				fullUrl,
+				body,
+				headers,
+				timeoutMs: input.timeoutMs ?? apiConfig.timeoutMs,
+				fetchFn: input.fetch ?? apiConfig.fetch ?? fetch,
+				userSignal: input.signal
+			}
 
-		try {
 			const result = await makeRequestWithRetry({
 				config,
 				maxRetries,
-				retryDelay: apiConfig.retryDelayMs ?? 300,
+				retryDelay:
+					apiConfig.retryDelayMs ??
+					((attempt) =>
+						exponentialBackoff(attempt + 1, {
+							baseMs: 300,
+							maxMs: apiConfig.maxRetryDelayMs
+						})),
 				maxRetryDelayMs: apiConfig.maxRetryDelayMs,
-				validateFn: (response, attempt) =>
-					validateAndTransformResponse(endpoint, response, (over) =>
-						ctx({ attempt, ...over })
-					),
+				validateFn: async (response, attempt) => {
+					const validated = await validateAndTransformResponse(
+						endpoint,
+						response,
+						(over) => ctx({ attempt, ...over })
+					)
+					await runCheckResponse(validated.data, response.status, attempt)
+					return validated
+				},
 				shouldRetry: apiConfig.shouldRetry ?? defaultShouldRetry,
 				logger: apiConfig.logger,
 				ctx,
@@ -226,24 +250,76 @@ function createApiClientImpl<
 				onRetry: apiConfig.onRetry
 			})
 
-			const responseTimeMs = elapsed()
-			const responseSizeMb =
-				result.validatedData.responseSizeBytes / (1024 * 1024)
-			const requestBodySizeMb = calculateSizeInMb(config.body)
-
 			return {
 				data: result.validatedData.data as z.infer<T[K]['resSchema']>,
-				requestBodySizeMb,
-				responseSizeMb,
-				responseTimeMs,
+				requestBodySizeMb: calculateSizeInMb(config.body),
+				responseSizeMb: result.validatedData.responseSizeBytes / (1024 * 1024),
+				responseTimeMs: elapsed(),
 				httpStatus: result.httpStatus,
 				retryCount: result.retryCount
 			}
-		} catch (error) {
-			if (error instanceof ApiError)
-				throw await reportApiError(error, apiConfig)
-			throw error
 		}
+
+		const runCheckResponse = async (
+			data: unknown,
+			httpStatus: number,
+			attempt: number
+		) => {
+			if (!apiConfig.checkResponse) return
+			try {
+				await apiConfig.checkResponse(data, {
+					endpoint: endpointName,
+					method: endpoint.method,
+					url: fullUrl,
+					httpStatus,
+					attempt,
+					meta: input.meta
+				})
+			} catch (error) {
+				if (error instanceof ApiError) throw error
+				throw new ApiResponseError(
+					error instanceof Error ? error.message : String(error),
+					data,
+					ctx({ attempt }),
+					error
+				)
+			}
+		}
+
+		// Innermost step: errors are redacted and passed to onError before any
+		// middleware sees them.
+		const run = async () => {
+			try {
+				return await execute()
+			} catch (error) {
+				if (error instanceof ApiError) {
+					throw await reportApiError(error, apiConfig)
+				}
+				throw error
+			}
+		}
+
+		const middleware = apiConfig.use ?? []
+		if (middleware.length === 0) return run()
+
+		const middlewareContext: ApiMiddlewareContext = {
+			client: apiConfig.name,
+			endpoint: String(endpointKey),
+			method: endpoint.method,
+			url: fullUrl,
+			headers,
+			meta: input.meta
+		}
+		const dispatch = (
+			index: number
+		): Promise<ApiWrapperResponse<z.infer<T[K]['resSchema']>>> => {
+			const current = middleware[index]
+			if (!current) return run()
+			return current(middlewareContext, () => dispatch(index + 1)) as Promise<
+				ApiWrapperResponse<z.infer<T[K]['resSchema']>>
+			>
+		}
+		return dispatch(0)
 	}
 
 	async function invokeAction(
@@ -273,9 +349,21 @@ function createApiClientImpl<
 
 		apiConfig.logger?.debug?.('Action start', { action: actionName })
 
+		let parsedInput = inputForHandler
+		if (action.input) {
+			const parsed = await action.input.safeParseAsync(rawInput)
+			if (!parsed.success) {
+				throw await reportApiError(
+					new RequestValidationError(parsed.error, 'input', rawInput, ctx()),
+					apiConfig
+				)
+			}
+			parsedInput = parsed.data
+		}
+
 		try {
 			const result = await action.handler({
-				input: inputForHandler,
+				input: parsedInput,
 				api: proxy,
 				signal: options.signal,
 				meta: options.meta,
@@ -329,7 +417,31 @@ function createApiClientImpl<
 		)
 	}) as unknown as ApiClient<T, A>['request']
 
-	const client = { request, cache } as ApiClient<T, A>
+	// Resolves to `Result` instead of throwing ApiErrors; other errors still throw.
+	const safe = new Proxy(
+		{},
+		{
+			get(_target, prop) {
+				if (typeof prop !== 'string') return undefined
+				if (!(prop in apiConfig.endpoints) && !(prop in actions)) {
+					return undefined
+				}
+				return async (...args: unknown[]) => {
+					try {
+						const method = Reflect.get(proxy, prop) as (
+							...a: unknown[]
+						) => Promise<unknown>
+						return ok(await method(...args))
+					} catch (error) {
+						if (error instanceof ApiError) return err(error)
+						throw error
+					}
+				}
+			}
+		}
+	)
+
+	const client = { request, cache, safe } as unknown as ApiClient<T, A>
 	const proxy: ApiClient<T, A> = new Proxy(client, {
 		get(target, prop, receiver) {
 			if (prop in target || typeof prop !== 'string') {
@@ -362,6 +474,24 @@ function createApiClientImpl<
 		}) as Record<string, AnyApiAction>
 	} else if (rawActions) {
 		actions = rawActions as Record<string, AnyApiAction>
+	}
+
+	const reserved = [
+		...Object.keys(apiConfig.endpoints),
+		...Object.keys(actions)
+	].filter((key) => key in client)
+	if (reserved.length > 0) {
+		throw new ConfigError(
+			`Endpoint/action name(s) are reserved by the client: ${reserved.join(', ')}`,
+			{
+				endpoint: reserved[0]!,
+				method: 'GET',
+				url: '',
+				attempt: 0,
+				maxRetries: 0,
+				elapsedMs: 0
+			}
+		)
 	}
 
 	const collisions = Object.keys(actions).filter(

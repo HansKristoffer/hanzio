@@ -22,6 +22,18 @@ const SENSITIVE_BODY_KEYS = new Set([
 	'api_key'
 ])
 
+// Query strings also carry API keys and presigned-URL signatures.
+const SENSITIVE_QUERY_KEYS = new Set([
+	...SENSITIVE_BODY_KEYS,
+	'key',
+	'code',
+	'sig',
+	'signature',
+	'x-amz-signature',
+	'x-amz-credential',
+	'x-amz-security-token'
+])
+
 function redactHeaders(
 	headers: Record<string, string> | undefined
 ): Record<string, string> | undefined {
@@ -52,9 +64,39 @@ function redactBody(body: unknown): unknown {
 	return out
 }
 
+/** Replaces values of sensitive query parameters (`?api_key=…`) in a URL. */
+export function redactUrl(url: string): string {
+	const queryStart = url.indexOf('?')
+	if (queryStart === -1) return url
+	const hashStart = url.indexOf('#', queryStart)
+	const query = url.slice(
+		queryStart + 1,
+		hashStart === -1 ? undefined : hashStart
+	)
+	const redacted = query
+		.split('&')
+		.map((pair) => {
+			const [key = ''] = pair.split('=', 1)
+			return SENSITIVE_QUERY_KEYS.has(decodeKey(key).toLowerCase())
+				? `${key}=[REDACTED]`
+				: pair
+		})
+		.join('&')
+	return `${url.slice(0, queryStart + 1)}${redacted}${hashStart === -1 ? '' : url.slice(hashStart)}`
+}
+
+function decodeKey(key: string): string {
+	try {
+		return decodeURIComponent(key.replace(/\+/g, ' '))
+	} catch {
+		return key
+	}
+}
+
 export function defaultRedactContext(ctx: ApiErrorContext): ApiErrorContext {
 	return {
 		...ctx,
+		url: redactUrl(ctx.url),
 		requestHeaders: redactHeaders(ctx.requestHeaders),
 		requestBody: redactBody(ctx.requestBody),
 		meta: ctx.meta

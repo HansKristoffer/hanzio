@@ -40,11 +40,44 @@ export const terminalColors = {
 
 export type TerminalColor = keyof typeof terminalColors
 
+const noColors = Object.fromEntries(
+	Object.keys(terminalColors).map((key) => [key, ''])
+) as unknown as typeof terminalColors
+
+function getProcessEnvironment():
+	| Record<string, string | undefined>
+	| undefined {
+	return typeof process === 'undefined' ? undefined : process.env
+}
+
+function isDev(): boolean {
+	return getProcessEnvironment()?.NODE_ENV !== 'production'
+}
+
+/**
+ * Whether stdout should get ANSI colors: `NO_COLOR` disables, `FORCE_COLOR`
+ * (other than `'0'`) enables, otherwise only when stdout is a TTY.
+ * Always false where `process` doesn't exist (browsers, Workers).
+ */
+export function supportsColor(): boolean {
+	const env = getProcessEnvironment()
+	if (!env || env.NO_COLOR) return false
+	if (env.FORCE_COLOR !== undefined && env.FORCE_COLOR !== '0') return true
+	return process.stdout?.isTTY === true
+}
+
 /** Log levels supported by the logger */
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
-/** Attributes that can be passed to log methods */
-export type LogAttributes = Record<string, string | number | boolean>
+const levelRank: Record<LogLevel, number> = {
+	debug: 0,
+	info: 1,
+	warn: 2,
+	error: 3
+}
+
+/** Attributes that can be passed to log methods. Objects are rendered as compact JSON. */
+export type LogAttributes = Record<string, unknown>
 
 /** Log method signature */
 export type LogMethod = (message: string, attributes?: LogAttributes) => void
@@ -55,6 +88,8 @@ export type CoolLogger = {
 	info: LogMethod
 	warn: LogMethod
 	error: LogMethod
+	/** Returns a logger that adds `attributes` to every entry (call-site attributes win). */
+	child: (attributes: LogAttributes) => CoolLogger
 }
 
 /** Color config per log level */
@@ -65,11 +100,24 @@ const levelColors: Record<LogLevel, { badge: string; text: string }> = {
 	error: { badge: terminalColors.red, text: terminalColors.brightRed }
 }
 
+function formatValue(value: unknown): string {
+	if (value instanceof Error) return String(value)
+	if (typeof value !== 'object' || value === null) return String(value)
+	try {
+		return JSON.stringify(value)
+	} catch (_error) {
+		return '[Unserializable]'
+	}
+}
+
 /** Format attributes as a compact colored string */
 function formatAttributes(attrs?: LogAttributes): string {
 	if (!attrs || Object.keys(attrs).length === 0) return ''
 	const formatted = Object.entries(attrs)
-		.map(([k, v]) => `${terminalColors.dim}${k}=${terminalColors.reset}${v}`)
+		.map(
+			([k, v]) =>
+				`${terminalColors.dim}${k}=${terminalColors.reset}${formatValue(v)}`
+		)
 		.join(' ')
 	return ` ${formatted}`
 }
@@ -78,9 +126,11 @@ function formatAttributes(attrs?: LogAttributes): string {
  * Options for creating a cool logger
  */
 export type CoolLoggerOptions = {
-	/** Only use colors in development (default: true) */
+	/** Only use colors in development (default: true). Colors also require `supportsColor()`. */
 	colorsInDevOnly?: boolean
-	/** Callback for each log entry (e.g., to add to OpenTelemetry span) */
+	/** Lowest level that is printed (default: 'debug' in dev, 'info' in production) */
+	minLevel?: LogLevel
+	/** Callback for each log entry, before level filtering (e.g., to add to OpenTelemetry span) */
 	onLog?: (level: LogLevel, message: string, attributes?: LogAttributes) => void
 }
 
@@ -93,40 +143,53 @@ export type CoolLoggerOptions = {
  * logger.info('User logged in', { userId: '123' })
  * logger.warn('Rate limit approaching', { remaining: 10 })
  * logger.error('Payment failed', { reason: 'insufficient_funds' })
+ * const requestLog = logger.child({ requestId: 'abc' })
  * ```
  */
 export function createCoolLogger(options: CoolLoggerOptions = {}): CoolLogger {
-	const { colorsInDevOnly = true, onLog } = options
-	const isDev = process.env.NODE_ENV !== 'production'
-	const useColors = colorsInDevOnly ? isDev : true
+	const dev = isDev()
+	const {
+		colorsInDevOnly = true,
+		minLevel = dev ? 'debug' : 'info',
+		onLog
+	} = options
+	const useColors = supportsColor() && (!colorsInDevOnly || dev)
 
-	const createLogMethod =
-		(level: LogLevel): LogMethod =>
-		(message, attributes) => {
-			// Call the onLog callback if provided
-			onLog?.(level, message, attributes)
+	const createLogger = (base?: LogAttributes): CoolLogger => {
+		const createLogMethod =
+			(level: LogLevel): LogMethod =>
+			(message, callAttributes) => {
+				const attributes =
+					base && callAttributes
+						? { ...base, ...callAttributes }
+						: (callAttributes ?? base)
 
-			// Skip debug logs in production
-			if (level === 'debug' && !isDev) return
+				onLog?.(level, message, attributes)
 
-			if (useColors) {
-				const { badge, text } = levelColors[level]
-				const label = level.toUpperCase().padEnd(5)
-				const attrStr = formatAttributes(attributes)
-				console.log(
-					`${badge}[${label}]${terminalColors.reset} ${text}${message}${terminalColors.reset}${attrStr}`
-				)
-			} else {
-				console[level](`[${level.toUpperCase()}]`, message, attributes ?? '')
+				if (levelRank[level] < levelRank[minLevel]) return
+
+				if (useColors) {
+					const { badge, text } = levelColors[level]
+					const label = level.toUpperCase().padEnd(5)
+					const attrStr = formatAttributes(attributes)
+					console.log(
+						`${badge}[${label}]${terminalColors.reset} ${text}${message}${terminalColors.reset}${attrStr}`
+					)
+				} else {
+					console[level](`[${level.toUpperCase()}]`, message, attributes ?? '')
+				}
 			}
-		}
 
-	return {
-		debug: createLogMethod('debug'),
-		info: createLogMethod('info'),
-		warn: createLogMethod('warn'),
-		error: createLogMethod('error')
+		return {
+			debug: createLogMethod('debug'),
+			info: createLogMethod('info'),
+			warn: createLogMethod('warn'),
+			error: createLogMethod('error'),
+			child: (attributes) => createLogger({ ...base, ...attributes })
+		}
 	}
+
+	return createLogger()
 }
 
 /**
@@ -151,11 +214,10 @@ export function logOperationSummary(
 	options: { devOnly?: boolean; error?: Error | unknown } = {}
 ): void {
 	const { devOnly = true, error } = options
-	const isDev = process.env.NODE_ENV !== 'production'
 
-	if (devOnly && !isDev) return
+	if (devOnly && !isDev()) return
 
-	const c = terminalColors
+	const c = supportsColor() ? terminalColors : noColors
 	const statusIcon = success
 		? `${c.brightGreen}✓${c.reset}`
 		: `${c.brightRed}✗${c.reset}`
@@ -172,7 +234,34 @@ export function logOperationSummary(
 }
 
 /**
- * Helper to colorize text for console output
+ * Starts timing an operation. Call the returned `done` to log it via `logOperationSummary`.
+ *
+ * @example
+ * ```ts
+ * const done = startOperation('user.create')
+ * try {
+ *   await doSomething()
+ *   done()
+ * } catch (error) {
+ *   done(false, error)
+ * }
+ * ```
+ */
+export function startOperation(
+	operationName: string,
+	options: { devOnly?: boolean } = {}
+): (success?: boolean, error?: unknown) => void {
+	const start = performance.now()
+	return (success = true, error) =>
+		logOperationSummary(operationName, performance.now() - start, success, {
+			...options,
+			error
+		})
+}
+
+/**
+ * Helper to colorize text for console output. Returns `text` unchanged in
+ * production or when colors aren't supported (see `supportsColor`).
  *
  * @example
  * ```ts
@@ -185,8 +274,7 @@ export function colorize(
 	color: TerminalColor,
 	...modifiers: TerminalColor[]
 ): string {
-	const isDev = process.env.NODE_ENV !== 'production'
-	if (!isDev) return text
+	if (!isDev() || !supportsColor()) return text
 
 	const colorCodes = [
 		terminalColors[color],
@@ -210,9 +298,8 @@ export function logBanner(
 	options: { devOnly?: boolean } = {}
 ): void {
 	const { devOnly = true } = options
-	const isDev = process.env.NODE_ENV !== 'production'
 
-	if (devOnly && !isDev) {
+	if ((devOnly && !isDev()) || !supportsColor()) {
 		console.log(`=== ${text} ===`)
 		return
 	}

@@ -57,12 +57,17 @@ export function buildFetchBody(
 	if (body === undefined || body === null) return undefined
 	if (body instanceof FormData || body instanceof Blob) return body
 	if (hasJsonContentType(headers)) return JSON.stringify(body)
-	if (
-		typeof body === 'object' &&
-		(Object.getPrototypeOf(body) === Object.prototype ||
-			Object.getPrototypeOf(body) === null) &&
-		configError
-	) {
+	const isJsonLike =
+		Array.isArray(body) ||
+		(typeof body === 'object' &&
+			(Object.getPrototypeOf(body) === Object.prototype ||
+				Object.getPrototypeOf(body) === null))
+	// Objects and arrays default to JSON when no Content-Type was chosen.
+	if (isJsonLike && getHeader(headers, 'content-type') === undefined) {
+		headers['Content-Type'] = 'application/json'
+		return JSON.stringify(body)
+	}
+	if (isJsonLike && configError) {
 		throw configError(
 			'Request body is a plain object but Content-Type is not application/json'
 		)

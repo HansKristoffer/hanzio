@@ -1,4 +1,5 @@
 import { ZodError } from 'zod'
+import { buildQueryString } from '../url'
 import { type ConfigError, RequestValidationError } from './errors'
 import { normalizeHeaders } from './headers'
 import type {
@@ -12,24 +13,12 @@ import type { ApiEndpoint } from './types'
 export type BuildUrlOptions = {
 	endpoint: ApiEndpoint
 	params: PathParams | undefined
-	queryParams: Record<string, string>
+	queryParams: QueryParams
 	baseApiUrls: Record<string, BaseApiUrl>
 	defaultBaseApiUrl: string | undefined
 	url: string | undefined
 	doNotEncodeQueryParams?: boolean
 	configError: (msg: string) => ConfigError
-}
-
-export function formatQueryString(
-	queryParams: Record<string, string>,
-	doNotEncode?: boolean
-): string {
-	if (Object.keys(queryParams).length === 0) return ''
-	return doNotEncode
-		? Object.entries(queryParams)
-				.map(([key, value]) => `${key}=${value}`)
-				.join('&')
-		: new URLSearchParams(queryParams).toString()
 }
 
 export function buildUrl(options: BuildUrlOptions) {
@@ -46,7 +35,7 @@ export function buildUrl(options: BuildUrlOptions) {
 
 	let finalUrl: string
 	if (url) {
-		finalUrl = replacePathParams(url, params, configError)
+		finalUrl = replaceUrlPathParams(url, params, configError)
 	} else {
 		const defaultBaseUrl = defaultBaseApiUrl ?? Object.keys(baseApiUrls)[0]
 		if (!defaultBaseUrl) {
@@ -66,10 +55,15 @@ export function buildUrl(options: BuildUrlOptions) {
 				? endpoint.path(baseUrl)
 				: endpoint.path
 		// Substitute endpoint parameters without interpreting a port or IPv6 host as one.
-		finalUrl = `${baseUrl}${replacePathParams(path, params, configError)}`
+		finalUrl = joinUrlPath(
+			baseUrl,
+			replacePathParams(path, params, configError)
+		)
 	}
 
-	const queryString = formatQueryString(queryParams, doNotEncodeQueryParams)
+	const queryString = buildQueryString(queryParams, {
+		encode: !doNotEncodeQueryParams
+	})
 	return {
 		finalUrl,
 		fullUrl: queryString ? `${finalUrl}?${queryString}` : finalUrl
@@ -97,7 +91,7 @@ export function buildQueryParams(
 	endpoint: ApiEndpoint,
 	query: QueryParams | undefined,
 	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
-): Record<string, string> {
+): QueryParams {
 	const defaultParams = endpoint.reqDefaultQueryParams ?? {}
 	let parsedQuery: QueryParams
 	if (endpoint.reqQuerySchema) {
@@ -112,13 +106,7 @@ export function buildQueryParams(
 	} else {
 		parsedQuery = query ?? {}
 	}
-	const merged = { ...defaultParams, ...parsedQuery }
-
-	return Object.fromEntries(
-		Object.entries(merged)
-			.filter(([, value]) => value !== undefined)
-			.map(([key, value]) => [key, String(value)])
-	)
+	return { ...defaultParams, ...parsedQuery }
 }
 
 export function buildRequestBody(
@@ -185,12 +173,31 @@ export function buildHeaders(
 	})
 }
 
+/** Joins with exactly one `/`; empty paths and query-only paths are appended as-is. */
+export function joinUrlPath(base: string, path: string): string {
+	if (!path || path.startsWith('?')) return `${base}${path}`
+	return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
+}
+
+/** Substitutes `:params` in the path of a full URL only, so ports are left alone. */
+function replaceUrlPathParams(
+	url: string,
+	params: PathParams | undefined,
+	configError: (msg: string) => ConfigError
+): string {
+	const origin = url.match(/^[a-z][a-z\d+.-]*:\/\/[^/?#]*/i)?.[0] ?? ''
+	const rest = url.slice(origin.length)
+	const suffixIndex = rest.search(/[?#]/)
+	const path = suffixIndex === -1 ? rest : rest.slice(0, suffixIndex)
+	return `${origin}${replacePathParams(path, params, configError)}${rest.slice(path.length)}`
+}
+
 export function replacePathParams(
 	path: string,
 	params: PathParams | undefined,
 	configError: (msg: string) => ConfigError
 ): string {
-	return path.replace(/:(\w+)/g, (_, key: string) => {
+	return path.replace(/:([A-Za-z_]\w*)/g, (_, key: string) => {
 		const value = params?.[key]
 		if (value === undefined) {
 			throw configError(`Missing required path parameter: ${key}`)

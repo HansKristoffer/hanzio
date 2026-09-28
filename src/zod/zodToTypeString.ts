@@ -1,222 +1,225 @@
 import type { z } from 'zod'
+import { isRecord } from '../guard'
 
-// Helper to safely get a property from an unknown def object
-function getDefProp<T>(def: unknown, prop: string): T | undefined {
-	return (def as Record<string, unknown>)?.[prop] as T | undefined
+export type Schema = z.core.$ZodType
+export type Def = z.core.$ZodTypes['_zod']['def']
+
+// Schemas on the current render path, so recursive (lazy/getter) schemas terminate
+const visiting = new Set<Schema>()
+
+export function walk<T>(schema: Schema, onCycle: T, fn: (def: Def) => T): T {
+	if (visiting.has(schema)) return onCycle
+	visiting.add(schema)
+	try {
+		return fn(defOf(schema))
+	} finally {
+		visiting.delete(schema)
+	}
+}
+
+export function defOf(schema: Schema): Def {
+	return (schema as z.core.$ZodTypes)._zod.def
+}
+
+// Pipes are described by their output, except transforms, whose output can't be inspected
+function pipeTarget(def: z.core.$ZodPipeDef): Schema {
+	return defOf(def.out).type === 'transform' ? def.in : def.out
+}
+
+function literal(value: unknown): string {
+	if (typeof value === 'string') return JSON.stringify(value)
+	return typeof value === 'bigint' ? `${value}n` : String(value)
+}
+
+// Parenthesize unions/intersections where they'd otherwise bind wrongly (e.g. `(a | b)[]`)
+function wrap(type: string): string {
+	return /[|&]/.test(type) ? `(${type})` : type
 }
 
 /**
  * Convert a Zod schema to a human-readable TypeScript-like interface string
  */
-export function zodToTypeString(schema: z.ZodType, indent = 0): string {
-	const pad = '  '.repeat(indent)
-	const innerPad = '  '.repeat(indent + 1)
+export function zodToTypeString(schema: Schema, indent = 0): string {
+	return walk(schema, 'unknown', (def) => {
+		const pad = '  '.repeat(indent)
+		const innerPad = '  '.repeat(indent + 1)
+		const render = (inner: Schema) => zodToTypeString(inner, indent)
 
-	// Get the schema definition - try both Zod 4 and Zod 3 patterns
-	const def =
-		(schema as unknown as { _zod?: { def: unknown } })._zod?.def ??
-		(schema as unknown as { _def: unknown })._def
+		switch (def.type) {
+			case 'object': {
+				const entries = Object.entries(def.shape)
+				if (entries.length === 0) return '{}'
 
-	if (!def) return 'unknown'
+				const fields = entries.map(([key, value]) => {
+					const valueDef = defOf(value)
+					const isOptional = valueDef.type === 'optional'
+					const typeStr = zodToTypeString(
+						isOptional ? valueDef.innerType : value,
+						indent + 1
+					)
+					return `${innerPad}${key}${isOptional ? '?' : ''}: ${typeStr}`
+				})
 
-	// Zod 4 uses 'type' property with lowercase values (e.g., 'object', 'string')
-	// Zod 3 uses 'typeName' with 'Zod' prefix (e.g., 'ZodObject', 'ZodString')
-	const schemaType =
-		getDefProp<string>(def, 'type') ?? getDefProp<string>(def, 'typeName')
+				return `{\n${fields.join('\n')}\n${pad}}`
+			}
 
-	switch (schemaType) {
-		// Zod 4 lowercase types
-		case 'object': {
-			const shape = getDefProp<Record<string, z.ZodType>>(def, 'shape')
-			if (!shape || Object.keys(shape).length === 0) return '{}'
+			case 'array':
+				return `${wrap(render(def.element))}[]`
 
-			const fields = Object.entries(shape).map(([key, value]) => {
-				// Zod 4: check value.type === 'optional', Zod 3: check _def.typeName
-				const valueType = getDefProp<string>(
-					(value as unknown as { _zod?: { def: unknown } })._zod?.def ??
-						(value as unknown as { _def?: unknown })._def,
-					'type'
+			case 'tuple': {
+				const items = def.items.map(render)
+				if (def.rest) items.push(`...${wrap(render(def.rest))}[]`)
+				return `[${items.join(', ')}]`
+			}
+
+			case 'string':
+			case 'number':
+			case 'bigint':
+			case 'boolean':
+			case 'symbol':
+			case 'null':
+			case 'undefined':
+			case 'void':
+			case 'never':
+			case 'any':
+			case 'unknown':
+				return def.type
+
+			case 'date':
+				return 'Date'
+
+			case 'record':
+				return `Record<${render(def.keyType)}, ${render(def.valueType)}>`
+
+			case 'map':
+				return `Map<${render(def.keyType)}, ${render(def.valueType)}>`
+
+			case 'set':
+				return `Set<${render(def.valueType)}>`
+
+			case 'promise':
+				return `Promise<${render(def.innerType)}>`
+
+			case 'enum':
+				return Object.values(def.entries).map(literal).join(' | ')
+
+			case 'literal':
+				return def.values.map(literal).join(' | ')
+
+			case 'union':
+				return def.options.map(render).join(' | ')
+
+			case 'intersection':
+				return `${wrap(render(def.left))} & ${wrap(render(def.right))}`
+
+			case 'optional':
+				return `${render(def.innerType)} | undefined`
+
+			case 'nullable':
+				return `${render(def.innerType)} | null`
+
+			case 'nonoptional': {
+				const innerDef = defOf(def.innerType)
+				return render(
+					innerDef.type === 'optional' ? innerDef.innerType : def.innerType
 				)
-				const isOptional = valueType === 'optional'
-				const innerSchema = isOptional
-					? (getDefProp<z.ZodType>(
-							(value as unknown as { _zod?: { def: unknown } })._zod?.def ??
-								(value as unknown as { _def?: unknown })._def,
-							'innerType'
-						) ?? value)
-					: value
-				const typeStr = zodToTypeString(innerSchema, indent + 1)
-				return `${innerPad}${key}${isOptional ? '?' : ''}: ${typeStr}`
-			})
+			}
 
-			return `{\n${fields.join('\n')}\n${pad}}`
+			case 'default':
+			case 'prefault':
+			case 'catch':
+			case 'readonly':
+				return render(def.innerType)
+
+			case 'lazy':
+				return render(def.getter())
+
+			case 'pipe':
+				return render(pipeTarget(def))
+
+			default:
+				return 'unknown'
 		}
-
-		case 'array': {
-			// Zod 4 uses 'element', Zod 3 uses 'type'
-			const itemType =
-				getDefProp<z.ZodType>(def, 'element') ??
-				getDefProp<z.ZodType>(def, 'type')
-			return itemType ? `${zodToTypeString(itemType, indent)}[]` : 'unknown[]'
-		}
-
-		case 'string':
-			return 'string'
-
-		case 'number':
-			return 'number'
-
-		case 'boolean':
-			return 'boolean'
-
-		case 'date':
-			return 'Date'
-
-		case 'null':
-			return 'null'
-
-		case 'undefined':
-			return 'undefined'
-
-		case 'any':
-			return 'any'
-
-		case 'unknown':
-			return 'unknown'
-
-		case 'record': {
-			const valueType = getDefProp<z.ZodType>(def, 'valueType')
-			return valueType
-				? `Record<string, ${zodToTypeString(valueType, indent)}>`
-				: 'Record<string, unknown>'
-		}
-
-		case 'enum': {
-			const values = getDefProp<string[]>(def, 'values')
-			return values ? values.map((v) => `"${v}"`).join(' | ') : 'string'
-		}
-
-		case 'literal': {
-			const value = getDefProp<unknown>(def, 'value')
-			return typeof value === 'string' ? `"${value}"` : String(value)
-		}
-
-		case 'union': {
-			const options = getDefProp<z.ZodType[]>(def, 'options')
-			return options
-				? options.map((o) => zodToTypeString(o, indent)).join(' | ')
-				: 'unknown'
-		}
-
-		case 'optional': {
-			const inner = getDefProp<z.ZodType>(def, 'innerType')
-			return inner ? `${zodToTypeString(inner, indent)} | undefined` : 'unknown'
-		}
-
-		case 'nullable': {
-			const inner = getDefProp<z.ZodType>(def, 'innerType')
-			return inner ? `${zodToTypeString(inner, indent)} | null` : 'unknown'
-		}
-
-		case 'default': {
-			const inner = getDefProp<z.ZodType>(def, 'innerType')
-			return inner ? zodToTypeString(inner, indent) : 'unknown'
-		}
-
-		// Zod 3 compatibility (with 'Zod' prefix)
-		case 'ZodObject':
-		case 'ZodArray':
-		case 'ZodString':
-		case 'ZodNumber':
-		case 'ZodBoolean':
-		case 'ZodDate':
-		case 'ZodNull':
-		case 'ZodUndefined':
-		case 'ZodAny':
-		case 'ZodUnknown':
-		case 'ZodRecord':
-		case 'ZodEnum':
-		case 'ZodLiteral':
-		case 'ZodUnion':
-		case 'ZodOptional':
-		case 'ZodNullable':
-		case 'ZodDefault':
-			// For Zod 3, recurse with the lowercase version
-			return zodToTypeString(schema, indent)
-
-		default:
-			return 'unknown'
-	}
+	})
 }
 
 /**
- * Generate example JSON from a Zod schema
+ * Generate example JSON from a Zod schema. Values are JSON-safe: dates become ISO
+ * strings, bigints numbers, sets arrays and maps/records empty objects.
  */
-export function zodToExample(schema: z.ZodType): unknown {
-	const def =
-		(schema as unknown as { _zod?: { def: unknown } })._zod?.def ??
-		(schema as unknown as { _def: unknown })._def
-	if (!def) return null
-
-	// Zod 4 uses 'type', Zod 3 uses 'typeName'
-	const schemaType =
-		getDefProp<string>(def, 'type') ?? getDefProp<string>(def, 'typeName')
-
-	switch (schemaType) {
-		case 'object': {
-			const shape = getDefProp<Record<string, z.ZodType>>(def, 'shape')
-			if (!shape) return {}
-			const result: Record<string, unknown> = {}
-			for (const [key, value] of Object.entries(shape)) {
-				const valueType = getDefProp<string>(
-					(value as unknown as { _zod?: { def: unknown } })._zod?.def ??
-						(value as unknown as { _def?: unknown })._def,
-					'type'
-				)
-				const isOptional = valueType === 'optional'
-				if (!isOptional) {
-					result[key] = zodToExample(value)
+export function zodToExample(schema: Schema): unknown {
+	return walk(schema, null, (def): unknown => {
+		switch (def.type) {
+			case 'object': {
+				const result: Record<string, unknown> = {}
+				for (const [key, value] of Object.entries(def.shape)) {
+					if (defOf(value).type !== 'optional') {
+						result[key] = zodToExample(value)
+					}
 				}
+				return result
 			}
-			return result
-		}
 
-		case 'array': {
-			// Zod 4 uses 'element', Zod 3 uses 'type'
-			const itemType =
-				getDefProp<z.ZodType>(def, 'element') ??
-				getDefProp<z.ZodType>(def, 'type')
 			// Always return array with one item for better example
-			return itemType ? [zodToExample(itemType)] : []
+			case 'array':
+				return [zodToExample(def.element)]
+
+			case 'set':
+				return [zodToExample(def.valueType)]
+
+			case 'tuple':
+				return def.items.map(zodToExample)
+
+			case 'string':
+				return ''
+
+			case 'number':
+			case 'bigint':
+				return 0
+
+			case 'boolean':
+				return false
+
+			case 'date':
+				return new Date(0).toISOString()
+
+			case 'enum':
+				return Object.values(def.entries)[0]
+
+			case 'literal':
+				return def.values[0]
+
+			case 'union':
+				return zodToExample(def.options[0] as Schema)
+
+			case 'intersection': {
+				const left = zodToExample(def.left)
+				const right = zodToExample(def.right)
+				return isRecord(left) && isRecord(right) ? { ...left, ...right } : left
+			}
+
+			case 'optional':
+			case 'nullable':
+			case 'nonoptional':
+			case 'default':
+			case 'prefault':
+			case 'catch':
+			case 'readonly':
+			case 'promise':
+				return zodToExample(def.innerType)
+
+			case 'lazy':
+				return zodToExample(def.getter())
+
+			case 'pipe':
+				return zodToExample(pipeTarget(def))
+
+			case 'record':
+			case 'map':
+				return {}
+
+			default:
+				return null
 		}
-
-		case 'string':
-			return ''
-
-		case 'number':
-			return 0
-
-		case 'boolean':
-			return false
-
-		case 'enum': {
-			const values = getDefProp<string[]>(def, 'values')
-			return values?.[0] ?? ''
-		}
-
-		case 'literal':
-			return getDefProp<unknown>(def, 'value')
-
-		case 'optional':
-		case 'default': {
-			const inner = getDefProp<z.ZodType>(def, 'innerType')
-			return inner ? zodToExample(inner) : null
-		}
-
-		case 'record':
-			return {}
-
-		default:
-			return null
-	}
+	})
 }

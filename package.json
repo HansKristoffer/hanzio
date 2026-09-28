@@ -28,12 +28,79 @@
     "dist",
     "!src/**/*.test.ts"
   ],
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "bun": "./src/index.ts",
       "import": "./dist/src/index.js",
       "default": "./dist/src/index.js"
+    },
+    "./zod": {
+      "types": "./dist/zod/index.d.ts",
+      "bun": "./src/zod/index.ts",
+      "import": "./dist/src/zod/index.js",
+      "default": "./dist/src/zod/index.js"
+    },
+    "./api-wrapper": {
+      "types": "./dist/api-wrapper/index.d.ts",
+      "bun": "./src/api-wrapper/index.ts",
+      "import": "./dist/src/api-wrapper/index.js",
+      "default": "./dist/src/api-wrapper/index.js"
+    },
+    "./api-wrapper/testing": {
+      "types": "./dist/api-wrapper/testing.d.ts",
+      "bun": "./src/api-wrapper/testing.ts",
+      "import": "./dist/src/api-wrapper/testing.js",
+      "default": "./dist/src/api-wrapper/testing.js"
+    },
+    "./jwt": {
+      "types": "./dist/jwt/index.d.ts",
+      "bun": "./src/jwt/index.ts",
+      "import": "./dist/src/jwt/index.js",
+      "default": "./dist/src/jwt/index.js"
+    },
+    "./sitemap": {
+      "types": "./dist/sitemap/index.d.ts",
+      "bun": "./src/sitemap/index.ts",
+      "import": "./dist/src/sitemap/index.js",
+      "default": "./dist/src/sitemap/index.js"
+    },
+    "./p-queue": {
+      "types": "./dist/p-queue/index.d.ts",
+      "bun": "./src/p-queue/index.ts",
+      "import": "./dist/src/p-queue/index.js",
+      "default": "./dist/src/p-queue/index.js"
+    },
+    "./cool-console-log": {
+      "types": "./dist/cool-console-log/index.d.ts",
+      "bun": "./src/cool-console-log/index.ts",
+      "import": "./dist/src/cool-console-log/index.js",
+      "default": "./dist/src/cool-console-log/index.js"
+    },
+    "./format": {
+      "types": "./dist/format/index.d.ts",
+      "bun": "./src/format/index.ts",
+      "import": "./dist/src/format/index.js",
+      "default": "./dist/src/format/index.js"
+    },
+    "./crypto": {
+      "types": "./dist/crypto/index.d.ts",
+      "bun": "./src/crypto/index.ts",
+      "import": "./dist/src/crypto/index.js",
+      "default": "./dist/src/crypto/index.js"
+    },
+    "./storage": {
+      "types": "./dist/storage/index.d.ts",
+      "bun": "./src/storage/index.ts",
+      "import": "./dist/src/storage/index.js",
+      "default": "./dist/src/storage/index.js"
+    },
+    "./i18n": {
+      "types": "./dist/i18n/index.d.ts",
+      "bun": "./src/i18n/index.ts",
+      "import": "./dist/src/i18n/index.js",
+      "default": "./dist/src/i18n/index.js"
     },
     "./secrets": {
       "types": "./dist/secrets/index.d.ts",
@@ -55,8 +122,8 @@
     }
   },
   "scripts": {
-    "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/secrets/index.ts ./src/secrets/infisical.ts ./src/secrets/loaders.ts ./src/secrets/vite.ts ./src/secrets/worker.ts --outdir ./dist --target node --packages external",
+    "build": "rm -rf dist && bun run build:js && bun run build:types",
+    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/api-wrapper/testing.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/cool-console-log/index.ts ./src/format/index.ts ./src/crypto/index.ts ./src/storage/index.ts ./src/i18n/index.ts ./src/secrets/index.ts ./src/secrets/vite.ts ./src/secrets/worker.ts --outdir ./dist --target node --packages external --splitting",
     "build:types": "tsgo -p tsconfig.build.json",
     "prepublishOnly": "bun run build",
     "test": "bun test",
@@ -64,10 +131,12 @@
     "lint:write": "bun run typecheck && bun biome check --write",
     "typecheck": "tsgo --noEmit",
     "prepare": "husky",
-    "test:secrets:runtime": "bun run build && node scripts/verify-secrets.mjs"
+    "test:secrets:runtime": "bun run build && node scripts/verify-secrets.mjs",
+    "test:exports": "bun run build && node scripts/verify-exports.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
+    "@opentelemetry/api": "^1.9.1",
     "@types/bun": "latest",
     "@typescript/native-preview": "^7.0.0-dev.20260306.1",
     "husky": "^9.1.7",
@@ -78,5 +147,10 @@
   },
   "peerDependencies": {
     "zod": "^4.3.6"
+  },
+  "peerDependenciesMeta": {
+    "zod": {
+      "optional": true
+    }
   }
 }

@@ -109,23 +109,41 @@ export type PartialStringSwitchCases<T extends string, R> = {
 // Object input mode types
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Cases for object input with custom key - all cases required */
-export type ObjectSwitchCases<T, K extends keyof T, R> = T[K] extends string
-	? {
-			[V in T[K]]: (value: Extract<T, Record<K, V>>) => R | Promise<R>
-		}
+/** Discriminant values supported in object mode. Cases are keyed by `${value}`. */
+type Discriminant = string | number | boolean
+
+/** Discriminant values of `V` whose case key (`${value}`) is in `Keys` */
+type ValuesForKeys<V, Keys> = V extends Discriminant
+	? `${V}` extends `${Keys & (string | number)}`
+		? V
+		: never
 	: never
+
+type ObjectCases<T, K extends keyof T, R> = {
+	[V in Extract<T[K], Discriminant> as `${V}`]: (
+		value: Extract<T, Record<K, V>>
+	) => R
+}
+
+type PartialObjectCases<T, K extends keyof T, R> = {
+	[V in Extract<T[K], Discriminant> as `${V}`]?: (
+		value: Extract<T, Record<K, V>>
+	) => R
+}
+
+/** Cases for object input with custom key - all cases required */
+export type ObjectSwitchCases<
+	T,
+	K extends keyof T,
+	R
+> = T[K] extends Discriminant ? ObjectCases<T, K, R | Promise<R>> : never
 
 /** Partial cases for object input with custom key (when default is provided) */
 export type PartialObjectSwitchCases<
 	T,
 	K extends keyof T,
 	R
-> = T[K] extends string
-	? {
-			[V in T[K]]?: (value: Extract<T, Record<K, V>>) => R | Promise<R>
-		}
-	: never
+> = T[K] extends Discriminant ? PartialObjectCases<T, K, R | Promise<R>> : never
 
 type Handler = (value: unknown) => unknown
 type CasesRecord = Record<string, Handler | undefined>
@@ -156,8 +174,7 @@ export function typedSwitch<
 export function typedSwitch<
 	T extends object,
 	K extends keyof T,
-	TKey extends T[K] & string,
-	Cases extends { [V in TKey]: (value: Extract<T, Record<K, V>>) => unknown }
+	Cases extends ObjectCases<T, K, unknown>
 >(value: T, key: K, cases: Cases): RawCasesReturnType<Cases>
 
 // Object input with key - partial cases allowed (with default)
@@ -165,10 +182,9 @@ export function typedSwitch<
 export function typedSwitch<
 	T extends object,
 	K extends keyof T,
-	TKey extends T[K] & string,
-	Cases extends { [V in TKey]?: (value: Extract<T, Record<K, V>>) => unknown },
+	Cases extends PartialObjectCases<T, K, unknown>,
 	DefaultCase extends (
-		value: Exclude<T, Record<K, HandledCaseKeys<Cases> & string>>
+		value: Exclude<T, Record<K, ValuesForKeys<T[K], HandledCaseKeys<Cases>>>>
 	) => unknown
 >(
 	value: T,
@@ -204,13 +220,7 @@ export function typedSwitch<
 	Constraint,
 	T extends Record<string, unknown> = Record<string, unknown>,
 	K extends keyof T = keyof T
->(
-	value: T,
-	key: K,
-	cases: {
-		[V in T[K] & string]: (value: Extract<T, Record<K, V>>) => Constraint
-	}
-): Constraint
+>(value: T, key: K, cases: ObjectCases<T, K, Constraint>): Constraint
 export function typedSwitch<
 	Constraint,
 	T extends Record<string, unknown> = Record<string, unknown>,
@@ -218,11 +228,7 @@ export function typedSwitch<
 >(
 	value: T,
 	key: K,
-	cases: {
-		[V in T[K] & string]: (
-			value: Extract<T, Record<K, V>>
-		) => Constraint | Promise<Constraint>
-	}
+	cases: ObjectCases<T, K, Constraint | Promise<Constraint>>
 ): Constraint | Promise<Constraint>
 
 // Object input with key - partial cases allowed with return constraint (with default)
@@ -233,9 +239,7 @@ export function typedSwitch<
 >(
 	value: T,
 	key: K,
-	cases: {
-		[V in T[K] & string]?: (value: Extract<T, Record<K, V>>) => Constraint
-	},
+	cases: PartialObjectCases<T, K, Constraint>,
 	defaultCase: (value: T) => Constraint
 ): Constraint
 export function typedSwitch<
@@ -245,11 +249,7 @@ export function typedSwitch<
 >(
 	value: T,
 	key: K,
-	cases: {
-		[V in T[K] & string]?: (
-			value: Extract<T, Record<K, V>>
-		) => Constraint | Promise<Constraint>
-	},
+	cases: PartialObjectCases<T, K, Constraint | Promise<Constraint>>,
 	defaultCase: (value: T) => Constraint | Promise<Constraint>
 ): Constraint | Promise<Constraint>
 
@@ -282,13 +282,17 @@ export function typedSwitch(
 		const discriminantValue = (value as Record<string, unknown>)[
 			discriminantKey
 		]
-		if (typeof discriminantValue !== 'string') {
+		if (
+			typeof discriminantValue !== 'string' &&
+			typeof discriminantValue !== 'number' &&
+			typeof discriminantValue !== 'boolean'
+		) {
 			throw new Error(
-				`Invalid discriminant value for key "${discriminantKey}": expected string, received ${typeof discriminantValue}`
+				`Invalid discriminant value for key "${discriminantKey}": expected string, number or boolean, received ${typeof discriminantValue}`
 			)
 		}
 
-		key = discriminantValue
+		key = String(discriminantValue)
 		cases = casesOrDefault as CasesRecord
 		defaultHandler = defaultCase
 	}
@@ -317,4 +321,20 @@ export function typedSwitch(
 	throw new Error(
 		`Unhandled case: ${key}${contextSuffix}.${availableCasesSuffix}`
 	)
+}
+
+/**
+ * Exhaustiveness helper for regular `switch` statements. Place it in the
+ * `default` branch: it only type-checks when every case has been handled, and
+ * throws if an unexpected value reaches it at runtime.
+ *
+ * @example
+ * switch (status) {
+ *   case 'success': return 1
+ *   case 'error': return 0
+ *   default: return assertNever(status)
+ * }
+ */
+export function assertNever(value: never, message?: string): never {
+	throw new Error(message ?? `Unexpected value: ${String(value)}`)
 }

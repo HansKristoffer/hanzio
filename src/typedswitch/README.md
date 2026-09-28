@@ -24,6 +24,7 @@ bun add typedswitch
 - **Async-aware** — Async handlers preserve their `Promise` return type
 - **Default handlers** — Handle remaining cases with a fallback
 - **Return type constraints** — Enforce that all handlers return a specific type
+- **`assertNever`** — Exhaustiveness checking for regular `switch` statements
 
 ## Usage
 
@@ -59,7 +60,7 @@ const result = typedSwitch(status, {
 
 ### Discriminated Union Input
 
-Switch on objects with a string-valued discriminant property (like `type`, `kind`, `status`, etc.):
+Switch on objects with a string, number, or boolean discriminant property (like `type`, `kind`, `status`, etc.):
 
 ```typescript
 type Event =
@@ -92,6 +93,26 @@ const info = typedSwitch(order, 'status', {
   pending: (o) => `Created: ${o.createdAt}`,
   completed: (o) => `Done: ${o.completedAt}`,
   cancelled: (o) => `Cancelled: ${o.reason}`,
+})
+```
+
+Number and boolean discriminants work too. Cases are keyed by `String(value)`:
+
+```typescript
+type Response =
+  | { code: 200; body: string }
+  | { code: 404; path: string }
+
+typedSwitch(response, 'code', {
+  200: (r) => r.body,              // r: { code: 200; body: string }
+  404: (r) => `Missing ${r.path}`, // r: { code: 404; path: string }
+})
+
+type Result = { ok: true; value: number } | { ok: false; error: string }
+
+typedSwitch(result, 'ok', {
+  true: (r) => r.value,
+  false: (r) => r.error,
 })
 ```
 
@@ -240,7 +261,24 @@ For discriminated unions:
 // Throws: "Unhandled case: unknown (discriminant key: "type"). Available cases: click, scroll, keypress"
 ```
 
-Object discriminants must be strings. Missing or non-string discriminant values throw a runtime error if they reach `typedSwitch`.
+Object discriminants must be strings, numbers, or booleans. Missing or other discriminant values throw a runtime error if they reach `typedSwitch`.
+
+## `assertNever`
+
+For regular `switch` statements, put `assertNever` in the `default` branch. It fails to compile if a case is missing, and throws at runtime if an unexpected value gets through:
+
+```typescript
+import { assertNever } from 'typedswitch'
+
+function label(status: Status) {
+  switch (status) {
+    case 'success': return 'Done'
+    case 'error': return 'Failed'
+    case 'pending': return 'Waiting'
+    default: return assertNever(status) // compile error if a case is missing
+  }
+}
+```
 
 ## API Reference
 
@@ -254,7 +292,7 @@ Switch on a string literal with partial cases and a default fallback.
 
 ### `typedSwitch(object, key, cases)`
 
-Switch on a discriminated union using the specified discriminant key.
+Switch on a discriminated union using the specified discriminant key (string, number, or boolean values).
 
 ### `typedSwitch(object, key, cases, defaultHandler)`
 
@@ -267,6 +305,10 @@ Switch on a string literal while enforcing that each handler returns `Constraint
 ### `typedSwitch<Constraint>(object, key, cases)`
 
 Switch on a discriminated union while enforcing that each handler returns `Constraint` or `Promise<Constraint>`.
+
+### `assertNever(value, message?)`
+
+Takes a `never` value and always throws (`Unexpected value: ${value}` or `message`). Use it for exhaustive `switch` statements.
 
 ### Exported Helper Types
 

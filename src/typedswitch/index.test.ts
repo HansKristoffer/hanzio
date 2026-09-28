@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, test } from 'bun:test'
 import {
+	assertNever,
 	typedSwitch,
 	type StringSwitchCases,
 	type PartialStringSwitchCases,
@@ -262,12 +263,12 @@ describe('typedSwitch runtime behavior', () => {
 					key: () => 'keyed'
 				})
 			).toThrow(
-				'Invalid discriminant value for key "type": expected string, received undefined'
+				'Invalid discriminant value for key "type": expected string, number or boolean, received undefined'
 			)
 		})
 
-		test('throws clear error when discriminant value is not a string', () => {
-			const invalidEvent = { type: 123 } as unknown as Event
+		test('throws clear error when discriminant value is not a primitive', () => {
+			const invalidEvent = { type: {} } as unknown as Event
 
 			expect(() =>
 				typedSwitch(invalidEvent, 'type', {
@@ -276,7 +277,7 @@ describe('typedSwitch runtime behavior', () => {
 					key: () => 'keyed'
 				})
 			).toThrow(
-				'Invalid discriminant value for key "type": expected string, received number'
+				'Invalid discriminant value for key "type": expected string, number or boolean, received object'
 			)
 		})
 
@@ -320,6 +321,62 @@ describe('typedSwitch runtime behavior', () => {
 
 			expect(result).toBe(4)
 			expectTypeOf(result).toEqualTypeOf<number>()
+		})
+
+		test('supports number discriminants', () => {
+			type Response =
+				| { code: 200; body: string }
+				| { code: 404; path: string }
+				| { code: 500; error: Error }
+			const res = asType<Response>({ code: 404, path: '/x' })
+
+			const result = typedSwitch(res, 'code', {
+				200: (r) => {
+					expectTypeOf(r).toEqualTypeOf<{ code: 200; body: string }>()
+					return r.body
+				},
+				404: (r) => {
+					expectTypeOf(r).toEqualTypeOf<{ code: 404; path: string }>()
+					return `missing ${r.path}`
+				},
+				500: (r) => r.error.message
+			})
+
+			expect(result).toBe('missing /x')
+			expectTypeOf(result).toEqualTypeOf<string>()
+		})
+
+		test('supports boolean discriminants', () => {
+			type Result = { ok: true; value: number } | { ok: false; error: string }
+			const handle = (r: Result) =>
+				typedSwitch(r, 'ok', {
+					true: (s) => {
+						expectTypeOf(s).toEqualTypeOf<{ ok: true; value: number }>()
+						return s.value
+					},
+					false: (f) => {
+						expectTypeOf(f).toEqualTypeOf<{ ok: false; error: string }>()
+						return f.error
+					}
+				})
+
+			expect(handle({ ok: true, value: 1 })).toBe(1)
+			expect(handle({ ok: false, error: 'bad' })).toBe('bad')
+		})
+
+		test('number discriminant default receives only unhandled members', () => {
+			type Response =
+				| { code: 200; body: string }
+				| { code: 404 }
+				| { code: 500 }
+			const res = asType<Response>({ code: 500 })
+
+			const result = typedSwitch(res, 'code', { 200: (r) => r.body }, (r) => {
+				expectTypeOf(r).toEqualTypeOf<{ code: 404 } | { code: 500 }>()
+				return r.code
+			})
+
+			expect(result).toBe(500)
 		})
 
 		test('throws clear error when object mode is called without a string discriminant key', () => {
@@ -714,15 +771,38 @@ describe('typedSwitch negative type checking', () => {
 		expect(assertTypeErrors).toBeDefined()
 	})
 
-	test('rejects non-string object discriminant values', () => {
+	test('reusable case maps accept number discriminants', () => {
 		type NumericEvent = { type: 1; value: string } | { type: 2; value: number }
 
+		const cases: ObjectSwitchCases<NumericEvent, 'type', string> = {
+			1: (e) => e.value,
+			2: (e) => String(e.value)
+		}
+
+		expect(
+			typedSwitch(asType<NumericEvent>({ type: 2, value: 3 }), 'type', cases)
+		).toBe('3')
+	})
+
+	test('rejects missing number cases without default', () => {
+		type NumericEvent = { type: 1 } | { type: 2 }
+
 		const assertTypeErrors = () => {
-			// @ts-expect-error object mode only supports string-valued discriminants
-			const cases: ObjectSwitchCases<NumericEvent, 'type', string> = {
-				1: () => 'one',
-				2: () => 'two'
-			}
+			// @ts-expect-error missing the 2 case without a default handler
+			typedSwitch(asType<NumericEvent>({ type: 1 }), 'type', {
+				1: () => 'one'
+			})
+		}
+
+		expect(assertTypeErrors).toBeDefined()
+	})
+
+	test('rejects non-primitive object discriminant values', () => {
+		type ObjectKeyed = { type: { a: 1 } }
+
+		const assertTypeErrors = () => {
+			// @ts-expect-error object mode only supports string, number and boolean discriminants
+			const cases: ObjectSwitchCases<ObjectKeyed, 'type', string> = {}
 
 			expect(cases).toBeDefined()
 		}
@@ -936,6 +1016,17 @@ describe('typedSwitch return constraint mode', () => {
 		expectTypeOf(result).toEqualTypeOf<HasId>()
 	})
 
+	test('constraint: works with number discriminants', () => {
+		type Response = { code: 200 } | { code: 404 }
+		const result = typedSwitch<HasId>(asType<Response>({ code: 404 }), 'code', {
+			200: () => ({ id: 'ok' }),
+			404: () => ({ id: 'missing' })
+		})
+
+		expectTypeOf(result).toEqualTypeOf<HasId>()
+		expect(result).toEqual({ id: 'missing' })
+	})
+
 	test('constraint: works with async handlers', async () => {
 		const result = typedSwitch<HasId>(getStatus('success'), {
 			success: async () => ({ id: '1', name: 'John' }),
@@ -978,5 +1069,40 @@ describe('typedSwitch return constraint mode', () => {
 		})
 
 		expectTypeOf(result).toEqualTypeOf<string | number>()
+	})
+})
+
+describe('assertNever', () => {
+	test('type-checks exhaustive switches and throws at runtime', () => {
+		const label = (status: 'success' | 'error') => {
+			switch (status) {
+				case 'success':
+					return 'ok'
+				case 'error':
+					return 'fail'
+				default:
+					return assertNever(status)
+			}
+		}
+
+		expect(label('success')).toBe('ok')
+		expect(() => label('pending' as 'success')).toThrow(
+			'Unexpected value: pending'
+		)
+		expect(() => assertNever('x' as never, 'custom')).toThrow('custom')
+	})
+
+	test('rejects non-exhaustive switches', () => {
+		const assertTypeErrors = (status: 'success' | 'error') => {
+			switch (status) {
+				case 'success':
+					return 'ok'
+				default:
+					// @ts-expect-error 'error' is not handled
+					return assertNever(status)
+			}
+		}
+
+		expect(assertTypeErrors).toBeDefined()
 	})
 })
