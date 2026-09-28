@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { z } from 'zod'
 import {
 	createApiClient,
@@ -236,6 +236,72 @@ describe('createApiClient — retries & transport', () => {
 
 		await api.request('get')
 		expect(retries).toEqual([1, 2])
+	})
+
+	test('default retry delay is exponential backoff with jitter', async () => {
+		let calls = 0
+		mockFetch(() => {
+			calls++
+			if (calls < 4) {
+				return Promise.resolve(createMockResponse({}, { status: 500 }))
+			}
+			return Promise.resolve(createMockResponse({ ok: true }))
+		})
+
+		const delays: number[] = []
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			onRetry: (ctx) => {
+				delays.push(ctx.delayMs)
+			},
+			endpoints: {
+				get: {
+					method: 'GET',
+					path: '/x',
+					resSchema: z.object({ ok: z.boolean() })
+				}
+			}
+		})
+
+		// Full jitter scales 300 * 2^n by Math.random(); 0.01 keeps the test fast.
+		const random = spyOn(Math, 'random').mockReturnValue(0.01)
+		try {
+			await api.request('get')
+		} finally {
+			random.mockRestore()
+		}
+		expect(delays).toEqual([3, 6, 12])
+	})
+
+	test('aborting during the retry sleep throws RequestAbortedError', async () => {
+		let calls = 0
+		mockFetch(() => {
+			calls++
+			return Promise.resolve(createMockResponse({}, { status: 500 }))
+		})
+
+		const controller = new AbortController()
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			retryDelayMs: 10_000,
+			onRetry: () => {
+				setTimeout(() => controller.abort(), 5)
+			},
+			endpoints: {
+				get: {
+					method: 'GET',
+					path: '/x',
+					resSchema: z.object({ ok: z.boolean() })
+				}
+			}
+		})
+
+		const startedAt = Date.now()
+		await expect(
+			api.request('get', { signal: controller.signal })
+		).rejects.toBeInstanceOf(RequestAbortedError)
+		expect(Date.now() - startedAt).toBeLessThan(1000)
+		expect(calls).toBe(1)
 	})
 
 	test('invalid Retry-After falls back to the configured delay and cap', () => {

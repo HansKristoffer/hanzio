@@ -886,4 +886,165 @@ describe('cacheFunction', () => {
 			expect(entries.size).toBe(0)
 		})
 	})
+
+	describe('cache keys', () => {
+		test('object argument key order does not matter', () => {
+			let callCount = 0
+			const cached = cacheFunction({
+				name: 'key-order',
+				fn: (filters: Record<string, number>) => ++callCount + (filters.a ?? 0)
+			})
+
+			expect(cached({ a: 1, b: 2 })).toBe(2)
+			expect(cached({ b: 2, a: 1 })).toBe(2)
+			expect(callCount).toBe(1)
+		})
+	})
+
+	describe('maxEntries', () => {
+		test('evicts the least recently used entry', () => {
+			const calls: string[] = []
+			const cached = cacheFunction({
+				name: 'lru',
+				fn: (id: string) => {
+					calls.push(id)
+					return id
+				},
+				maxEntries: 2
+			})
+
+			cached('a')
+			cached('b')
+			cached('a') // hit: `b` is now least recently used
+			cached('c') // evicts `b`
+			cached('a')
+			cached('b')
+
+			expect(calls).toEqual(['a', 'b', 'c', 'b'])
+			cached.clearCache()
+		})
+	})
+
+	describe('invalidate', () => {
+		test('drops the entry for the given arguments only', () => {
+			let callCount = 0
+			const cached = cacheFunction({
+				name: 'invalidate',
+				fn: (id: string) => `${id}-${++callCount}`
+			})
+
+			cached('a')
+			cached('b')
+			cached.invalidate('a')
+
+			expect(cached('a')).toBe('a-3')
+			expect(cached('b')).toBe('b-2')
+			cached.clearCache()
+		})
+
+		test('an in-flight call does not repopulate an invalidated entry', async () => {
+			let callCount = 0
+			const cached = cacheFunction({
+				name: 'invalidate-inflight',
+				fn: async () => {
+					await new Promise((r) => setTimeout(r, 10))
+					return ++callCount
+				}
+			})
+
+			const first = cached()
+			cached.invalidate()
+			expect(await first).toBe(1)
+			expect(await cached()).toBe(2)
+			cached.clearCache()
+		})
+
+		test('deletes the key from an external store', async () => {
+			const deleted: string[] = []
+			const entries = new Map<string, CacheStoreEntry>()
+			const cached = cacheFunction({
+				name: 'invalidate-store',
+				fn: async (id: string) => id,
+				store: {
+					get: async (key) => entries.get(key),
+					set: async (key, entry) => {
+						entries.set(key, entry)
+					},
+					delete: async (key) => {
+						deleted.push(key)
+						entries.delete(key)
+					}
+				}
+			})
+
+			await cached('a')
+			cached.invalidate('a')
+			await Promise.resolve()
+
+			expect(deleted).toEqual(['invalidate-store:["a"]'])
+			expect(entries.size).toBe(0)
+		})
+	})
+
+	describe('peek', () => {
+		test('returns cached values without calling fn', async () => {
+			let callCount = 0
+			const cached = cacheFunction({
+				name: 'peek',
+				fn: async (id: string) => {
+					callCount++
+					return id
+				},
+				cacheTimeMs: 50
+			})
+
+			expect(cached.peek('a')).toBeUndefined()
+			await cached('a')
+			const value: string | undefined = cached.peek('a')
+			expect(value).toBe('a')
+
+			await new Promise((r) => setTimeout(r, 60))
+			expect(cached.peek('a')).toBeUndefined()
+			expect(callCount).toBe(1)
+			cached.clearCache()
+		})
+
+		test('returns stale values with refreshInBackground without refreshing', async () => {
+			let callCount = 0
+			const cached = cacheFunction({
+				name: 'peek-stale',
+				fn: () => ++callCount,
+				cacheTimeMs: 20,
+				refreshInBackground: true
+			})
+
+			cached()
+			await new Promise((r) => setTimeout(r, 30))
+			expect(cached.peek()).toBe(1)
+			expect(callCount).toBe(1)
+			cached.clearCache()
+		})
+
+		test('reads through an external store', async () => {
+			const entries = new Map<string, CacheStoreEntry>()
+			const cached = cacheFunction({
+				name: 'peek-store',
+				fn: async (id: string) => `value-${id}`,
+				store: {
+					get: async (key) => entries.get(key),
+					set: async (key, entry) => {
+						entries.set(key, entry)
+					},
+					delete: async (key) => {
+						entries.delete(key)
+					}
+				}
+			})
+
+			const miss: Promise<string | undefined> = cached.peek('a')
+			expect(await miss).toBeUndefined()
+			await cached('a')
+			expect(await cached.peek('a')).toBe('value-a')
+		})
+	})
 })

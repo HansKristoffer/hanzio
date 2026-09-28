@@ -1,227 +1,50 @@
----
-name: hanzio-api-wrapper
-description: Building typed HTTP API wrappers with createApiClient and Zod in hanzio/api-wrapper. Covers folder layout, index factory, endpoint files with satisfies ApiEndpoint, shared types, pagination helpers, and common REST API integration patterns.
----
+# hanzio/api-wrapper
 
-# AI Agent Guide: Building API Wrappers
+Typed HTTP clients from Zod schemas: `createApiClient` validates requests and
+responses, retries with exponential backoff, and throws structured errors.
 
-This guide is for AI assistants to follow when building API wrappers using the
-`createApiClient` utility from `hanzio/api-wrapper`.
+Building a new wrapper with an AI agent? See [AGENTS.md](./AGENTS.md) for the
+step-by-step workflow and folder conventions.
 
-## Folder Structure
-
-When creating a new API wrapper, follow this structure:
-
-```txt
-src/api-wrapper/{api-name}/
-├── index.ts
-├── types.ts
-├── {endpointName}.ts
-├── {anotherEndpoint}.ts
-└── utils/
-    ├── {utilName}.ts
-    └── ...
-```
-
-### Naming Conventions
-
-- Folder name: lowercase, kebab-case, for example `github-api`, `stripe`, `template-persona`.
-- Endpoint files: camelCase and action-oriented, for example `topicsGet.ts`, `usersCreate.ts`, `ordersUpdate.ts`.
-- Utility files: camelCase and descriptive, for example `paginateResults.ts`, `templateGetAll.ts`.
-
-## Step-By-Step Process
-
-### Step 1: Gather Information
-
-The user will typically provide one or more of:
-
-1. cURL command: extract method, URL, headers, and body.
-2. Request/response examples: use them to build Zod schemas.
-3. Chrome DevTools Network logs: extract request and response details.
-4. API documentation: reference schemas, auth, pagination, and endpoints.
-
-### Step 2: Create The Folder
-
-```bash
-mkdir -p src/api-wrapper/{api-name}/utils
-```
-
-### Step 3: Create The Index File
-
-The index file creates and exports the API wrapper instance.
+## Quick Start
 
 ```ts
-import { createApiClient } from 'hanzio/api-wrapper'
-import { endpointOne } from './endpointOne'
-import { endpointTwo } from './endpointTwo'
-
-export type GetExampleApi = ReturnType<typeof getExampleApi>
-
-export const getExampleApi = (apiToken: string) => {
-	return createApiClient({
-		name: 'exampleApi',
-		baseApiUrls: {
-			default: 'https://api.example.com'
-		},
-		defaultHeaders: {
-			Authorization: `Bearer ${apiToken}`
-		},
-		endpoints: {
-			endpointOne,
-			endpointTwo
-		}
-	})
-}
-```
-
-### Step 4: Create Shared Types
-
-If multiple endpoints share schemas, create a `types.ts` file.
-
-```ts
+import { createApiClient, defineEndpoint } from 'hanzio/api-wrapper'
 import { z } from 'zod'
 
-export const ListQueryInput = z.object({
-	page: z.number().optional(),
-	page_size: z.number().optional()
-})
-export type ListQueryInput = z.infer<typeof ListQueryInput>
-
-export const ListQueryOutput = <T extends z.ZodType>(itemSchema: T) =>
-	z.object({
-		data: z.array(itemSchema),
-		current_page: z.number(),
-		last_page: z.number(),
-		per_page: z.number(),
-		total: z.number()
-	})
-
-export type ListQueryOutput<T> = {
-	data: T[]
-	current_page: number
-	last_page: number
-	per_page: number
-	total: number
-}
-```
-
-### Step 5: Create Endpoint Files
-
-Each endpoint gets its own file with request/response schemas and endpoint
-configuration.
-
-```ts
-import type { ApiEndpoint } from 'hanzio/api-wrapper'
-import { z } from 'zod'
-
-export const UserResponse = z.object({
-	id: z.number(),
-	name: z.string(),
-	email: z.string()
-})
-
-export const usersGet = {
+const usersGet = defineEndpoint({
 	method: 'GET',
 	path: '/users/:userId',
-	reqParamsSchema: z.object({ userId: z.string() }),
-	reqQuerySchema: z.object({ includeInactive: z.boolean().optional() }),
-	resSchema: UserResponse
-} satisfies ApiEndpoint
-```
+	resSchema: z.object({ id: z.number(), name: z.string(), email: z.string() })
+})
 
-### Step 6: Create Utility Functions
-
-Place reusable helpers in `utils/`. Common helpers include pagination, response
-normalization, and rate-limit handling.
-
-```ts
-import type { ApiWrapperResponse } from 'hanzio/api-wrapper'
-
-export async function getAllPages<T>(
-	fetchPage: (
-		page: number
-	) => Promise<ApiWrapperResponse<{ data: T[]; total_pages: number }>>
-): Promise<T[]> {
-	let page = 1
-	let totalPages = Number.POSITIVE_INFINITY
-	const allData: T[] = []
-
-	while (page <= totalPages) {
-		const response = await fetchPage(page)
-		allData.push(...response.data.data)
-		totalPages = response.data.total_pages
-		page += 1
-	}
-
-	return allData
-}
-```
-
-## Extracting Information From User Input
-
-### From cURL Commands
-
-```bash
-curl -X POST 'https://api.example.com/users' \
-  -H 'Authorization: Bearer token123' \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "John", "email": "john@example.com"}'
-```
-
-Extract:
-
-- Method: `POST`
-- Base URL: `https://api.example.com`
-- Path: `/users`
-- Headers: `Authorization`, `Content-Type`
-- Body schema: `{ name: string, email: string }`
-
-### From Chrome DevTools
-
-Look for:
-
-1. Request URL: base URL plus path.
-2. Request method: HTTP method.
-3. Request headers: auth and custom headers.
-4. Request payload: body schema.
-5. Response body: response schema.
-6. Query string parameters: query schema.
-
-### Building Zod Schemas From JSON
-
-Given this response:
-
-```json
-{
-	"id": 123,
-	"name": "John Doe",
-	"email": "john@example.com",
-	"created_at": "2024-01-15T10:30:00Z",
-	"roles": ["admin", "user"],
-	"profile": {
-		"avatar_url": "https://example.com/avatar.png",
-		"bio": "Developer"
-	},
-	"is_active": true
-}
-```
-
-Create this schema:
-
-```ts
-const UserResponse = z.object({
-	id: z.number(),
-	name: z.string(),
-	email: z.string(),
-	created_at: z.string(),
-	roles: z.array(z.string()),
-	profile: z.object({
-		avatar_url: z.string(),
-		bio: z.string()
-	}),
-	is_active: z.boolean()
+export const exampleApi = createApiClient({
+	name: 'exampleApi',
+	baseApiUrls: { default: 'https://api.example.com' },
+	defaultHeaders: () => ({ Authorization: `Bearer ${getSecret('EXAMPLE_TOKEN')}` }),
+	endpoints: { usersGet }
 })
 ```
+
+## Defining Endpoints
+
+`defineEndpoint` infers everything from the definition:
+
+- **Path params:** a literal `path` types its `:params`, so `reqParams` is
+  required and checked even without a `reqParamsSchema`
+  (`'/users/:userId'` → `{ userId: string | number }`).
+- **Request types are schema inputs:** callers pass what the schema accepts
+  (`z.input`), so fields with `.default()` are optional and
+  `z.string().transform(Number)` takes a string. The response is the parsed
+  output (`z.output`).
+- **`resFormatter` is checked:** it must return what `resSchema` parses.
+
+`satisfies ApiEndpoint` still works, but it widens `path` to `string` (so
+params fall back to an optional `Record<string, string | number>`) and leaves
+`resFormatter` unchecked.
+
+Object and array bodies are sent as JSON unless you set another
+`Content-Type`; `reqBodyFormat: 'form-data'` sends `FormData`.
 
 ## Calling Endpoints
 
@@ -229,14 +52,81 @@ const UserResponse = z.object({
 per-endpoint methods (created via Proxy) for autocomplete.
 
 ```ts
-const api = getExampleApi(token)
-
-await api.request('usersGet', { reqParams: { userId: 'u1' } })
-await api.usersGet({ reqParams: { userId: 'u1' } })
+await exampleApi.request('usersGet', { reqParams: { userId: 'u1' } })
+await exampleApi.usersGet({ reqParams: { userId: 'u1' } })
 ```
 
 When a schema is defined for `reqParams`, `reqBody`, `reqQuery`, or
-`reqHeaders`, the corresponding input field is **required at the type level**.
+`reqHeaders` (or the path has `:params`), the corresponding input field is
+**required at the type level**. Endpoint and action names can't be `request`,
+`cache` or `safe`; the client reserves them.
+
+### Handling Errors Without try/catch
+
+`api.safe` has the same endpoints and actions but resolves to a `Result`
+instead of throwing `ApiError`s. Narrow on `error.category`. Other errors, such
+as bugs in hooks or middleware, still throw.
+
+```ts
+const result = await exampleApi.safe.usersGet({ reqParams: { userId: 'u1' } })
+if (!result.ok) {
+	if (result.error.category === 'client_error') return null
+	throw result.error
+}
+result.data.data // parsed response
+```
+
+### Type Helpers
+
+```ts
+import type {
+	AnyApiClient,
+	EndpointRequest,
+	EndpointResponse,
+	InferRequest,
+	InferResponse
+} from 'hanzio/api-wrapper'
+
+type User = InferResponse<typeof exampleApi, 'usersGet'> // response data
+type UsersGetInput = InferRequest<typeof exampleApi, 'usersGet'>
+type Same = EndpointResponse<typeof usersGet> // from the endpoint definition
+type Input = EndpointRequest<typeof usersGet>
+
+// Helpers that take whichever client they're given:
+async function ping(api: AnyApiClient) {
+	return api.safe.health?.()
+}
+```
+
+### Typed `meta`
+
+`meta` is `Record<string, unknown>` by default. Augment `ApiRequestMeta` once
+to type it on every call, action, hook, middleware and error context:
+
+```ts
+declare module 'hanzio/api-wrapper' {
+	interface ApiRequestMeta {
+		traceId: string
+		tenantId?: string
+	}
+}
+
+await exampleApi.usersGet({ reqParams: { userId: 'u1' }, meta: { traceId } })
+```
+
+### Query Parameters
+
+`reqQuery` values may be strings, numbers, booleans, or arrays of those. Arrays
+repeat the key, and `null`/`undefined` values are skipped:
+
+```ts
+await api.search({ reqQuery: { tag: ['a', 'b'], q: undefined } })
+// GET /search?tag=a&tag=b
+```
+
+Values are URL-encoded unless the endpoint sets `doNotEncodeQueryParams: true`.
+APIs that expect `tag=a,b` or `tag[]=a` need the value joined or the key renamed
+in `reqQuery` before the call.
 
 ### Per-Call Overrides
 
@@ -283,15 +173,18 @@ accepts:
 | Option | Description |
 | --- | --- |
 | `name` | Prefix used in error/log context, e.g. `exampleApi.usersGet`. |
+| `defaultHeaders` | Static headers, or a (sync or async) function resolved on every request, e.g. `() => ({ Authorization: \`Bearer ${getSecret('TOKEN')}\` })`. |
 | `defaultBaseApiUrl` | Key in `baseApiUrls` to use when an endpoint doesn't specify one. |
 | `timeoutMs` | Default per-request timeout (uses `AbortController`). Applied **per attempt** — each retry gets its own timeout window, not a cumulative budget across retries. |
 | `retries` | Default retry count (default `3`). |
-| `retryDelayMs` | Delay between retries. `number \| (attempt) => number`. |
-| `maxRetryDelayMs` | Upper bound on retry delay (default `30000`). Caps `Retry-After` headers on `429`/`503` responses. |
+| `retryDelayMs` | Delay between retries. `number \| (attempt) => number`, where `attempt` is `0` before the first retry. Default: exponential backoff with full jitter, a random delay in `[0, 300 * 2^attempt]` ms, capped at `maxRetryDelayMs`. |
+| `maxRetryDelayMs` | Upper bound on retry delay (default `30000`). Caps the default backoff, `retryDelayMs`, and `Retry-After` headers on `429`/`503` responses. |
 | `shouldRetry` | `(ctx) => boolean` to override the default retry policy. |
-| `fetch` | Custom fetch implementation. |
-| `logger` | `Pick<Console, 'debug' \| 'error'>` for debug + error logging. |
-| `onRequest` | Hook that runs before each attempt. May return `{ headers, body }` to mutate the outgoing request (useful for auth refresh, tracing). |
+| `fetch` | Custom fetch implementation, typed as `FetchLike` (`(input, init?) => Promise<Response>`), so plain functions and mocks work without Bun's `preconnect`. |
+| `use` | Middleware around each whole request (see [Middleware](#middleware)). |
+| `checkResponse` | `(data, ctx) => void` run after `resSchema` validation on every attempt. Throw to reject a response that is an error in disguise (see [Rejecting 200 responses](#rejecting-200-responses)). |
+| `logger` | `Pick<Console, 'debug' \| 'error'>`. Each failed request is logged once with a categorized summary (see [Debugging Failed Requests](#debugging-failed-requests)). |
+| `onRequest` | Hook that runs once per request, before the first attempt. May return `{ headers, body }`; returned `headers` **replace** the outgoing headers, so spread `context.headers` to add one. For auth, prefer a `defaultHeaders` function. |
 | `onResponse` | Hook that runs after each response is received (called per attempt). |
 | `onRetry` | Hook called before each retry with `{ delayMs, nextAttempt, ... }`. |
 | `onError` | Hook called when an `ApiError` is about to be thrown. |
@@ -299,7 +192,197 @@ accepts:
 
 The default retry policy retries network errors and `5xx`/`429` responses, and
 **does not retry** validation, abort, config, or `4xx` errors. `Retry-After`
-headers on `429`/`503` are respected up to `maxRetryDelayMs`.
+headers on `429`/`503` are respected up to `maxRetryDelayMs`. Aborting the
+caller's `signal` while waiting between retries throws `RequestAbortedError`
+immediately.
+
+### Middleware
+
+`use` takes middleware that wraps one logical request: `onRequest`, every
+retry attempt, validation and `checkResponse`. They run in array order (the
+first is outermost), see the final `ApiWrapperResponse` (`httpStatus`,
+`retryCount`, sizes, timing), and see thrown errors after redaction and
+`onError`. Input validation and config errors (unknown endpoint, missing path
+parameter) are thrown before middleware runs. Middleware applies to endpoint
+calls made inside actions too.
+
+```ts
+import type { ApiMiddleware } from 'hanzio/api-wrapper'
+
+const timing: ApiMiddleware = async (ctx, next) => {
+	const result = await next()
+	metrics.histogram('api.duration', result.responseTimeMs, {
+		endpoint: `${ctx.client}.${ctx.endpoint}`,
+		retries: result.retryCount
+	})
+	return result
+}
+
+const api = createApiClient({ name: 'stream', use: [timing], ...config })
+```
+
+`ctx` is `{ client?, endpoint, method, url, headers, meta? }`, where
+`endpoint` is the endpoint key and `client` is the client's `name`. Mutating
+`ctx.headers` before calling `next()` adds headers to the outgoing request.
+
+### OpenTelemetry
+
+`otelMiddleware` creates one CLIENT span per logical request (covering every
+retry, validation and `checkResponse`), named `client.endpoint`, with the
+standard HTTP attributes (`http.request.method`, `url.full`,
+`server.address`, `http.response.status_code`, `http.request.resend_count`,
+`error.type`) plus `api.error.category`. Failures get `recordException` and an
+ERROR status. It's started as the active span, so auto-instrumented fetch
+attempts become child spans.
+
+hanzio does not depend on OpenTelemetry: `otelMiddleware` accepts any object
+shaped like a tracer, and you pass your own `@opentelemetry/api` tracer.
+
+```ts
+import { context, propagation, trace } from '@opentelemetry/api'
+import { createApiClient, otelMiddleware } from 'hanzio/api-wrapper'
+
+const api = createApiClient({
+	name: 'stream',
+	use: [
+		otelMiddleware(trace.getTracer('app'), {
+			// Only needed when fetch isn't auto-instrumented:
+			inject: (headers) => propagation.inject(context.active(), headers)
+		})
+	],
+	...config
+})
+```
+
+| Option | Description |
+| --- | --- |
+| `spanName` | `(ctx) => string`. Default `client.endpoint`. |
+| `attributes` | `(ctx) => attributes` added when the span starts. |
+| `includeQuery` | Default `true`: `url.full` keeps the query with sensitive values (`api_key`, `token`, `signature`, …) redacted. `false` drops the query string. |
+| `inject` | Adds trace-context headers (`traceparent`) to the request. |
+
+## Debugging Failed Requests
+
+Every failed request is logged once through `logger.error(message, attributes)`
+with a headline that says where it failed, the request line, and the details
+needed to fix it:
+
+```
+✗ github.usersGet failed: output validation failed: the response doesn't match resSchema
+  GET https://api.github.com/users/1 · attempt 1/4 · 212ms
+  [1] age: Invalid input: expected number, received string
+      (expected number, received string)
+      value: "old"
+  fix: update resSchema (or resFormatter), or mark changed fields optional
+
+✗ github.usersGet failed: server error (HTTP 503): the API failed while handling the request
+  GET https://api.github.com/users/1 · attempt 4/4 · 2381ms · request id req_42
+  response: {"message":"Service Unavailable"}
+
+✗ github.usersCreate failed: input validation failed: the caller's body doesn't match reqBodySchema (nothing was sent)
+  POST /users · 1ms
+  [1] email: Invalid email address
+      value: "nope"
+      …
+```
+
+| Category | Headline | Details |
+| --- | --- | --- |
+| `server_error` | `server error (HTTP 5xx): the API failed while handling the request` | response body, request id |
+| `client_error` | `request rejected (HTTP 4xx): …` with a hint for 401/403, 404 and 429 | response body, request id |
+| `input_validation` | `input validation failed: the caller's body doesn't match reqBodySchema (nothing was sent)` | each issue with path and value |
+| `output_validation` | `output validation failed: the response doesn't match resSchema` (or `…is not valid JSON`) | each issue with path and value, fix hint |
+| `response_rejected` | `response rejected by checkResponse: …` | response preview |
+| `network` / `timeout` / `aborted` / `config` / `action` | what happened | cause for actions |
+
+The attributes are flat and primitive (`category`, `endpoint`, `method`,
+`url`, `status`, `attempt`, `maxRetries`, `elapsedMs`, `requestId`,
+`issueCount`, `issues`, `target`, `timeoutMs`), so structured loggers can
+filter on them. Every `ApiError` also has `error.category`, and
+`describeApiError(error)` / `apiErrorLogAttributes(error)` are exported for
+your own error handlers.
+
+Logs never contain credentials. Sensitive headers and body keys are redacted
+(see `redact`), and so are sensitive query parameters in URLs and error
+messages. Debug logs (`API request`) only include the endpoint, method,
+redacted URL and attempt number.
+
+### Rejecting 200 responses
+
+Some APIs return HTTP 200 with an error envelope (Cloudflare:
+`{ success: false, errors }`). `checkResponse` runs after `resSchema`
+validation on every attempt; anything it throws becomes an `ApiResponseError`
+carrying the request context and the response `data`, and goes through
+redaction and `onError` like any other error. It is not retried by default,
+but a custom `shouldRetry` can opt in.
+
+```ts
+const api = createApiClient({
+	...config,
+	checkResponse: (data) => {
+		const body = data as { success: boolean; errors?: { message: string }[] }
+		if (!body.success) {
+			throw new Error(body.errors?.map((e) => e.message).join(', '))
+		}
+	},
+	shouldRetry: (ctx) =>
+		isApiResponseError(ctx.error) || defaultShouldRetry(ctx)
+})
+```
+
+## Testing
+
+`hanzio/api-wrapper/testing` has a test-runner-agnostic fetch mock to pass as
+the client's `fetch` option, so tests never replace `globalThis.fetch`.
+`calls` records every `Request`, with bodies still readable.
+
+```ts
+import { createMockFetch, jsonResponse } from 'hanzio/api-wrapper/testing'
+
+const fetch = createMockFetch((request, callIndex) =>
+	request.url.endsWith('/users/1')
+		? jsonResponse({ id: 1, name: 'Ada' })
+		: jsonResponse({ error: 'not found' }, { status: 404 })
+)
+const api = createApiClient({ ...config, fetch })
+
+await api.usersGet({ reqParams: { userId: '1' } })
+expect(fetch.calls[0]?.headers.get('authorization')).toBe('Bearer token')
+```
+
+## Pagination
+
+`paginate(fetchPage, getNext, { maxPages?, signal? })` is an async generator
+that works with any cursor type. `fetchPage` receives `undefined` first, then
+whatever `getNext` returned; iteration stops when `getNext` returns `null` or
+`undefined`. Pages are fetched lazily, so `break` stops further requests.
+`signal` is checked before each page (forward it to the request as well to
+cancel the in-flight one).
+
+```ts
+import { paginate } from 'hanzio/api-wrapper'
+
+// Cursor-based
+for await (const res of paginate(
+	(cursor?: string) => api.eventsList({ reqQuery: { cursor } }),
+	(res) => res.data.next_cursor
+)) {
+	for (const event of res.data.items) handle(event)
+}
+
+// Page numbers, collected into one array
+const pages = await Array.fromAsync(
+	paginate(
+		(page: number = 1) => api.usersList({ reqQuery: { page } }),
+		(res) =>
+			res.data.current_page < res.data.last_page
+				? res.data.current_page + 1
+				: null,
+		{ maxPages: 50 }
+	)
+)
+const users = pages.flatMap((res) => res.data.data)
+```
 
 ## Errors
 
@@ -326,19 +409,21 @@ type ApiErrorContext = {
 | `ResponseValidationError` | Response failed `resSchema` validation, or `application/json` body wasn't valid JSON. Exposes `issues: FormattedZodIssue[]`, `rawResponse`. |
 | `RequestValidationError` | Caller-supplied `reqBody`/`reqQuery`/`reqParams`/`reqHeaders` failed schema validation. Exposes `target`, `issues`, `rawInput`. |
 | `RequestTimeoutError` | Internal `timeoutMs` exceeded. Exposes `timeoutMs`. |
-| `RequestAbortedError` | The caller's `signal` aborted the request. |
+| `RequestAbortedError` | The caller's `signal` aborted the request or the wait before a retry. |
 | `NetworkError` | `fetch` itself threw (DNS, TCP, etc.). |
 | `ConfigError` | Misconfiguration: unknown endpoint, missing base URL, missing path parameter, invalid action input, or plain-object body without JSON content type. |
+| `ApiResponseError` | `checkResponse` rejected a response that passed validation. Exposes `data`; the original throw is the `cause`. |
 | `ActionError` | A composite action handler threw a non-`ApiError`. Wraps the original cause. `ApiError` subclasses thrown inside actions propagate unchanged. |
 
 Type guards are exported for all of them: `isApiError`, `isHttpResponseError`,
 `isResponseValidationError`, `isRequestValidationError`,
 `isRequestTimeoutError`, `isRequestAbortedError`, `isNetworkError`,
-`isConfigError`, `isActionError`.
+`isConfigError`, `isApiResponseError`, `isActionError`.
 
 `isNonRetryableApiError` returns `true` for errors that the default retry
 policy will not retry (`HttpResponseError`, `ResponseValidationError`,
-`RequestValidationError`, `ConfigError`, `RequestAbortedError`).
+`ApiResponseError`, `RequestValidationError`, `ConfigError`,
+`RequestAbortedError`).
 
 Every `ApiError` implements `toJSON()` so loggers (Sentry, Datadog) capture the
 full structured payload, not just the message.
@@ -443,22 +528,26 @@ The factory receives `{ api, defineAction }`. `defineAction` returned by the
 factory is bound to your endpoints, so `ctx.api` (and `ctx.input`,
 `ctx.cache`, etc.) are all properly typed. There is also a top-level
 `defineAction` import for ad-hoc usage outside `createApiClient`, but its
-`ctx.api` is typed as `any` \u2014 prefer the factory form.
+`ctx.api` is typed as `any` — prefer the factory form.
 
 ### `defineAction`
 
-Actions are internal functions called from your own code. Their `input` type
-is a **TypeScript-only contract**: there is no Zod or other runtime validation
-on the action boundary. **Endpoints** remain the runtime validation layer:
-`reqBodySchema`, `reqQuerySchema`, `reqParamsSchema`, and `resSchema` run on
-every HTTP call. For data that enters from outside your app (HTTP handlers,
-CLI, untrusted JSON), validate with Zod (or similar) at that boundary, or rely
-on the endpoint schemas when the action forwards into `api.someEndpoint(...)`.
+Pass an `input` schema to validate action input at runtime. Callers pass the
+schema's input type, the handler receives the parsed output, and invalid input
+throws `RequestValidationError` (target `input`, category `input_validation`)
+before the handler runs. Without a schema, the input type is a
+TypeScript-only contract.
 
 **Examples:**
 
 ```ts
-// With input
+// Validated input
+defineAction({
+	input: z.object({ id: z.coerce.number() }),
+	handler: ({ input }) => input.id // number
+})
+
+// Typed-only input
 defineAction<{ id: number }>()({
 	handler: ({ input }) => input.id
 })
@@ -473,8 +562,8 @@ defineAction({
 
 | Field | Description |
 | --- | --- |
-| `input` | The caller input, typed via the generic on `defineAction`. |
-| `api` | The full client \u2014 endpoints and other actions. Calls inside the handler benefit from the same hooks/retries/errors as direct calls. |
+| `input` | The caller input: parsed by the `input` schema, or typed via the generic on `defineAction`. |
+| `api` | The full client — endpoints and other actions. Calls inside the handler benefit from the same hooks/retries/errors as direct calls. |
 | `signal` | Caller's `AbortSignal`. Forward it into inner `api.endpoint({ signal })` calls to make cancellation work. |
 | `meta` | Arbitrary metadata passed by the caller. |
 | `logger` | Same logger as the client. |
@@ -490,7 +579,7 @@ Per-call options:
 await api.loginAndGetMe({ email, password }, { signal, meta })
 ```
 
-Action names must not collide with endpoint names \u2014 a `ConfigError` is
+Action names must not collide with endpoint names — a `ConfigError` is
 thrown at `createApiClient` time if they do.
 
 ### Sharing Auth (and Anything Else) Across Actions
@@ -556,30 +645,18 @@ of action handlers (e.g. clearing auth on logout).
 | Option | Required | Description |
 | --- | --- | --- |
 | `method` | Yes | HTTP method: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`. |
-| `path` | Yes | URL path with `:param` placeholders for path params. |
+| `path` | Yes | URL path with `:param` placeholders for path params. Joined to the base URL with exactly one `/`. |
 | `resSchema` | Yes | Zod schema to validate the response. |
 | `reqBodySchema` | No | Zod schema for request body. |
 | `reqParamsSchema` | No | Zod schema for path parameters. |
 | `reqQuerySchema` | No | Zod schema for query parameters. |
 | `reqHeadersSchema` | No | Zod schema for request-specific headers. |
-| `reqBodyFormat` | No | Request body format: `json` or `form-data`. |
+| `reqBodyFormat` | No | `json` or `form-data`. Object and array bodies default to JSON when no `Content-Type` is set. |
 | `baseApiUrl` | No | Key for a non-default base URL. |
 | `defaultHeaders` | No | Endpoint-specific headers. |
 | `resFormatter` | No | Transform response data before validation. |
-| `reqDefaultQueryParams` | No | Default query parameters. |
+| `reqDefaultQueryParams` | No | Default query parameters, overridden per key by `reqQuery`. |
 | `doNotEncodeQueryParams` | No | Skip URL encoding for query params. |
-
-## Checklist
-
-- [ ] Create folder with API name in kebab-case.
-- [ ] Create `index.ts` with a `createApiClient` call.
-- [ ] Set `baseApiUrls` and `defaultHeaders`.
-- [ ] Create `types.ts` for shared schemas when needed.
-- [ ] Create one file per endpoint.
-- [ ] Define Zod schemas for all request and response data.
-- [ ] Use `satisfies ApiEndpoint` for endpoint definitions.
-- [ ] Create helpers in `utils/` when needed.
-- [ ] Export the API type, for example `export type GetExampleApi = ReturnType<typeof getExampleApi>`.
 
 ## Common Patterns
 
@@ -589,7 +666,7 @@ Use `resFormatter` when the raw API response does not match the schema you want
 callers to receive.
 
 ```ts
-export const endpoint = {
+export const endpoint = defineEndpoint({
 	method: 'GET',
 	path: '/data',
 	resSchema: z.object({ items: z.array(z.string()) }),
@@ -599,7 +676,7 @@ export const endpoint = {
 			items: raw.results.map((result) => result.name)
 		}
 	}
-} satisfies ApiEndpoint
+})
 ```
 
 ### Optional And Nullable Fields
@@ -623,14 +700,3 @@ const resSchema = z.array(
 	})
 )
 ```
-
-## Tips
-
-1. Always use `satisfies ApiEndpoint` for endpoint definitions.
-2. Import Zod from `zod`.
-3. Be strict with schemas and mark unstable fields as `.optional()` or `.nullish()`.
-4. Use descriptive endpoint names like `usersGet`, `usersCreate`, and `ordersListByStatus`.
-5. Keep files small by using one endpoint per file.
-6. Extract schemas to `types.ts` when used by two or more endpoints.
-7. Create pagination helpers when APIs use pagination.
-8. Ask for sample responses if the user only provides cURL commands.

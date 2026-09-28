@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, type mock, test } from 'bun:test'
 import { z } from 'zod'
 import {
 	createApiClient,
@@ -37,6 +37,44 @@ describe('createApiClient — request & hooks', () => {
 		expect(globalThis.fetch).toHaveBeenCalledWith(
 			'https://api.example.com/users/1',
 			expect.objectContaining({ method: 'GET' })
+		)
+	})
+
+	test('array query params repeat the key', async () => {
+		mockFetch(() => Promise.resolve(createMockResponse({ ok: true })))
+
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			endpoints: {
+				search: {
+					method: 'GET',
+					path: '/search',
+					reqQuerySchema: z.object({
+						tag: z.array(z.string()),
+						q: z.string().optional()
+					}),
+					reqDefaultQueryParams: { limit: 10 },
+					resSchema: z.object({ ok: z.boolean() })
+				},
+				raw: {
+					method: 'GET',
+					path: '/raw',
+					doNotEncodeQueryParams: true,
+					resSchema: z.object({ ok: z.boolean() })
+				}
+			}
+		})
+
+		await api.search({ reqQuery: { tag: ['a b', 'c'] } })
+		expect(globalThis.fetch).toHaveBeenLastCalledWith(
+			'https://api.example.com/search?limit=10&tag=a+b&tag=c',
+			expect.anything()
+		)
+
+		await api.raw({ reqQuery: { ids: [1, 2], skip: null } })
+		expect(globalThis.fetch).toHaveBeenLastCalledWith(
+			'https://api.example.com/raw?ids=1&ids=2',
+			expect.anything()
 		)
 	})
 
@@ -238,7 +276,7 @@ describe('createApiClient — request & hooks', () => {
 		}
 	})
 
-	test('throws ConfigError for plain-object body without JSON content type', async () => {
+	test('sends plain-object and array bodies as JSON when no Content-Type is set', async () => {
 		mockFetch(() => Promise.resolve(createMockResponse({ ok: true })))
 
 		const api = createApiClient({
@@ -249,6 +287,41 @@ describe('createApiClient — request & hooks', () => {
 					method: 'POST',
 					path: '/upload',
 					reqBodySchema: z.object({ name: z.string() }),
+					resSchema: z.object({ ok: z.boolean() })
+				},
+				batch: {
+					method: 'POST',
+					path: '/batch',
+					reqBodySchema: z.array(z.number()),
+					resSchema: z.object({ ok: z.boolean() })
+				}
+			}
+		})
+
+		await api.request('upload', { reqBody: { name: 'file.txt' } })
+		await api.request('batch', { reqBody: [1, 2] })
+
+		const calls = (globalThis.fetch as unknown as ReturnType<typeof mock>).mock
+			.calls as [string, RequestInit][]
+		expect(calls[0]![1].body).toBe('{"name":"file.txt"}')
+		expect(calls[0]![1].headers).toMatchObject({
+			'Content-Type': 'application/json'
+		})
+		expect(calls[1]![1].body).toBe('[1,2]')
+	})
+
+	test('throws ConfigError for a plain-object body with a non-JSON Content-Type', async () => {
+		mockFetch(() => Promise.resolve(createMockResponse({ ok: true })))
+
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.example.com' },
+			retries: 0,
+			endpoints: {
+				upload: {
+					method: 'POST',
+					path: '/upload',
+					reqBodySchema: z.object({ name: z.string() }),
+					defaultHeaders: { 'Content-Type': 'text/plain' },
 					resSchema: z.object({ ok: z.boolean() })
 				}
 			}

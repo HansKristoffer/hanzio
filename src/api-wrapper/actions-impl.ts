@@ -1,80 +1,18 @@
+import { createCache } from '../cache/createCache'
 import type { ActionCache, DefineAction } from './types'
 
-type CacheEntry = {
-	value?: unknown
-	hasValue: boolean
-	expiresAt?: number
-	inflight?: Promise<unknown>
-}
-
 export function createActionCache(): ActionCache {
-	const store = new Map<string, CacheEntry>()
-
-	const isExpired = (entry: CacheEntry) =>
-		entry.expiresAt !== undefined && entry.expiresAt <= Date.now()
-
-	const cache = (async <T>(
+	const store = createCache()
+	const cache = (<T>(
 		key: string,
 		fn: () => Promise<T> | T,
 		options?: { ttlMs?: number }
-	): Promise<T> => {
-		const existing = store.get(key)
-		if (existing && !isExpired(existing)) {
-			if (existing.inflight) return existing.inflight as Promise<T>
-			if (existing.hasValue) return existing.value as T
-		}
+	): Promise<T> => store.getOrSet(key, fn, options)) as ActionCache
 
-		const promise = (async () => fn())()
-		const entry: CacheEntry = {
-			hasValue: false,
-			inflight: promise,
-			expiresAt:
-				options?.ttlMs !== undefined ? Date.now() + options.ttlMs : undefined
-		}
-		store.set(key, entry)
-
-		try {
-			const value = await promise
-			entry.value = value
-			entry.hasValue = true
-			entry.inflight = undefined
-			return value
-		} catch (error) {
-			store.delete(key)
-			throw error
-		}
-	}) as ActionCache
-
-	cache.get = <T>(key: string): T | undefined => {
-		const entry = store.get(key)
-		if (!entry || !entry.hasValue) return undefined
-		if (isExpired(entry)) {
-			store.delete(key)
-			return undefined
-		}
-		return entry.value as T
-	}
-
-	cache.set = <T>(
-		key: string,
-		value: T,
-		options?: { ttlMs?: number }
-	): void => {
-		store.set(key, {
-			value,
-			hasValue: true,
-			expiresAt:
-				options?.ttlMs !== undefined ? Date.now() + options.ttlMs : undefined
-		})
-	}
-
-	cache.invalidate = (key: string): void => {
-		store.delete(key)
-	}
-
-	cache.clear = (): void => {
-		store.clear()
-	}
+	cache.get = (key) => store.get(key)
+	cache.set = (key, value, options) => store.set(key, value, options)
+	cache.invalidate = (key) => store.delete(key)
+	cache.clear = () => store.clear()
 
 	return cache
 }
@@ -87,10 +25,11 @@ export function makeDefineAction<TApi>(): DefineAction<TApi> {
 				noRuntimeInput: false as const
 			})
 		}
-		const def = args[0] as { handler: unknown }
+		const def = args[0] as { handler: unknown; input?: unknown }
 		return {
 			...def,
-			noRuntimeInput: true as const
+			// A schema-validated action takes input; a bare handler doesn't.
+			noRuntimeInput: def.input === undefined
 		}
 	}
 	return defineAction as DefineAction<TApi>

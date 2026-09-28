@@ -1,21 +1,33 @@
+import { lerp, normalize } from '../math/scale'
+import { colorFunctionArgs, parseColor } from './contrast'
+
 /**
- * Shared metrics chart series color assignment for web (CSS tokens) and Expo (hex palette).
- * Same hash + collision strategy so labels map to the same slot index everywhere.
+ * Stable series color assignment: the same hash + collision strategy maps a
+ * label to the same palette slot index on every platform.
  */
 
-/** Matches PrimeVue semantic palette slot count (cyan…blue) and Expo SERIES_COLORS length */
+/** Default palette slot count. */
 export const METRICS_SERIES_PALETTE_SIZE = 10
 
 /**
  * FNV-1a 32-bit hash — stable palette index for a string key.
  */
-export function hashStringToColorIndex(str: string): number {
+export function hashStringToColorIndex(
+	str: string,
+	paletteSize = METRICS_SERIES_PALETTE_SIZE
+): number {
 	let hash = 2166136261
 	for (let i = 0; i < str.length; i++) {
 		hash ^= str.charCodeAt(i)
 		hash = Math.imul(hash, 16777619)
 	}
-	return Math.abs(hash) % METRICS_SERIES_PALETTE_SIZE
+	return Math.abs(hash) % paletteSize
+}
+
+/** Stable pick from `palette` for `seed` (same seed → same item). Throws on an empty palette. */
+export function pickFromPalette<T>(seed: string, palette: readonly T[]): T {
+	if (palette.length === 0) throw new RangeError('palette is empty')
+	return palette[hashStringToColorIndex(seed, palette.length)]!
 }
 
 function circularHueDistance(
@@ -59,23 +71,24 @@ export function seriesColorKey(label: string | undefined, key: string): string {
 /**
  * Map each distinct key to a palette index (hash preference, then max-min circular spacing).
  */
-export function resolveSeriesColorMap(keys: string[]): Map<string, number> {
+export function resolveSeriesColorMap(
+	keys: string[],
+	paletteSize = METRICS_SERIES_PALETTE_SIZE
+): Map<string, number> {
 	const result = new Map<string, number>()
 	const uniqueKeys = [...new Set(keys)]
 	if (uniqueKeys.length === 0) return result
 
-	const paletteSize = METRICS_SERIES_PALETTE_SIZE
-
 	if (uniqueKeys.length === 1) {
 		const only = uniqueKeys[0]!
-		result.set(only, hashStringToColorIndex(only))
+		result.set(only, hashStringToColorIndex(only, paletteSize))
 		return result
 	}
 
 	const usedIndices = new Set<number>()
 	const entries = uniqueKeys.map((key) => ({
 		key,
-		preferred: hashStringToColorIndex(key)
+		preferred: hashStringToColorIndex(key, paletteSize)
 	}))
 
 	for (const entry of entries) {
@@ -114,53 +127,38 @@ export type ResolveColorsByKeysResult = {
 export function createResolveColorsByKeys(
 	keys: string[],
 	getSeriesColor: (index: number) => string,
-	getSeriesHoverColor: (index: number) => string
+	getSeriesHoverColor: (index: number) => string,
+	paletteSize = METRICS_SERIES_PALETTE_SIZE
 ): ResolveColorsByKeysResult {
-	const colorMap = resolveSeriesColorMap(keys)
+	const colorMap = resolveSeriesColorMap(keys, paletteSize)
+	const indexOf = (key: string) =>
+		colorMap.get(key) ?? hashStringToColorIndex(key, paletteSize)
 	return {
-		getColor: (key: string) =>
-			getSeriesColor(colorMap.get(key) ?? hashStringToColorIndex(key)),
-		getHoverColor: (key: string) =>
-			getSeriesHoverColor(colorMap.get(key) ?? hashStringToColorIndex(key))
+		getColor: (key: string) => getSeriesColor(indexOf(key)),
+		getHoverColor: (key: string) => getSeriesHoverColor(indexOf(key))
 	}
-}
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.min(max, Math.max(min, value))
 }
 
 /**
- * Add alpha to hex, rgb(), or rgba() strings.
+ * Apply `alpha` (0..1) to a color, replacing any existing alpha.
+ *
+ * - `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa` → `rgba(r, g, b, a)` (works in React Native)
+ * - `rgb()`/`rgba()`/`hsl()`/`hsla()`, comma or space syntax → `rgba(…)` / `hsla(…)`
+ * - anything else (CSS variables, named colors, `oklch()`, …) →
+ *   `color-mix(in srgb, <color> <alpha*100>%, transparent)` (web only)
  */
 export function withAlpha(color: string, alpha: number): string {
 	const trimmed = color.trim()
+	const rgba = parseColor(trimmed)
+	const fn = rgba && colorFunctionArgs(trimmed)
 
-	if (trimmed.startsWith('#')) {
-		const hex = trimmed.slice(1)
-		const normalized =
-			hex.length === 3
-				? hex
-						.split('')
-						.map((c) => c + c)
-						.join('')
-				: hex
-		if (normalized.length === 6) {
-			const r = Number.parseInt(normalized.slice(0, 2), 16)
-			const g = Number.parseInt(normalized.slice(2, 4), 16)
-			const b = Number.parseInt(normalized.slice(4, 6), 16)
-			return `rgba(${r}, ${g}, ${b}, ${alpha})`
-		}
+	if (fn?.name === 'hsl') {
+		const [h, s, l] = fn.args
+		return `hsla(${h}, ${s}, ${l}, ${alpha})`
 	}
+	if (rgba) return `rgba(${rgba.r}, ${rgba.g}, ${rgba.b}, ${alpha})`
 
-	if (trimmed.startsWith('rgb(')) {
-		return trimmed.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`)
-	}
-
-	if (trimmed.startsWith('rgba(')) {
-		return trimmed.replace(/,\s*[\d.]+\)$/, `, ${alpha})`)
-	}
-
-	return trimmed
+	return `color-mix(in srgb, ${trimmed} ${alpha * 100}%, transparent)`
 }
 
 /**
@@ -199,10 +197,10 @@ export function getHeatmapCellStyle(params: {
 		}
 	}
 
-	const normalized = clamp((value - min) / (max - min), 0, 1)
-	const alpha = minAlpha + (maxAlpha - minAlpha) * normalized
-
 	return {
-		backgroundColor: withAlpha(baseColor, alpha)
+		backgroundColor: withAlpha(
+			baseColor,
+			lerp(minAlpha, maxAlpha, normalize(value, min, max))
+		)
 	}
 }

@@ -2,13 +2,18 @@ import { describe, expect, test } from 'bun:test'
 import {
 	chunkArray,
 	compact,
+	countBy,
 	findArrayDifferenceByKey,
 	getUniqueValues,
 	getUniqueValuesByKey,
 	groupBy,
 	keyBy,
 	partition,
-	pickItemsInArray
+	pickItemsInArray,
+	range,
+	sortBy,
+	sumBy,
+	toArray
 } from '.'
 
 describe('array utilities', () => {
@@ -40,12 +45,60 @@ describe('array utilities', () => {
 		})
 	})
 
+	test('findArrayDifferenceByKey accepts a key function', () => {
+		const current = [{ id: 1 }, { id: 2 }]
+		const next = [{ userId: 2 }, { userId: 3 }]
+
+		expect(
+			findArrayDifferenceByKey(current, next, (item) =>
+				'id' in item ? item.id : item.userId
+			)
+		).toEqual({
+			new: [{ userId: 3 }],
+			upsert: [{ userId: 2 }],
+			delete: [{ id: 1 }]
+		})
+	})
+
+	test('findArrayDifferenceByKey splits upsert with isEqual', () => {
+		const current = [
+			{ id: 1, name: 'one' },
+			{ id: 2, name: 'two' }
+		]
+		const next = [
+			{ id: 1, name: 'one' },
+			{ id: 2, name: 'changed' }
+		]
+
+		const difference = findArrayDifferenceByKey(current, next, 'id', {
+			isEqual: (a, b) => a.name === b.name
+		})
+		const update: { id: number; name: string }[] = difference.update
+
+		expect(update).toEqual([{ id: 2, name: 'changed' }])
+		expect(difference.unchanged).toEqual([{ id: 1, name: 'one' }])
+		expect(difference.upsert).toEqual(next)
+		expect(difference.delete).toEqual([])
+	})
+
+	test('findArrayDifferenceByKey keeps every current item that matches a key', () => {
+		expect(
+			findArrayDifferenceByKey([{ id: 1 }, { id: 1 }], [{ id: 1 }], 'id').delete
+		).toEqual([])
+	})
+
 	test('getUniqueValues keeps first unique serialized value', () => {
 		expect(getUniqueValues([1, 1, 2, 3, 2])).toEqual([1, 2, 3])
 		expect(getUniqueValues([{ id: 1 }, { id: 1 }, { id: 2 }])).toEqual([
 			{ id: 1 },
 			{ id: 2 }
 		])
+		expect(
+			getUniqueValues([
+				{ a: 1, b: 2 },
+				{ b: 2, a: 1 }
+			])
+		).toEqual([{ a: 1, b: 2 }])
 	})
 
 	test('getUniqueValuesByKey keeps first item for each key value', () => {
@@ -58,6 +111,10 @@ describe('array utilities', () => {
 		expect(getUniqueValuesByKey(items, 'id')).toEqual([
 			{ id: 'a', value: 1 },
 			{ id: 'b', value: 3 }
+		])
+		expect(getUniqueValuesByKey(items, (item) => item.value % 2)).toEqual([
+			{ id: 'a', value: 1 },
+			{ id: 'a', value: 2 }
 		])
 	})
 
@@ -146,5 +203,81 @@ describe('array utilities', () => {
 			{ type: 'user', name: 'Ada' },
 			{ type: 'org', slug: 'acme' }
 		])
+	})
+
+	test('groupBy results are partial records', () => {
+		const groups = groupBy([{ type: 'a' as 'a' | 'b' }], 'type')
+		const missing: { type: 'a' | 'b' }[] | undefined = groups.b
+		expect(missing).toBeUndefined()
+	})
+
+	test('countBy counts by property or callback', () => {
+		const items = [{ type: 'a' }, { type: 'b' }, { type: 'a' }]
+		expect(countBy(items, 'type')).toEqual({ a: 2, b: 1 })
+		expect(countBy([1, 2, 3], (value) => (value % 2 ? 'odd' : 'even'))).toEqual(
+			{ odd: 2, even: 1 }
+		)
+	})
+
+	test('toArray normalizes single values and nullish input', () => {
+		const source = [1, 2]
+		expect(toArray(source)).toEqual([1, 2])
+		expect(toArray(source)).not.toBe(source)
+		expect(toArray(1)).toEqual([1])
+		expect(toArray(null)).toEqual([])
+		expect(toArray(undefined)).toEqual([])
+	})
+
+	test('sumBy sums a property or callback', () => {
+		const items = [{ amount: 2 }, { amount: 3 }, { amount: undefined }]
+		expect(sumBy(items, 'amount')).toBe(5)
+		expect(sumBy([1, 2, 3], (value) => value * 2)).toBe(12)
+		expect(sumBy([], (value: number) => value)).toBe(0)
+	})
+
+	test('sortBy sorts by multiple criteria without mutating', () => {
+		const items = [
+			{ name: 'b', age: 30 },
+			{ name: 'a', age: null },
+			{ name: 'c', age: 20 },
+			{ name: 'a', age: 30 }
+		]
+		const original = [...items]
+
+		expect(sortBy(items, 'age').map((item) => item.name)).toEqual([
+			'c',
+			'b',
+			'a',
+			'a'
+		])
+		expect(
+			sortBy(items, { by: 'age', order: 'desc' }, (item) => item.name)
+		).toEqual([items[3]!, items[0]!, items[2]!, items[1]!])
+		expect(items).toEqual(original)
+		expect(sortBy([3, 1, 2])).toEqual([1, 2, 3])
+	})
+
+	test('sortBy is stable', () => {
+		const items = [
+			{ group: 1, id: 'a' },
+			{ group: 0, id: 'b' },
+			{ group: 1, id: 'c' },
+			{ group: 0, id: 'd' }
+		]
+		expect(sortBy(items, 'group').map((item) => item.id)).toEqual([
+			'b',
+			'd',
+			'a',
+			'c'
+		])
+	})
+
+	test('range builds number sequences', () => {
+		expect(range(4)).toEqual([0, 1, 2, 3])
+		expect(range(1, 4)).toEqual([1, 2, 3])
+		expect(range(0, 10, 3)).toEqual([0, 3, 6, 9])
+		expect(range(3, 0)).toEqual([3, 2, 1])
+		expect(range(0, 3, -1)).toEqual([])
+		expect(() => range(0, 3, 0)).toThrow('zero')
 	})
 })

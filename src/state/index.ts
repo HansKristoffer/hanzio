@@ -80,6 +80,25 @@ export interface StateMachineConfig<
 	// Global validator that runs for all transitions
 	globalValidator?: ValidatorFn<TState, TContext, TAction>
 
+	// Validators for specific actions, run after the global and state validators
+	actionValidators?: Partial<
+		Record<TAction, ValidatorFn<TState, TContext, TAction>>
+	>
+
+	// State returned by getInitialState(). Defaults to the first key of stateTransitions
+	initialState?: TState
+
+	// Called after a successful action (after its handler). Throwing fails the action
+	onTransition?: (
+		context: TContext,
+		from: TState,
+		to: TState,
+		action: TAction
+	) => void | Promise<void>
+
+	// Write the new state into item[stateKey] after a successful action
+	applyTransition?: boolean
+
 	// Action handlers for each action
 	actions?: {
 		[K in TAction]?: ActionHandlerFn<
@@ -143,20 +162,18 @@ export class SimpleStateMachine<
 		Partial<Record<TAction, ValidationResult>>
 	> {
 		const actionsMap = this.config.stateActionMap[this.getCurrentStatus()] || {}
-		const result: Partial<Record<TAction, ValidationResult>> = {}
-
-		for (const [action, targetState] of Object.entries(actionsMap)) {
-			if (!targetState) continue
-
-			const validationResult = await this.validateTransition(
-				targetState as TState,
-				{ action: action as TAction }
+		const entries = (
+			Object.entries(actionsMap) as [TAction, TState | undefined][]
+		).filter((entry): entry is [TAction, TState] => !!entry[1])
+		const results = await Promise.all(
+			entries.map(([action, targetState]) =>
+				this.validateTransition(targetState, { action })
 			)
+		)
 
-			result[action as TAction] = validationResult
-		}
-
-		return result
+		return Object.fromEntries(
+			entries.map(([action], i) => [action, results[i]])
+		) as Partial<Record<TAction, ValidationResult>>
 	}
 
 	/**
@@ -170,34 +187,48 @@ export class SimpleStateMachine<
 		const possibleTransitions =
 			this.config.stateTransitions[this.getCurrentStatus()] || []
 		const actionsMap = this.config.stateActionMap[this.getCurrentStatus()] || {}
-		const result: Partial<Record<TState, ValidationResult>> = {}
+		const results = await Promise.all(
+			possibleTransitions.map(async (targetState) => {
+				const actionsToTarget = (
+					Object.entries(actionsMap) as [TAction, TState | undefined][]
+				).filter(([, t]) => t === targetState)
 
-		for (const targetState of possibleTransitions) {
-			const actionsToTarget = (
-				Object.entries(actionsMap) as [TAction, TState | undefined][]
-			).filter(([, t]) => t === targetState)
-
-			if (actionsToTarget.length === 0) {
-				result[targetState] = await this.validateTransition(targetState)
-				continue
-			}
-
-			let lastError: ValidationResult = true
-			let anyOk = false
-			for (const [actionKey] of actionsToTarget) {
-				const r = await this.validateTransition(targetState, {
-					action: actionKey
-				})
-				if (r === true) {
-					anyOk = true
-					break
+				if (actionsToTarget.length === 0) {
+					return this.validateTransition(targetState)
 				}
-				lastError = r
-			}
-			result[targetState] = anyOk ? true : lastError
+
+				const rs = await Promise.all(
+					actionsToTarget.map(([action]) =>
+						this.validateTransition(targetState, { action })
+					)
+				)
+				// true if any action validates, otherwise the last action's error
+				return rs.includes(true) ? true : (rs[rs.length - 1] as string)
+			})
+		)
+
+		return Object.fromEntries(
+			possibleTransitions.map((targetState, i) => [targetState, results[i]])
+		) as Partial<Record<TState, ValidationResult>>
+	}
+
+	/**
+	 * Checks whether an action can be executed from the current state
+	 *
+	 * @returns true, or the reason the action is not allowed
+	 */
+	async canExecute(action: TAction): Promise<ValidationResult> {
+		const actionsMap = this.config.stateActionMap[this.getCurrentStatus()]
+		if (!actionsMap) {
+			return `No actions defined for state '${this.getCurrentStatus()}'`
 		}
 
-		return result
+		const targetState = actionsMap[action]
+		if (!targetState) {
+			return `Action '${action}' not allowed in state '${this.getCurrentStatus()}'`
+		}
+
+		return this.validateTransition(targetState, { action })
 	}
 
 	/**
@@ -211,54 +242,34 @@ export class SimpleStateMachine<
 		action: A,
 		data: TActionDataMap[A]
 	): Promise<ActionExecutionResult<TState, TActionResultMap[A]>> {
-		const actionsMap = this.config.stateActionMap[this.getCurrentStatus()]
-		if (!actionsMap) {
+		const fromState = this.getCurrentStatus()
+		const validationResult = await this.canExecute(action)
+		if (validationResult !== true) {
+			return { success: false, error: validationResult }
+		}
+
+		const targetState = this.config.stateActionMap[fromState][action] as TState
+
+		try {
+			const result = await this.config.actions?.[action]?.(this.item, data)
+			await this.config.onTransition?.(
+				this.item,
+				fromState,
+				targetState,
+				action
+			)
+			if (this.config.applyTransition) {
+				this.item[this.stateKey] = targetState as TContext[StateKey<
+					TContext,
+					TState
+				>]
+			}
+			return { success: true, newState: targetState, result }
+		} catch (error) {
 			return {
 				success: false,
-				error: `No actions defined for state '${this.getCurrentStatus()}'`
+				error: error instanceof Error ? error.message : String(error)
 			}
-		}
-
-		const targetState = actionsMap[action]
-		if (!targetState) {
-			return {
-				success: false,
-				error: `Action '${action}' not allowed in state '${this.getCurrentStatus()}'`
-			}
-		}
-
-		const validationResult = await this.validateTransition(targetState, {
-			action
-		})
-
-		if (validationResult === true) {
-			// If there's a custom action handler, call it with the provided data
-			if (this.config.actions?.[action]) {
-				try {
-					const result = await this.config.actions[action]!(this.item, data)
-					return {
-						success: true,
-						newState: targetState,
-						result
-					}
-				} catch (error) {
-					return {
-						success: false,
-						error: error instanceof Error ? error.message : String(error)
-					}
-				}
-			}
-
-			// Default behavior if no action handler
-			return {
-				success: true,
-				newState: targetState
-			}
-		}
-
-		return {
-			success: false,
-			error: validationResult
 		}
 	}
 
@@ -301,7 +312,21 @@ export class SimpleStateMachine<
 		// Run state-specific validator if provided
 		const stateValidator = this.config.validators?.[toState]
 		if (stateValidator) {
-			return await stateValidator(
+			const stateResult = await stateValidator(
+				this.item,
+				this.getCurrentStatus(),
+				toState,
+				action
+			)
+			if (stateResult !== true) {
+				return stateResult
+			}
+		}
+
+		// Run action-specific validator if validating a specific action
+		const actionValidator = action && this.config.actionValidators?.[action]
+		if (actionValidator) {
+			return await actionValidator(
 				this.item,
 				this.getCurrentStatus(),
 				toState,
@@ -324,8 +349,35 @@ export class SimpleStateMachine<
 	 * @returns The initial state
 	 */
 	getInitialState(): TState | undefined {
-		// This implementation just returns the first state
-		// You might want to customize this based on your needs
-		return this.getStates()[0]
+		return this.config.initialState ?? this.getStates()[0]
+	}
+}
+
+/**
+ * Defines a state machine config once and binds it to items on demand
+ *
+ * @example
+ * const orderMachine = createStateMachine<Status, Action, Order>(config)
+ * const machine = orderMachine.for(order, 'status')
+ */
+export function createStateMachine<
+	TState extends string,
+	TAction extends string,
+	TContext,
+	TActionDataMap extends ActionDataMap<TAction> = ActionDataMap<TAction>,
+	TActionResultMap extends ActionResultMap<TAction> = ActionResultMap<TAction>
+>(
+	config: StateMachineConfig<
+		TState,
+		TAction,
+		TContext,
+		TActionDataMap,
+		TActionResultMap
+	>
+) {
+	return {
+		config,
+		for: (item: TContext, stateKey: StateKey<TContext, TState>) =>
+			new SimpleStateMachine(config, item, stateKey)
 	}
 }

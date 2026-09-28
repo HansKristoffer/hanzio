@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { linearRegressionTrend } from './linearRegressionTrend'
+import {
+	linearRegression,
+	linearRegressionTrend
+} from './linearRegressionTrend'
 
 describe('linearRegressionTrend', () => {
 	test('returns [] when fewer than 2 points', () => {
@@ -23,5 +26,19 @@ describe('linearRegressionTrend', () => {
 	test('horizontal data yields constant trend', () => {
 		const y = linearRegressionTrend([7, 7, 7, 7])
 		expect(y.every((v) => v === 7)).toBe(true)
+	})
+	test('linearRegression exposes slope, intercept and r2', () => {
+		const exact = linearRegression([1, 3, 5])!
+		expect(exact.slope).toBeCloseTo(2, 10)
+		expect(exact.intercept).toBeCloseTo(1, 10)
+		expect(exact.r2).toBeCloseTo(1, 10)
+
+		const noisy = linearRegression([1, 3, 2, 4])!
+		expect(noisy.slope).toBeGreaterThan(0)
+		expect(noisy.r2).toBeGreaterThan(0)
+		expect(noisy.r2).toBeLessThan(1)
+
+		expect(linearRegression([7, 7])).toMatchObject({ slope: 0, r2: 1 })
+		expect(linearRegression([1])).toBeNull()
 	})
 })

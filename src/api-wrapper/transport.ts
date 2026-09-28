@@ -1,12 +1,16 @@
 import { ZodError, type z } from 'zod'
+import { anySignal, promiseTimeout } from '../promise'
+import { parseRetryAfter } from '../url'
 import type {
 	ApiEndpoint,
+	FetchLike,
 	OnResponseContext,
 	OnRetryContext,
 	RetryContext
 } from './types'
-import type { ApiErrorContext, HttpMethod } from './shared'
+import type { ApiErrorContext, HttpMethod, RequestMeta } from './shared'
 import {
+	ApiResponseError,
 	ConfigError,
 	HttpResponseError,
 	isNonRetryableApiError,
@@ -20,6 +24,7 @@ import {
 	getHeadersAsObject,
 	hasJsonContentType
 } from './headers'
+import { redactUrl } from './redaction'
 import { makeJsonParseZodError } from './zod-issues'
 
 export type RequestConfig = {
@@ -28,7 +33,7 @@ export type RequestConfig = {
 	body: unknown
 	headers: Record<string, string>
 	timeoutMs?: number
-	fetchFn: typeof fetch
+	fetchFn: FetchLike
 	userSignal?: AbortSignal
 }
 
@@ -57,7 +62,7 @@ export async function httpRequest(
 			? undefined
 			: setTimeout(() => timeoutController.abort(), config.timeoutMs)
 
-	const signal = mergeSignals(timeoutController.signal, config.userSignal)
+	const signal = anySignal(timeoutController.signal, config.userSignal)
 
 	try {
 		return await config.fetchFn(config.fullUrl, {
@@ -100,27 +105,6 @@ function isDomAbortError(error: unknown): boolean {
 	)
 }
 
-export function mergeSignals(
-	a: AbortSignal,
-	b: AbortSignal | undefined
-): AbortSignal {
-	if (!b) return a
-	const anyFn = (
-		AbortSignal as unknown as {
-			any?: (signals: AbortSignal[]) => AbortSignal
-		}
-	).any
-	if (typeof anyFn === 'function') return anyFn([a, b])
-
-	const controller = new AbortController()
-	const onAbort = () => controller.abort()
-	if (a.aborted) controller.abort()
-	else a.addEventListener('abort', onAbort, { once: true })
-	if (b.aborted) controller.abort()
-	else b.addEventListener('abort', onAbort, { once: true })
-	return controller.signal
-}
-
 export async function readErrorResponse(response: Response): Promise<{
 	body: string
 	headers: Record<string, string>
@@ -143,17 +127,8 @@ export function getRetryDelay(params: {
 	const maxDelay = params.maxRetryDelayMs ?? 30_000
 	const { retryDelay, attempt, response } = params
 	if (response && (response.status === 429 || response.status === 503)) {
-		const retryAfter = response.headers.get('retry-after')
-		if (retryAfter) {
-			const seconds = Number(retryAfter)
-			if (Number.isFinite(seconds)) {
-				return Math.min(Math.max(0, seconds * 1000), maxDelay)
-			}
-			const dateMs = Date.parse(retryAfter)
-			if (!Number.isNaN(dateMs)) {
-				return Math.min(Math.max(0, dateMs - Date.now()), maxDelay)
-			}
-		}
+		const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'))
+		if (retryAfterMs !== undefined) return Math.min(retryAfterMs, maxDelay)
 	}
 	const delayMs =
 		typeof retryDelay === 'function' ? retryDelay(attempt) : retryDelay
@@ -182,7 +157,7 @@ type MakeRequestArgs<TValidated> = {
 	endpointName: string
 	method: HttpMethod
 	fullUrl: string
-	meta?: Record<string, unknown>
+	meta?: RequestMeta
 	onResponse?: (context: OnResponseContext) => void | Promise<void>
 	onRetry?: (context: OnRetryContext) => void | Promise<void>
 }
@@ -215,7 +190,13 @@ export async function makeRequestWithRetry<TValidated>(
 	while (true) {
 		let response: Response | undefined
 		try {
-			logger?.debug?.('API request', config)
+			// Headers and body stay out of debug logs; they may carry credentials.
+			logger?.debug?.('API request', {
+				endpoint: endpointName,
+				method,
+				url: redactUrl(fullUrl),
+				attempt: retryCount
+			})
 			response = await httpRequest(config, (over) =>
 				ctx({ attempt: retryCount, ...over })
 			)
@@ -250,8 +231,10 @@ export async function makeRequestWithRetry<TValidated>(
 						delayMs,
 						nextAttempt: retryCount + 1
 					})
+					await sleepBeforeRetry(delayMs, config.userSignal, () =>
+						ctx({ attempt: retryCount })
+					)
 					retryCount++
-					await delay(delayMs)
 					continue
 				}
 
@@ -271,7 +254,11 @@ export async function makeRequestWithRetry<TValidated>(
 				httpStatus: response.status
 			}
 		} catch (error) {
-			if (isNonRetryableApiError(error)) {
+			// ApiResponseError is not retried by default, but a custom shouldRetry may opt in.
+			if (
+				isNonRetryableApiError(error) &&
+				!(error instanceof ApiResponseError)
+			) {
 				throw error
 			}
 
@@ -298,8 +285,10 @@ export async function makeRequestWithRetry<TValidated>(
 				delayMs,
 				nextAttempt: retryCount + 1
 			})
+			await sleepBeforeRetry(delayMs, config.userSignal, () =>
+				ctx({ attempt: retryCount })
+			)
 			retryCount++
-			await delay(delayMs)
 		}
 	}
 }
@@ -326,7 +315,8 @@ export async function validateAndTransformResponse<T extends z.ZodType>(
 			throw new ResponseValidationError(
 				makeJsonParseZodError(error, text),
 				text,
-				ctx()
+				ctx(),
+				{ invalidJson: true }
 			)
 		}
 	} else {
@@ -345,6 +335,14 @@ export function defaultShouldRetry(ctx: RetryContext): boolean {
 	return shouldAttemptRetryOnHttp(ctx)
 }
 
-function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms))
+async function sleepBeforeRetry(
+	ms: number,
+	signal: AbortSignal | undefined,
+	ctx: () => ApiErrorContext
+): Promise<void> {
+	try {
+		await promiseTimeout(ms, { signal })
+	} catch (error) {
+		throw new RequestAbortedError(ctx(), error)
+	}
 }
