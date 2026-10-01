@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/HansKristoffer/hanzio/compare/v2.0.0...v2.1.0) (2026-10-01)
+
+
+### Features
+
+* **secrets:** support explicit loading and public build configuration ([#8](https://github.com/HansKristoffer/hanzio/issues/8)) ([4d50937](https://github.com/HansKristoffer/hanzio/commit/4d50937e72403b877d3619d71dbb5c0c013cf17f))
+
 ## [2.0.0](https://github.com/HansKristoffer/hanzio/compare/v1.3.0...v2.0.0) (2026-09-28)
 
 
