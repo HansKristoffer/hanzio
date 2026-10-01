@@ -57,3 +57,5 @@ export function viteSecretSetPlugin<K extends string>(
 		config: () => ({ define: getViteDefine(secretSet, options) })
 	}
 }
+
+export { readPublicConfig } from './public-config'

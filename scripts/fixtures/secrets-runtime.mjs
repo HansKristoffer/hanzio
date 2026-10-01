@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { defineSecretSet, processEnvLoader } from 'hanzio/secrets'
+import { createSecretSet, defineSecretSet, readPublicConfig, getViteDefine, processEnvLoader } from 'hanzio/secrets'
 
 // Use real HTTP requests to verify the packaged session adapter in both runtimes.
 const requests = []
@@ -165,3 +165,13 @@ const local = await defineSecretSet(['HANZIO_RUNTIME_SECRET'], {
 
 await local.reload()
 assert.equal(local.secret('HANZIO_RUNTIME_SECRET'), 'explicit local')
+
+// Tooling can import and declare production scopes with neither a CLI nor
+// machine credentials, and validate explicit public values synchronously.
+const declared = createSecretSet(['HANZIO_UNLOADED_SECRET'], options)
+assert.throws(() => declared.secrets(), /Await load/)
+const publicConfig = readPublicConfig(['VITE_API_URL'], { VITE_API_URL: 'https://example.test' })
+assert.deepEqual(getViteDefine(publicConfig), {
+	'import.meta.env.VITE_API_URL': '"https://example.test"'
+})
+assert.throws(() => readPublicConfig(['VITE_API_URL'], {}), /Missing required public configuration/)

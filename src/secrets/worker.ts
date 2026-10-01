@@ -2,3 +2,5 @@
 export * from './core'
 export { cloudflareWorkerEnvLoader } from './worker-loader'
 export type { SecretRequestOptions } from './deadline'
+
+export { readPublicConfig } from './public-config'

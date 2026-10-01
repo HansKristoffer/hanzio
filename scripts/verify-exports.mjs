@@ -38,9 +38,9 @@ const expectedExports = {
 	'hanzio/crypto': ['safeEqual', 'hmacSign', 'createSealer', 'randomToken'],
 	'hanzio/storage': ['createStorageItem', 'createAsyncStorageItem'],
 	'hanzio/i18n': ['interpolate', 'extractPlaceholders', 'createTranslator'],
-	'hanzio/secrets': ['defineSecretSet'],
-	'hanzio/secrets/vite': ['viteSecretSetPlugin'],
-	'hanzio/secrets/worker': ['defineSecretSet', 'cloudflareWorkerEnvLoader']
+	'hanzio/secrets': ['defineSecretSet', 'createSecretSet', 'readPublicConfig'],
+	'hanzio/secrets/vite': ['viteSecretSetPlugin', 'readPublicConfig'],
+	'hanzio/secrets/worker': ['defineSecretSet', 'createSecretSet', 'readPublicConfig', 'cloudflareWorkerEnvLoader']
 }
 
 // Runs an ESM snippet from inside the temporary project and returns stdout.

@@ -1,5 +1,6 @@
 import {
-	defineSecretSet as defineCoreSecretSet,
+	createSecretSet as createCoreSecretSet,
+	type LazySecretSet,
 	type CommonSecretSetOptions,
 	type CustomLoaderDefineSecretSetOptions,
 	type SecretSet,
@@ -51,13 +52,13 @@ export function getSecretEnvironment(): SecretEnvironment {
 	) as SecretEnvironment
 }
 
-export async function defineSecretSet<
+export function createSecretSet<
 	const Keys extends readonly string[],
 	Parsed = Record<Keys[number], string>
 >(
 	keys: Keys,
 	options: DefineSecretSetOptions<Keys[number], Parsed>
-): Promise<SecretSet<Keys[number], Parsed>> {
+): LazySecretSet<Keys[number], Parsed> {
 	let loader: SecretSetLoader<Keys[number]>
 
 	if (!options.loader) {
@@ -69,7 +70,7 @@ export async function defineSecretSet<
 	}
 
 	// Supply process.env only from this Node/Bun entry point, keeping the core portable.
-	return defineCoreSecretSet(
+	return createCoreSecretSet(
 		keys,
 		{ ...options, loader },
 		getProcessEnvironment()
@@ -91,4 +92,15 @@ function createDefaultInfisicalLoader<K extends string, Parsed>(
 			clientSecretEnvKey:
 				options.clientSecretEnvKey ?? 'INFISICAL_CLIENT_SECRET'
 		})
+}
+
+/** Compatibility API: load immediately and fail before application startup. */
+export async function defineSecretSet<
+	const Keys extends readonly string[],
+	Parsed = Record<Keys[number], string>
+>(
+	keys: Keys,
+	options: DefineSecretSetOptions<Keys[number], Parsed>
+): Promise<SecretSet<Keys[number], Parsed>> {
+	return createSecretSet(keys, options).load()
 }

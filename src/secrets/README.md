@@ -21,6 +21,61 @@ const secrets = await defineSecretSet(['DATABASE_URL', 'APP_SECRET'], {
 const databaseUrl = secrets.secret('DATABASE_URL')
 ```
 
+## Import-safe declarations and public build configuration
+
+Use `createSecretSet` when a module is imported by typechecking, build tooling,
+or test runners. Declaration does not run a loader, evaluate the environment
+callback, authenticate, or write environment values. Await `load()` at the
+application entry point before starting servers or workers. Reading before a
+successful load throws a clear configuration error.
+
+```ts
+// backend/config.ts — safe for tooling to import
+import { createSecretSet } from 'hanzio/secrets'
+
+export const secrets = createSecretSet(['DATABASE_URL', 'APP_SECRET'], {
+	organizationId: 'infisical-organization-id',
+	projectId: 'infisical-project-id',
+	secretPath: '/backend'
+})
+
+// backend/start.ts
+await secrets.load()
+// Start the application only after validation succeeds.
+```
+
+`load()` is idempotent after successful initialization, shares concurrent loads,
+and can retry a failed initialization. `reload()` always refreshes, retaining the
+last successful snapshot on failure. The existing `defineSecretSet` API remains
+an eager declaration plus load, with the same startup validation and overrides.
+The runtime-neutral `hanzio/secrets/worker` entry exports both APIs too.
+
+Frontend builds can read public values without a secret provider:
+
+```ts
+import { readPublicConfig, getViteDefine } from 'hanzio/secrets/vite'
+
+const publicConfig = readPublicConfig(
+	['VITE_API_URL', 'VITE_FIREBASE_API_KEY'],
+	process.env
+)
+
+export default { define: getViteDefine(publicConfig) }
+```
+
+`readPublicConfig(keys, values)` is synchronous and runtime-neutral. The caller
+supplies the values explicitly: production build inputs or deterministic CI
+fixtures. It copies only the listed keys, never reads unrelated values, and
+fails with their names if required values are missing, empty, or not strings.
+It never fetches secrets, invents defaults, or writes `.env` / `process.env`.
+Apply your own schema to `publicConfig.secrets()` to validate URLs and other
+formats. The Vite allowlist policy still applies: non-`VITE_` keys require
+`getViteDefine(publicConfig, { publicKeys: [...] })`.
+
+Browser Firebase settings, public URLs, Turnstile site keys and PostHog browser
+project keys are public build values. Server credentials and source-map upload
+tokens belong in server or authenticated upload steps, outside this key list.
+
 ## Authentication and scope
 
 `auth` supports three modes:
@@ -130,7 +185,7 @@ silently selecting development.
 - A custom Infisical environment must be explicit: `environment: { slug: 'preview-123' }`.
 
 `environment` also accepts a function returning a standard environment or
-`{ slug }`. It is resolved once when the set is created; reload keeps that scope.
+`{ slug }`. It is resolved on the first load (`defineSecretSet` loads immediately); reload keeps that scope.
 An empty `SECRETS_ENV` is invalid—unset it to use the default.
 
 ## Overrides, isolation, and reload
