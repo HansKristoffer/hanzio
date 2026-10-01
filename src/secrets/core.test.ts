@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { z } from 'zod'
-import { defineSecretSet, type SecretSetLoader } from './core'
+import { createSecretSet, defineSecretSet, type SecretSetLoader } from './core'
 import { resolveSecretEnvironment } from './environment'
 import { processEnvLoader } from './loaders'
 import { getViteDefine } from './vite'
@@ -389,5 +389,50 @@ describe('public Vite values', () => {
 		expect(getViteDefine(set)).toEqual({
 			'import.meta.env.VITE_PUBLIC': '"public"'
 		})
+	})
+})
+
+describe('explicit initialization', () => {
+	test('declaration and unreadable getters never run a loader or environment callback', async () => {
+		const loader = mock(async () => ({ KEY: 'value' }))
+		const environment = mock(() => 'dev' as const)
+		const set = createSecretSet(['KEY'], { ...quiet, loader, environment })
+
+		for (const read of [
+			() => set.secret('KEY'),
+			set.secrets,
+			set.parsed,
+			set.sources
+		]) {
+			expect(read).toThrow('Await load()')
+		}
+
+		expect(loader).not.toHaveBeenCalled()
+		expect(environment).not.toHaveBeenCalled()
+
+		await Promise.all([set.load(), set.load()])
+		await set.load()
+
+		expect(loader).toHaveBeenCalledTimes(1)
+		expect(environment).toHaveBeenCalledTimes(1)
+		expect(set.secret('KEY')).toBe('value')
+
+		await set.reload()
+
+		expect(loader).toHaveBeenCalledTimes(2)
+	})
+
+	test('retries failed initialization and validates the complete snapshot', async () => {
+		let calls = 0
+		const set = createSecretSet(['KEY'], {
+			...quiet,
+			loader: async () => (++calls === 1 ? {} : { KEY: 'valid' }),
+			schema: z.object({ KEY: z.literal('valid') })
+		})
+
+		await expect(set.load()).rejects.toThrow('Missing secrets: KEY')
+		expect(set.secrets).toThrow('Await load()')
+		await set.load()
+		expect(set.parsed()).toEqual({ KEY: 'valid' })
 	})
 })

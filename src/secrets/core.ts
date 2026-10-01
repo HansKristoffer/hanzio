@@ -68,6 +68,15 @@ export type SecretSet<K extends string, Parsed = Record<K, string>> = {
 	reload: (options?: SecretRequestOptions) => Promise<SecretSet<K, Parsed>>
 }
 
+/** A declaration that must be loaded explicitly before its values can be read. */
+export type LazySecretSet<
+	K extends string,
+	Parsed = Record<K, string>
+> = SecretSet<K, Parsed> & {
+	/** Initialize once. Concurrent calls share a load; use reload to refresh. */
+	load: (options?: SecretRequestOptions) => Promise<LazySecretSet<K, Parsed>>
+}
+
 // Shared across bundled entry points and package copies in the same JS realm.
 // Only helper-written values are registered; original environment overrides aren't.
 const registryKey = Symbol.for('hanzio.secrets.environmentWrites.v1')
@@ -118,21 +127,19 @@ function readOverrides<K extends string>(
 	) as Partial<Record<K, string>>
 }
 
-export async function defineSecretSet<
+export function createSecretSet<
 	const Keys extends readonly string[],
 	Parsed = Record<Keys[number], string>
 >(
 	keys: Keys,
 	options: CustomLoaderDefineSecretSetOptions<Keys[number], Parsed>,
 	environmentVariables?: EnvironmentVariables
-): Promise<SecretSet<Keys[number], Parsed>> {
+): LazySecretSet<Keys[number], Parsed> {
 	type K = Keys[number]
 
 	const keySet = [...new Set(keys)] as K[]
-	const environment = resolveSecretEnvironment(
-		options.environment,
-		environmentVariables
-	)
+	let environment: string | undefined
+	let initialized = false
 	const logger =
 		options.logger === false ? undefined : (options.logger ?? defaultLogger)
 
@@ -157,7 +164,8 @@ export async function defineSecretSet<
 	// Build, validate, and commit one snapshot under the caller’s deadline.
 	const loadSnapshot = async (
 		request: SecretRequestOptions,
-		signal: AbortSignal
+		signal: AbortSignal,
+		environment: string
 	) => {
 		// Fetch only keys that lack genuine local overrides.
 		const local = readOverrides(keySet, environmentVariables)
@@ -261,6 +269,7 @@ export async function defineSecretSet<
 		cached = next
 		parsed = nextParsed
 		sources = nextSources
+		initialized = true
 	}
 
 	const load = (request: SecretRequestOptions = {}): Promise<void> => {
@@ -273,12 +282,18 @@ export async function defineSecretSet<
 			const start = Date.now()
 
 			try {
+				environment ??= resolveSecretEnvironment(
+					options.environment,
+					environmentVariables
+				)
+				const resolvedEnvironment = environment
+
 				await withSecretDeadline(
 					{
 						timeoutMs: request.timeoutMs ?? options.timeoutMs,
 						signal: request.signal ?? options.signal
 					},
-					(signal) => loadSnapshot(request, signal)
+					(signal) => loadSnapshot(request, signal, resolvedEnvironment)
 				)
 
 				// Report the sources of committed values, not attempted fetches.
@@ -293,7 +308,7 @@ export async function defineSecretSet<
 				const counts = Object.fromEntries(sourceCounts)
 
 				log('info', 'Loaded secrets', {
-					environment,
+					environment: resolvedEnvironment,
 					count: keySet.length,
 					durationMs: Date.now() - start,
 					source: Object.keys(counts).join(' + ') || 'none',
@@ -306,7 +321,7 @@ export async function defineSecretSet<
 						: new SecretLoadError('LOADER', 'Secret loading failed.')
 
 				log('error', 'Secret loading failed', {
-					environment,
+					environment: environment ?? 'unresolved',
 					count: keySet.length,
 					durationMs: Date.now() - start,
 					code: safe.code
@@ -321,8 +336,19 @@ export async function defineSecretSet<
 		return inFlight
 	}
 
-	const secretSet: SecretSet<K, Parsed> = {
+	const assertLoaded = () => {
+		if (!initialized) {
+			throw new SecretLoadError(
+				'CONFIGURATION',
+				'Secret set has not been loaded. Await load() before reading values.'
+			)
+		}
+	}
+
+	const secretSet: LazySecretSet<K, Parsed> = {
 		secret(key) {
+			assertLoaded()
+
 			if (!Object.hasOwn(cached, key)) {
 				throw new SecretLoadError('MISSING_SECRETS', `Secret ${key} not found`)
 			}
@@ -331,9 +357,29 @@ export async function defineSecretSet<
 		},
 
 		// Return copies so consumers cannot mutate the internal snapshots.
-		secrets: () => ({ ...cached }),
-		parsed: () => structuredClone(parsed),
-		sources: () => ({ ...sources }),
+		secrets() {
+			assertLoaded()
+
+			return { ...cached }
+		},
+		parsed() {
+			assertLoaded()
+
+			return structuredClone(parsed)
+		},
+		sources() {
+			assertLoaded()
+
+			return { ...sources }
+		},
+
+		async load(request) {
+			if (!initialized) {
+				await load(request)
+			}
+
+			return secretSet
+		},
 
 		async reload(request) {
 			await load(request)
@@ -342,7 +388,17 @@ export async function defineSecretSet<
 		}
 	}
 
-	await load()
-
 	return secretSet
+}
+
+/** Compatibility API: declares and loads a complete snapshot before returning. */
+export async function defineSecretSet<
+	const Keys extends readonly string[],
+	Parsed = Record<Keys[number], string>
+>(
+	keys: Keys,
+	options: CustomLoaderDefineSecretSetOptions<Keys[number], Parsed>,
+	environmentVariables?: EnvironmentVariables
+): Promise<SecretSet<Keys[number], Parsed>> {
+	return createSecretSet(keys, options, environmentVariables).load()
 }
