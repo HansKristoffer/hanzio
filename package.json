@@ -132,7 +132,8 @@
     "typecheck": "tsgo --noEmit",
     "prepare": "husky",
     "test:secrets:runtime": "bun run build && node scripts/verify-secrets.mjs",
-    "test:exports": "bun run build && node scripts/verify-exports.mjs"
+    "test:exports": "bun run build && node scripts/verify-exports.mjs",
+    "verify:package": "node scripts/verify-package.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
@@ -152,5 +153,10 @@
     "zod": {
       "optional": true
     }
-  }
+  },
+  "homepage": "https://github.com/HansKristoffer/hanzio#readme",
+  "bugs": {
+    "url": "https://github.com/HansKristoffer/hanzio/issues"
+  },
+  "packageManager": "bun@1.4.2"
 }
