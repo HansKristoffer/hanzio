@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/HansKristoffer/hanzio/compare/v2.1.0...v2.2.0) (2026-10-03)
+
+
+### Features
+
+* **connect:** expose response headers and endpoint checks ([#12](https://github.com/HansKristoffer/hanzio/issues/12)) ([ca7fd5d](https://github.com/HansKristoffer/hanzio/commit/ca7fd5d61e18ddd270f3d1a05f94681a1ae5747f))
+
 ## [2.1.0](https://github.com/HansKristoffer/hanzio/compare/v2.0.0...v2.1.0) (2026-10-01)
 
 
