@@ -25,6 +25,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/README.md",
     "dist",
     "!src/**/*.test.ts"
   ],

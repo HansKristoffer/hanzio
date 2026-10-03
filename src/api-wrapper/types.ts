@@ -35,6 +35,17 @@ export interface ApiEndpoint<
 	) => z.input<TResponse>
 	reqDefaultQueryParams?: QueryParams
 	doNotEncodeQueryParams?: boolean
+	/**
+	 * Replaces the client's `checkResponse` for this endpoint; `false` skips it.
+	 * `defineEndpoint` types `data` as the parsed `resSchema` output.
+	 */
+	checkResponse?:
+		| ((
+				// biome-ignore lint/suspicious/noExplicitAny: typed per endpoint by defineEndpoint
+				data: any,
+				context: CheckResponseContext
+		  ) => void | Promise<void>)
+		| false
 }
 
 export interface ApiWrapperResponse<T> {
@@ -44,6 +55,8 @@ export interface ApiWrapperResponse<T> {
 	responseTimeMs: number
 	httpStatus: number
 	retryCount: number
+	/** Response headers of the final attempt, keyed by lowercase name. */
+	headers: Record<string, string>
 }
 
 export type RetryContext = {

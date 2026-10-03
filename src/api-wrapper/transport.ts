@@ -303,7 +303,11 @@ export async function validateAndTransformResponse<T extends z.ZodType>(
 	>,
 	response: Response,
 	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
-): Promise<{ data: z.infer<T>; responseSizeBytes: number }> {
+): Promise<{
+	data: z.infer<T>
+	responseSizeBytes: number
+	headers: Record<string, string>
+}> {
 	const responseHeaders = getHeadersAsObject(response.headers)
 	const text = await response.text()
 	const responseSizeBytes = new TextEncoder().encode(text).length
@@ -327,7 +331,7 @@ export async function validateAndTransformResponse<T extends z.ZodType>(
 		: responseData
 
 	const data = await validateResponse(endpoint.resSchema, transformedData, ctx)
-	return { data, responseSizeBytes }
+	return { data, responseSizeBytes, headers: responseHeaders }
 }
 
 export function defaultShouldRetry(ctx: RetryContext): boolean {

@@ -162,6 +162,7 @@ type ApiWrapperResponse<T> = {
 	responseTimeMs: number
 	responseSizeMb: number
 	requestBodySizeMb: number
+	headers: Record<string, string> // final attempt, lowercase names
 }
 ```
 
@@ -182,7 +183,7 @@ accepts:
 | `shouldRetry` | `(ctx) => boolean` to override the default retry policy. |
 | `fetch` | Custom fetch implementation, typed as `FetchLike` (`(input, init?) => Promise<Response>`), so plain functions and mocks work without Bun's `preconnect`. |
 | `use` | Middleware around each whole request (see [Middleware](#middleware)). |
-| `checkResponse` | `(data, ctx) => void` run after `resSchema` validation on every attempt. Throw to reject a response that is an error in disguise (see [Rejecting 200 responses](#rejecting-200-responses)). |
+| `checkResponse` | `(data, ctx) => void` run after `resSchema` validation on every attempt. Throw to reject a response that is an error in disguise (see [Rejecting 200 responses](#rejecting-200-responses)). Endpoints can replace or skip it. |
 | `logger` | `Pick<Console, 'debug' \| 'error'>`. Each failed request is logged once with a categorized summary (see [Debugging Failed Requests](#debugging-failed-requests)). |
 | `onRequest` | Hook that runs once per request, before the first attempt. May return `{ headers, body }`; returned `headers` **replace** the outgoing headers, so spread `context.headers` to add one. For auth, prefer a `defaultHeaders` function. |
 | `onResponse` | Hook that runs after each response is received (called per attempt). |
@@ -329,6 +330,10 @@ const api = createApiClient({
 		isApiResponseError(ctx.error) || defaultShouldRetry(ctx)
 })
 ```
+
+An endpoint whose response has no envelope sets its own `checkResponse`,
+which replaces the client's, or `checkResponse: false` to skip it. With
+`defineEndpoint`, its `data` is the parsed `resSchema` output.
 
 ## Testing
 
@@ -654,7 +659,8 @@ of action handlers (e.g. clearing auth on logout).
 | `reqBodyFormat` | No | `json` or `form-data`. Object and array bodies default to JSON when no `Content-Type` is set. |
 | `baseApiUrl` | No | Key for a non-default base URL. |
 | `defaultHeaders` | No | Endpoint-specific headers. |
-| `resFormatter` | No | Transform response data before validation. |
+| `resFormatter` | No | `(data, headers) => …` transforms the response before validation. `headers` is keyed by lowercase name. |
+| `checkResponse` | No | Replaces the client's `checkResponse` for this endpoint; `false` skips it. |
 | `reqDefaultQueryParams` | No | Default query parameters, overridden per key by `reqQuery`. |
 | `doNotEncodeQueryParams` | No | Skip URL encoding for query params. |
 
@@ -678,6 +684,36 @@ export const endpoint = defineEndpoint({
 	}
 })
 ```
+
+### Result In Headers
+
+Some calls return their result only in headers. `resFormatter` receives the
+response headers (lowercase names) and an empty body as `''`; a missing header
+fails `resSchema` as a `ResponseValidationError`. Cloudflare Stream's Tus
+"create upload":
+
+```ts
+export const tusUploadPost = defineEndpoint({
+	method: 'POST',
+	path: '', // the base URL itself, e.g. .../accounts/:id/stream
+	reqDefaultQueryParams: { direct_user: 'true' },
+	defaultHeaders: { 'Tus-Resumable': '1.0.0' },
+	reqHeadersSchema: z.object({
+		'Upload-Length': z.string(),
+		'Upload-Metadata': z.string()
+	}),
+	resSchema: z.object({ tusEndpoint: z.string(), videoId: z.string() }),
+	resFormatter: (_body, headers) => ({
+		// `!` is safe: `resSchema` still rejects a missing header.
+		tusEndpoint: headers.location!,
+		videoId: headers['stream-media-id']!
+	}),
+	checkResponse: false // no `{ success, errors }` envelope to check
+})
+```
+
+To read a header alongside the body (`etag`, rate limits), use the response's
+`headers` instead.
 
 ### Optional And Nullable Fields
 
