@@ -5,8 +5,11 @@ import {
 	type ApiMiddleware,
 	type ApiResponseError,
 	createApiClient,
+	defineEndpoint,
 	HttpResponseError,
-	isApiResponseError
+	isApiResponseError,
+	isResponseValidationError,
+	type ResponseValidationError
 } from '.'
 import { createMockFetch, jsonResponse } from './testing'
 
@@ -283,6 +286,134 @@ describe('checkResponse', () => {
 		})
 
 		expect((await api.envelope()).data).toEqual({ success: true, errors: [] })
+	})
+
+	describe('per endpoint', () => {
+		const plain = {
+			method: 'GET',
+			path: '/plain',
+			resSchema: z.object({ id: z.string() })
+		} satisfies ApiEndpoint
+		const client = (endpoints: Record<string, ApiEndpoint>) => {
+			const fetch = createMockFetch(() =>
+				jsonResponse({ id: 'a' }, { status: 200 })
+			)
+			const api = createApiClient({
+				baseApiUrls: { default: 'https://api.test' },
+				endpoints,
+				checkResponse,
+				fetch
+			})
+			return { api, fetch }
+		}
+
+		test('false skips the client check', async () => {
+			const { api } = client({ plain: { ...plain, checkResponse: false } })
+			expect((await api.request('plain')).data).toEqual({ id: 'a' })
+		})
+
+		test('absent uses the client check', async () => {
+			const { api } = client({ plain })
+			expect(
+				await api.request('plain').catch((e: unknown) => e)
+			).toBeInstanceOf(Error)
+		})
+
+		test('a function replaces the client check and is not retried', async () => {
+			const seen: unknown[] = []
+			const { api, fetch } = client({
+				plain: {
+					...plain,
+					checkResponse: (data, ctx) => {
+						seen.push(data, ctx.endpoint)
+						throw new Error('no thanks')
+					}
+				}
+			})
+
+			const error = await api.request('plain').catch((e: unknown) => e)
+
+			expect(isApiResponseError(error)).toBe(true)
+			expect((error as ApiResponseError).message).toBe('no thanks')
+			expect(seen).toEqual([{ id: 'a' }, 'plain'])
+			expect(fetch.calls).toHaveLength(1)
+		})
+	})
+})
+
+describe('result in headers', () => {
+	test('resFormatter reads headers and the response exposes them', async () => {
+		const tusUploadPost = defineEndpoint({
+			method: 'POST',
+			path: '',
+			reqDefaultQueryParams: { direct_user: 'true' },
+			defaultHeaders: { 'Tus-Resumable': '1.0.0' },
+			reqHeadersSchema: z.object({
+				'Upload-Length': z.string(),
+				'Upload-Metadata': z.string()
+			}),
+			resSchema: z.object({ tusEndpoint: z.string(), videoId: z.string() }),
+			resFormatter: (_body, headers) => ({
+				tusEndpoint: headers.location!,
+				videoId: headers['stream-media-id']!
+			}),
+			checkResponse: false
+		})
+		const fetch = createMockFetch(
+			() =>
+				new Response(null, {
+					status: 201,
+					headers: { Location: 'https://tus.test/1', 'Stream-Media-Id': 'v1' }
+				})
+		)
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.test/accounts/1/stream' },
+			endpoints: { tusUploadPost },
+			checkResponse: () => {
+				throw new Error('envelope missing')
+			},
+			fetch
+		})
+
+		const res = await api.tusUploadPost({
+			reqHeaders: { 'Upload-Length': '10', 'Upload-Metadata': 'name dGVzdA==' }
+		})
+
+		expect(res.data).toEqual({
+			tusEndpoint: 'https://tus.test/1',
+			videoId: 'v1'
+		})
+		expect(res.headers['stream-media-id']).toBe('v1')
+		const request = fetch.calls[0]!
+		expect(request.url).toBe(
+			'https://api.test/accounts/1/stream?direct_user=true'
+		)
+		expect(request.headers.get('tus-resumable')).toBe('1.0.0')
+		expect(request.headers.get('upload-length')).toBe('10')
+	})
+
+	test('a missing header is an output validation error', async () => {
+		const api = createApiClient({
+			baseApiUrls: { default: 'https://api.test' },
+			endpoints: {
+				created: defineEndpoint({
+					method: 'POST',
+					path: '',
+					resSchema: z.object({ videoId: z.string() }),
+					resFormatter: (_body, headers) => ({
+						videoId: headers['stream-media-id']!
+					})
+				})
+			},
+			retries: 0,
+			fetch: createMockFetch(() => new Response(null, { status: 201 }))
+		})
+
+		const error = await api.created().catch((e: unknown) => e)
+		expect(isResponseValidationError(error)).toBe(true)
+		expect((error as ResponseValidationError).category).toBe(
+			'output_validation'
+		)
 	})
 })
 

@@ -81,7 +81,9 @@ If the project uses OpenTelemetry, add
 `logger` so failures are logged with their category (server, input or output
 validation). If the API returns HTTP 200 with an
 error envelope (e.g. `{ success: false, errors }`), add a `checkResponse` that
-throws on failure rather than checking after every call.
+throws on failure rather than checking after every call. Endpoints without the
+envelope set `checkResponse: false` (or their own check). When the result is in
+response headers (e.g. a `Location`), read them in `resFormatter(body, headers)`.
 
 ### Step 4: Create Shared Types
 

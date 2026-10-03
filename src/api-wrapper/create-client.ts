@@ -256,7 +256,8 @@ function createApiClientImpl<
 				responseSizeMb: result.validatedData.responseSizeBytes / (1024 * 1024),
 				responseTimeMs: elapsed(),
 				httpStatus: result.httpStatus,
-				retryCount: result.retryCount
+				retryCount: result.retryCount,
+				headers: result.validatedData.headers
 			}
 		}
 
@@ -265,9 +266,14 @@ function createApiClientImpl<
 			httpStatus: number,
 			attempt: number
 		) => {
-			if (!apiConfig.checkResponse) return
+			// An endpoint's own check (or `false`) replaces the client's.
+			const checkResponse =
+				endpoint.checkResponse === undefined
+					? apiConfig.checkResponse
+					: endpoint.checkResponse
+			if (!checkResponse) return
 			try {
-				await apiConfig.checkResponse(data, {
+				await checkResponse(data, {
 					endpoint: endpointName,
 					method: endpoint.method,
 					url: fullUrl,

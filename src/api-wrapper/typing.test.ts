@@ -121,6 +121,17 @@ describe('request typing', () => {
 			resFormatter: () => 42
 		})
 	})
+
+	test('checkResponse receives the parsed response schema output', () => {
+		defineEndpoint({
+			method: 'GET',
+			path: '/x',
+			resSchema: z.object({ total: z.string().transform(Number) }),
+			checkResponse: (data) => {
+				assertType<Equal<typeof data, { total: number }>>()
+			}
+		})
+	})
 })
 
 describe('type helpers', () => {
