@@ -26,6 +26,7 @@
   "files": [
     "src/**/*.ts",
     "src/**/README.md",
+    "src/api-wrapper/SKILL.md",
     "dist",
     "!src/**/*.test.ts"
   ],
