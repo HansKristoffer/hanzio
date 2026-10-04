@@ -77,6 +77,71 @@
 	},
 	"overrides": [
 		{
+			"includes": [
+				"src/index.ts",
+				"src/typedswitch/**",
+				"src/array/**",
+				"src/string/**",
+				"src/promise/**",
+				"src/cache/**",
+				"src/state/**",
+				"src/math/**",
+				"src/color/**",
+				"src/date/**",
+				"src/url/**",
+				"src/error/**",
+				"src/guard/**",
+				"src/object/**",
+				"src/types/**",
+				"src/function/**",
+				"src/emitter/**",
+				"!**/*.test.ts"
+			],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"patterns": [
+									{
+										"group": [
+											"**",
+											"!./**",
+											"!../**",
+											"../zod",
+											"../zod/**",
+											"../api-wrapper",
+											"../api-wrapper/**",
+											"../jwt",
+											"../jwt/**",
+											"../sitemap",
+											"../sitemap/**",
+											"../p-queue",
+											"../p-queue/**",
+											"../cool-console-log",
+											"../cool-console-log/**",
+											"../format",
+											"../format/**",
+											"../crypto",
+											"../crypto/**",
+											"../storage",
+											"../storage/**",
+											"../i18n",
+											"../i18n/**",
+											"../secrets",
+											"../secrets/**"
+										],
+										"message": "The root entry must stay dependency-free and runtime-neutral. Move code that needs this import to a subpath module (see AGENTS.md)."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
 			"includes": ["src/cache/index.ts", "src/zod/jsonToZodSchemaMapper.ts"],
 			"linter": {
 				"rules": {

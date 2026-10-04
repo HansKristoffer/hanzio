@@ -71,6 +71,19 @@ try {
 	)
 	assert.deepEqual(Object.keys(pkg.exports).sort(), documented.sort())
 
+	// The README imports table lists every subpath, and nothing else.
+	const readme = await readFile(join(root, 'README.md'), 'utf8')
+	const tabled = [...readme.matchAll(/^\| `(hanzio\/[^`]+)` \|/gm)].map(
+		([, name]) => name
+	)
+	assert.deepEqual(
+		tabled.sort(),
+		Object.keys(expectedExports)
+			.filter((name) => name !== 'hanzio')
+			.sort(),
+		'README imports table must list exactly the package subpaths'
+	)
+
 	for (const [subpath, conditions] of Object.entries(pkg.exports)) {
 		for (const file of new Set(Object.values(conditions))) {
 			await access(join(temporary, 'package', file)).catch(() => {

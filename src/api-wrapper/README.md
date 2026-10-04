@@ -3,8 +3,11 @@
 Typed HTTP clients from Zod schemas: `createApiClient` validates requests and
 responses, retries with exponential backoff, and throws structured errors.
 
-Building a new wrapper with an AI agent? See [AGENTS.md](./AGENTS.md) for the
-step-by-step workflow and folder conventions.
+Building a new wrapper with an AI agent? [SKILL.md](./SKILL.md) has the
+step-by-step workflow and folder conventions. It ships with the package: copy
+`node_modules/hanzio/src/api-wrapper/SKILL.md` to
+`.claude/skills/hanzio-api-wrapper/SKILL.md` (or `.agents/skills/…`), or point
+your agent at it.
 
 ## Quick Start
 
