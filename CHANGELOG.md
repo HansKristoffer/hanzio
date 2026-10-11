@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/HansKristoffer/hanzio/compare/v2.2.0...v3.0.0) (2026-10-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **typedswitch:** the typedSwitch Constraint type argument is removed, so annotate the result instead. Case keys that are not values of the switched union are now a type error.
+
+### Features
+
+* **typedswitch:** grouped cases, number/boolean values and stricter case checks ([4f64921](https://github.com/HansKristoffer/hanzio/commit/4f649219b0f25e8535f3b98f8c169c36426a656d))
+
 ## [2.2.0](https://github.com/HansKristoffer/hanzio/compare/v2.1.0...v2.2.0) (2026-10-03)
 
 
