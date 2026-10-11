@@ -66,20 +66,11 @@
  *    })
  *
  *
- * 4. WITH CONSTRAINT - use `typedSwitch<T>` to enforce return type:
+ * 4. ENFORCING A RETURN TYPE - annotate the result:
  *
  *    @example
- *    interface HasId { id: string }
- *
- *    // All handlers must return something with { id: string }
- *    typedSwitch<HasId>(status, {
- *      success: () => ({ id: '123', name: 'John' }), // ✓ OK
- *      error: () => ({ id: '456' }), // ✓ OK
- *    })
- *
- *    // Type error - missing 'id' property
- *    typedSwitch<HasId>(status, {
- *      success: () => ({ name: 'John' }), // ✗ Error!
+ *    const result: { id: string } = typedSwitch(status, {
+ *      success: () => ({ id: '123' }),
  *      error: () => ({ id: '456' }),
  *    })
  */
@@ -165,6 +156,16 @@ export type PartialObjectSwitchCases<
 	R
 > = T[K] extends Discriminant ? PartialObjectCases<T, K, R | Promise<R>> : never
 
+/**
+ * Rejects case keys that are not values of the switched union, so a typo
+ * fails to compile instead of silently falling through to the default.
+ */
+type NoUnknownCases<Cases, Allowed extends string> = {
+	[P in keyof Cases as `${P & (string | number)}` extends Allowed
+		? never
+		: P]: never
+}
+
 type Handler = (value: unknown) => unknown
 type CasesRecord = Record<string, Handler | undefined>
 
@@ -175,14 +176,19 @@ type CasesRecord = Record<string, Handler | undefined>
 // Plain value input - all cases required (no default)
 export function typedSwitch<
 	T extends Discriminant,
-	Cases extends { [V in T as `${V}`]: (value: V) => unknown }
+	Cases extends { [V in T as `${V}`]: (value: V) => unknown } & NoUnknownCases<
+		Cases,
+		`${T}`
+	>
 >(value: T, cases: Cases): RawCasesReturnType<Cases>
 
 // Plain value input - partial cases allowed (with default)
 // The default handler only receives the cases not covered by `cases`.
 export function typedSwitch<
 	T extends Discriminant,
-	Cases extends { [V in T as `${V}`]?: (value: V) => unknown },
+	Cases extends {
+		[V in T as `${V}`]?: (value: V) => unknown
+	} & NoUnknownCases<Cases, `${T}`>,
 	DefaultCase extends (
 		value: Exclude<T, ValuesForKeys<T, HandledCaseKeys<Cases>>>
 	) => unknown
@@ -196,7 +202,8 @@ export function typedSwitch<
 export function typedSwitch<
 	T extends object,
 	K extends keyof T,
-	Cases extends ObjectCases<T, K, unknown>
+	Cases extends ObjectCases<T, K, unknown> &
+		NoUnknownCases<Cases, `${Extract<T[K], Discriminant>}`>
 >(value: T, key: K, cases: Cases): RawCasesReturnType<Cases>
 
 // Object input with key - partial cases allowed (with default)
@@ -204,7 +211,8 @@ export function typedSwitch<
 export function typedSwitch<
 	T extends object,
 	K extends keyof T,
-	Cases extends PartialObjectCases<T, K, unknown>,
+	Cases extends PartialObjectCases<T, K, unknown> &
+		NoUnknownCases<Cases, `${Extract<T[K], Discriminant>}`>,
 	DefaultCase extends (
 		value: Exclude<T, Record<K, ValuesForKeys<T[K], HandledCaseKeys<Cases>>>>
 	) => unknown
@@ -214,66 +222,6 @@ export function typedSwitch<
 	cases: Cases,
 	defaultCase: DefaultCase
 ): RawCasesReturnType<Cases> | RawHandlerReturnType<DefaultCase>
-
-// String input - all cases required with return constraint (no default)
-export function typedSwitch<Constraint, T extends string = string>(
-	value: T,
-	cases: { [K in T]: (value: K) => Constraint }
-): Constraint
-export function typedSwitch<Constraint, T extends string = string>(
-	value: T,
-	cases: { [K in T]: (value: K) => Constraint | Promise<Constraint> }
-): Constraint | Promise<Constraint>
-
-// String input - partial cases allowed with return constraint (with default)
-export function typedSwitch<Constraint, T extends string = string>(
-	value: T,
-	cases: { [K in T]?: (value: K) => Constraint },
-	defaultCase: (value: T) => Constraint
-): Constraint
-export function typedSwitch<Constraint, T extends string = string>(
-	value: T,
-	cases: { [K in T]?: (value: K) => Constraint | Promise<Constraint> },
-	defaultCase: (value: T) => Constraint | Promise<Constraint>
-): Constraint | Promise<Constraint>
-
-// Object input with key - all cases required with return constraint (no default)
-export function typedSwitch<
-	Constraint,
-	T extends Record<string, unknown> = Record<string, unknown>,
-	K extends keyof T = keyof T
->(value: T, key: K, cases: ObjectCases<T, K, Constraint>): Constraint
-export function typedSwitch<
-	Constraint,
-	T extends Record<string, unknown> = Record<string, unknown>,
-	K extends keyof T = keyof T
->(
-	value: T,
-	key: K,
-	cases: ObjectCases<T, K, Constraint | Promise<Constraint>>
-): Constraint | Promise<Constraint>
-
-// Object input with key - partial cases allowed with return constraint (with default)
-export function typedSwitch<
-	Constraint,
-	T extends Record<string, unknown> = Record<string, unknown>,
-	K extends keyof T = keyof T
->(
-	value: T,
-	key: K,
-	cases: PartialObjectCases<T, K, Constraint>,
-	defaultCase: (value: T) => Constraint
-): Constraint
-export function typedSwitch<
-	Constraint,
-	T extends Record<string, unknown> = Record<string, unknown>,
-	K extends keyof T = keyof T
->(
-	value: T,
-	key: K,
-	cases: PartialObjectCases<T, K, Constraint | Promise<Constraint>>,
-	defaultCase: (value: T) => Constraint | Promise<Constraint>
-): Constraint | Promise<Constraint>
 
 // Implementation
 export function typedSwitch(
@@ -350,6 +298,7 @@ export function typedSwitch(
  * Pass the switched value so its type is inferred; the handler receives the
  * union of the grouped members. A case listed after the spread replaces the
  * grouped handler for that key; listing it before the spread is a type error.
+ * If two groups list the same key, the later group wins.
  *
  * @example
  * typedSwitch(event, 'type', {

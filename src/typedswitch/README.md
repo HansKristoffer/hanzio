@@ -24,7 +24,7 @@ bun add typedswitch
 - **Async-aware** — Async handlers preserve their `Promise` return type
 - **Grouped cases** — Share one handler between several values, fully typed
 - **Default handlers** — Handle remaining cases with a fallback
-- **Return type constraints** — Enforce that all handlers return a specific type
+- **Typo-proof cases** — A case key that isn't a value of the union is a compile error
 - **`assertNever`** — Exhaustiveness checking for regular `switch` statements
 
 ## Usage
@@ -156,7 +156,7 @@ const message = typedSwitch(status, {
 
 Group keys must be values of the discriminant. A case written after the spread
 replaces the grouped handler for that key; writing it before the spread is a
-type error.
+type error. If two groups list the same key, the later group wins.
 
 ### Default Handler
 
@@ -244,43 +244,21 @@ const result = typedSwitch(status, {
 // result: { ok: true; data: string } | { ok: false; code: number } | null
 ```
 
-### Return Type Constraints
+### Enforcing a Return Type
 
-Enforce that all handlers return a type extending a constraint with `typedSwitch<Constraint>(...)`. The `<Constraint>` is optional; omit it when you want TypeScript to infer the return types freely.
+Annotate the result. Every handler's return type must fit, and exhaustiveness
+checking still applies:
 
 ```typescript
 interface HasId {
   id: string
 }
 
-// All handlers must return something with { id: string }
-const result = typedSwitch<HasId>(status, {
-  success: () => ({ id: '123', name: 'John' }),     // ✓ OK
-  error: () => ({ id: '456', code: 500 }),          // ✓ OK
-  pending: () => ({ id: '789' }),                   // ✓ OK
-})
-// result: HasId
-
-// This would be a compile error:
-typedSwitch<HasId>(status, {
-  success: () => ({ name: 'John' }),  // ✗ Error: missing 'id'
-  error: () => ({ id: '456' }),
+const result: HasId = typedSwitch(status, {
+  success: () => ({ id: '123', name: 'John' }),
+  error: () => ({ id: '456', code: 500 }),
   pending: () => ({ id: '789' }),
 })
-```
-
-Constraints also work with discriminated unions and default handlers:
-
-```typescript
-const result = typedSwitch<HasId>(
-  event,
-  'type',
-  {
-    click: () => ({ id: 'click-1', x: 10, y: 20 }),
-    scroll: () => ({ id: 'scroll-1', offset: 100 }),
-    keypress: () => ({ id: 'key-1', key: 'Enter' }),
-  }
-)
 ```
 
 ## Error Handling
@@ -339,14 +317,6 @@ Switch on a discriminated union using the specified discriminant key (string, nu
 ### `typedSwitch(object, key, cases, defaultHandler)`
 
 Switch on a discriminated union with partial cases and a default fallback.
-
-### `typedSwitch<Constraint>(value, cases)`
-
-Switch on a string literal while enforcing that each handler returns `Constraint` or `Promise<Constraint>`.
-
-### `typedSwitch<Constraint>(object, key, cases)`
-
-Switch on a discriminated union while enforcing that each handler returns `Constraint` or `Promise<Constraint>`.
 
 ### `typedSwitchGroup(value, keys, handler)` / `typedSwitchGroup(object, key, keys, handler)`
 

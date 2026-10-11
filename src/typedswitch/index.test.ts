@@ -811,12 +811,44 @@ describe('typedSwitch negative type checking', () => {
 		expect(assertTypeErrors).toBeDefined()
 	})
 
-	test('direct constraint rejects handlers that do not satisfy the constraint', () => {
+	test('rejects unknown case keys', () => {
 		const assertTypeErrors = () => {
+			const event = getEvent({ type: 'click', x: 10, y: 20 })
+			const code = asType<200 | 404>(200)
+
+			const status = getStatus('success')
+
+			// @ts-expect-error "sucess" is a typo; "success" would hit the default
+			typedSwitch(status, { sucess: () => 1, error: () => 2 }, () => 0)
+			// @ts-expect-error "drag" is not a value of the "type" discriminant
+			typedSwitch(event, 'type', { click: () => 1, drag: () => 2 }, () => 0)
+			// @ts-expect-error 500 is not a value of code
+			typedSwitch(code, { 200: () => 1, 404: () => 2, 500: () => 3 })
+		}
+
+		expect(assertTypeErrors).toBeDefined()
+	})
+
+	test('rejects handlers that break an annotated return type', () => {
+		const assertTypeErrors = () => {
+			// @ts-expect-error the error handler returns a string, not a number
+			const result: number = typedSwitch(getStatus('success'), {
+				success: () => 1,
+				error: () => 'not a number'
+			})
+
+			expect(result).toBeDefined()
+		}
+
+		expect(assertTypeErrors).toBeDefined()
+	})
+
+	test('rejects the removed explicit constraint type argument', () => {
+		const assertTypeErrors = () => {
+			// @ts-expect-error use a result annotation instead of typedSwitch<Constraint>
 			typedSwitch<number>(getStatus('success'), {
 				success: () => 1,
-				// @ts-expect-error error handler must return number or Promise<number>
-				error: () => 'not a number'
+				error: () => 0
 			})
 		}
 
@@ -966,110 +998,31 @@ describe('typedSwitch sync/async return type inference', () => {
 })
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Type tests - Generic constraint mode
+// Type tests - Enforcing a return type
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('typedSwitch return constraint mode', () => {
+describe('typedSwitch annotated return type', () => {
 	interface HasId {
 		id: string
 	}
 
-	interface UserResult extends HasId {
-		id: string
-		name: string
-	}
-
-	interface ErrorResult extends HasId {
-		id: string
-		code: number
-	}
-
-	test('constraint: handlers must return type extending constraint', () => {
-		const result = typedSwitch<HasId>(getStatus('success'), {
-			success: () => ({ id: '123', name: 'John' }) as UserResult,
-			error: () => ({ id: '456', code: 500 }) as ErrorResult
+	test('annotating the result checks every handler and keeps exhaustiveness', async () => {
+		const sync: HasId = typedSwitch(getStatus('success'), {
+			success: () => ({ id: '1', name: 'John' }),
+			error: () => ({ id: '2', code: 500 })
 		})
-
-		expectTypeOf(result).toEqualTypeOf<HasId>()
-	})
-
-	test('constraint: works with primitive return constraints', () => {
-		const result = typedSwitch<number>(getStatus('success'), {
-			success: () => 1,
-			error: () => 0
-		})
-
-		expectTypeOf(result).toEqualTypeOf<number>()
-		expect(result).toBe(1)
-	})
-
-	test('constraint: works with object mode', () => {
-		const result = typedSwitch<HasId>(
-			getEvent({ type: 'click', x: 10, y: 20 }),
+		const async: Promise<HasId> = typedSwitch(
+			getEvent({ type: 'key', key: 'a' }),
 			'type',
 			{
-				click: () => ({ id: 'click-1', coords: { x: 10, y: 20 } }),
-				scroll: () => ({ id: 'scroll-1', offset: 100 }),
-				key: () => ({ id: 'key-1', pressed: 'Enter' })
+				click: async () => ({ id: 'click' }),
+				scroll: async () => ({ id: 'scroll' }),
+				key: async (e) => ({ id: e.key })
 			}
 		)
 
-		expectTypeOf(result).toEqualTypeOf<HasId>()
-	})
-
-	test('constraint: works with number discriminants', () => {
-		type Response = { code: 200 } | { code: 404 }
-		const result = typedSwitch<HasId>(asType<Response>({ code: 404 }), 'code', {
-			200: () => ({ id: 'ok' }),
-			404: () => ({ id: 'missing' })
-		})
-
-		expectTypeOf(result).toEqualTypeOf<HasId>()
-		expect(result).toEqual({ id: 'missing' })
-	})
-
-	test('constraint: works with async handlers', async () => {
-		const result = typedSwitch<HasId>(getStatus('success'), {
-			success: async () => ({ id: '1', name: 'John' }),
-			error: async () => ({ id: '2', code: 500 })
-		})
-
-		expectTypeOf(result).toEqualTypeOf<HasId | Promise<HasId>>()
-
-		const value = await result
-		expect(value).toMatchObject({ id: '1' })
-	})
-
-	test('constraint: with default enforces constraint and preserves inferred union', async () => {
-		const result = await typedSwitch<HasId>(
-			getTriStatus('pending'),
-			{
-				success: () => ({ id: 'success-1', kind: 'success' as const })
-			},
-			(status) => ({ id: `default-${status}`, kind: 'default' as const })
-		)
-
-		expectTypeOf(result).toEqualTypeOf<HasId>()
-		expect(result).toMatchObject({ id: 'default-pending' })
-	})
-
-	test('constraint: runtime behavior works correctly', () => {
-		const result = typedSwitch<HasId>(getStatus('success'), {
-			success: () => ({ id: 'success-id', value: 42 }),
-			error: () => ({ id: 'error-id', message: 'failed' })
-		})
-
-		expect(result).toMatchObject({ id: 'success-id' })
-	})
-
-	test('without constraint: handlers can return anything', () => {
-		// Without constraint, this should work fine
-		const result = typedSwitch(getStatus('success'), {
-			success: () => 'a string',
-			error: () => 42
-		})
-
-		expectTypeOf(result).toEqualTypeOf<string | number>()
+		expect(sync).toMatchObject({ id: '1' })
+		expect(await async).toEqual({ id: 'a' })
 	})
 })
 

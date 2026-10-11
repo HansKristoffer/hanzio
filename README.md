@@ -52,6 +52,15 @@ subpath export:
 `scripts/verify-exports.mjs` imports every entry above from the packed tarball
 in CI, so this table and `package.json#exports` can't drift apart.
 
+## Migrating to 3.0
+
+- `typedSwitch<Constraint>(…)` is removed. The explicit type argument switched
+  off inference, so those calls checked neither exhaustiveness nor, in object
+  mode, the return type. Annotate the result instead:
+  `const result: HasId = typedSwitch(status, { … })`.
+- `typedSwitch` rejects case keys that aren't values of the switched union. A
+  typo used to compile and fall through to the default handler.
+
 ## Migrating to 2.0
 
 - Subpath-only modules are no longer re-exported from `hanzio`. Change
