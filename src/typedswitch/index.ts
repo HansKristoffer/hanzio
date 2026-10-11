@@ -3,7 +3,8 @@
  *
  * Supports two input modes:
  *
- * 1. STRING INPUT - switch on a string/enum value directly:
+ * 1. PLAIN VALUE INPUT - switch on a string, number or boolean value directly.
+ *    Cases are keyed by `String(value)`:
  *
  *    @example
  *    const status: 'success' | 'error' = 'success'
@@ -18,6 +19,9 @@
  *    typedSwitch(status, {
  *      success: (val) => 'handled success',
  *    }, (val) => 'default handler')
+ *
+ *    typedSwitch(code, { 200: (c) => 'ok', 404: (c) => 'missing' }) // c: 200, 404
+ *    typedSwitch(flag, { true: () => 'on', false: () => 'off' })
  *
  *
  * 2. OBJECT INPUT - switch on a discriminated union with custom key:
@@ -46,7 +50,23 @@
  *    })
  *
  *
- * 3. WITH CONSTRAINT - use `typedSwitch<T>` to enforce return type:
+ * 3. GROUPED CASES - share one handler between several values with
+ *    `typedSwitchGroup`. The handler receives the union of the grouped
+ *    members, and the spread keeps exhaustiveness and return type inference:
+ *
+ *    @example
+ *    typedSwitch(event, 'type', {
+ *      ...typedSwitchGroup(event, 'type', ['click', 'scroll'], (e) => e.type), // e: ClickEvent | ScrollEvent
+ *      key: (e) => e.key,
+ *    })
+ *
+ *    typedSwitch(status, {
+ *      ...typedSwitchGroup(status, ['success', 'pending'], (s) => 'fine'), // s: 'success' | 'pending'
+ *      error: () => 'failed',
+ *    })
+ *
+ *
+ * 4. WITH CONSTRAINT - use `typedSwitch<T>` to enforce return type:
  *
  *    @example
  *    interface HasId { id: string }
@@ -152,18 +172,20 @@ type CasesRecord = Record<string, Handler | undefined>
 // Function overloads
 // ═══════════════════════════════════════════════════════════════════════════
 
-// String input - all cases required (no default)
+// Plain value input - all cases required (no default)
 export function typedSwitch<
-	T extends string,
-	Cases extends { [K in T]: (value: K) => unknown }
+	T extends Discriminant,
+	Cases extends { [V in T as `${V}`]: (value: V) => unknown }
 >(value: T, cases: Cases): RawCasesReturnType<Cases>
 
-// String input - partial cases allowed (with default)
+// Plain value input - partial cases allowed (with default)
 // The default handler only receives the cases not covered by `cases`.
 export function typedSwitch<
-	T extends string,
-	Cases extends { [K in T]?: (value: K) => unknown },
-	DefaultCase extends (value: Exclude<T, HandledCaseKeys<Cases>>) => unknown
+	T extends Discriminant,
+	Cases extends { [V in T as `${V}`]?: (value: V) => unknown },
+	DefaultCase extends (
+		value: Exclude<T, ValuesForKeys<T, HandledCaseKeys<Cases>>>
+	) => unknown
 >(
 	value: T,
 	cases: Cases,
@@ -255,7 +277,7 @@ export function typedSwitch<
 
 // Implementation
 export function typedSwitch(
-	value: string | object,
+	value: Discriminant | object,
 	keyOrCases: string | CasesRecord,
 	casesOrDefault?: CasesRecord | Handler,
 	defaultCase?: Handler
@@ -265,9 +287,9 @@ export function typedSwitch(
 	let defaultHandler: Handler | undefined
 	let discriminantKey: string | undefined
 
-	if (typeof value === 'string') {
-		// String input: typedSwitch(string, cases, default?)
-		key = value
+	if (typeof value !== 'object') {
+		// Plain value input: typedSwitch(value, cases, default?)
+		key = String(value)
 		cases = keyOrCases as CasesRecord
 		defaultHandler = casesOrDefault as Handler | undefined
 	} else {
@@ -321,6 +343,49 @@ export function typedSwitch(
 	throw new Error(
 		`Unhandled case: ${key}${contextSuffix}.${availableCasesSuffix}`
 	)
+}
+
+/**
+ * Builds cases that share one handler, for spreading into `typedSwitch` cases.
+ * Pass the switched value so its type is inferred; the handler receives the
+ * union of the grouped members. A case listed after the spread replaces the
+ * grouped handler for that key; listing it before the spread is a type error.
+ *
+ * @example
+ * typedSwitch(event, 'type', {
+ *   ...typedSwitchGroup(event, 'type', ['click', 'scroll'], (e) => e.type),
+ *   key: (e) => e.key,
+ * })
+ */
+export function typedSwitchGroup<
+	T extends Discriminant,
+	const Keys extends readonly T[],
+	R
+>(
+	value: T,
+	keys: Keys,
+	handler: (value: Keys[number]) => R
+): { [V in Keys[number] as `${V}`]: (value: V) => R }
+export function typedSwitchGroup<
+	T extends object,
+	K extends keyof T,
+	const Keys extends readonly Extract<T[K], Discriminant>[],
+	R
+>(
+	value: T,
+	key: K,
+	keys: Keys,
+	handler: (value: Extract<T, Record<K, Keys[number]>>) => R
+): { [V in Keys[number] as `${V}`]: (value: Extract<T, Record<K, V>>) => R }
+export function typedSwitchGroup(
+	_value: unknown,
+	keyOrKeys: unknown,
+	keysOrHandler: unknown,
+	handler?: Handler
+): CasesRecord {
+	const keys = (handler ? keysOrHandler : keyOrKeys) as Discriminant[]
+	const shared = handler ?? (keysOrHandler as Handler)
+	return Object.fromEntries(keys.map((key) => [String(key), shared]))
 }
 
 /**

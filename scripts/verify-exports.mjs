@@ -14,6 +14,7 @@ const expectedExports = {
 	hanzio: [
 		'chunkArray',
 		'typedSwitch',
+		'typedSwitchGroup',
 		'tryCatch',
 		'cacheFunction',
 		'buildUrl',

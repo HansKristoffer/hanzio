@@ -479,12 +479,13 @@ Validators run in order: `globalValidator`, `validators[toState]`, then
 
 ### typedSwitch
 
-`typedSwitch` is an exhaustive switch helper for string unions and discriminated
-unions (string, number or boolean discriminants). `assertNever` covers regular
-`switch` statements. See the [typedSwitch docs](src/typedswitch/README.md).
+`typedSwitch` is an exhaustive switch helper for string, number and boolean
+values and for discriminated unions. `typedSwitchGroup` lets several cases share
+one handler. `assertNever` covers regular `switch` statements. See the
+[typedSwitch docs](src/typedswitch/README.md).
 
 ```ts
-import { assertNever, typedSwitch } from 'hanzio'
+import { assertNever, typedSwitch, typedSwitchGroup } from 'hanzio'
 
 type Event =
 	| { type: 'click'; x: number; y: number }
@@ -499,6 +500,11 @@ type Response = { code: 200; body: string } | { code: 404 }
 const text = typedSwitch(response as Response, 'code', {
 	200: (res) => res.body,
 	404: () => 'Not found'
+})
+
+const event = { type: 'scroll', offset: 4 } as Event
+typedSwitch(event, 'type', {
+	...typedSwitchGroup(event, 'type', ['click', 'scroll'], (e) => e.type)
 })
 
 function area(shape: Shape) {
