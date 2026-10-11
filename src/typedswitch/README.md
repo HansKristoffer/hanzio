@@ -22,15 +22,16 @@ bun add typedswitch
 - **Exhaustiveness checking** — TypeScript ensures all cases are handled at compile time
 - **Discriminated union support** — Works with any discriminant key, not just `type`
 - **Async-aware** — Async handlers preserve their `Promise` return type
+- **Grouped cases** — Share one handler between several values, fully typed
 - **Default handlers** — Handle remaining cases with a fallback
-- **Return type constraints** — Enforce that all handlers return a specific type
+- **Typo-proof cases** — A case key that isn't a value of the union is a compile error
 - **`assertNever`** — Exhaustiveness checking for regular `switch` statements
 
 ## Usage
 
-### String/Enum Input
+### Plain Value Input
 
-Switch on a string literal or enum value directly:
+Switch on a string, number, boolean or enum value directly:
 
 ```typescript
 import { typedSwitch } from 'typedswitch'
@@ -55,6 +56,21 @@ const result = typedSwitch(status, {
   success: (val) => val.toUpperCase(), // val: 'success'
   error: (val) => val.toUpperCase(),   // val: 'error'
   pending: (val) => val.toUpperCase(), // val: 'pending'
+})
+```
+
+Numbers and booleans are keyed by `String(value)`, and each handler still
+receives the typed value:
+
+```typescript
+typedSwitch(code, {
+  200: (c) => 'ok',            // c: 200
+  404: (c) => `missing ${c}`,  // c: 404
+})
+
+typedSwitch(enabled, {
+  true: () => 'on',
+  false: () => 'off',
 })
 ```
 
@@ -115,6 +131,32 @@ typedSwitch(result, 'ok', {
   false: (r) => r.error,
 })
 ```
+
+### Grouped Cases
+
+Spread `typedSwitchGroup` into the cases to share one handler between several
+values. Pass the switched value (and key) so the types are inferred. The
+handler receives the union of the grouped members, and exhaustiveness checking,
+default handlers and return type inference keep working:
+
+```typescript
+import { typedSwitch, typedSwitchGroup } from 'typedswitch'
+
+const description = typedSwitch(event, 'type', {
+  ...typedSwitchGroup(event, 'type', ['click', 'scroll'], (e) => e.type), // e: click or scroll event
+  keypress: (e) => `Pressed ${e.key}`,
+})
+
+const message = typedSwitch(status, {
+  ...typedSwitchGroup(status, ['error', 'cancelled'], (s) => `Stopped: ${s}`), // s: 'error' | 'cancelled'
+  success: () => 'Done!',
+  pending: () => 'Please wait...',
+})
+```
+
+Group keys must be values of the discriminant. A case written after the spread
+replaces the grouped handler for that key; writing it before the spread is a
+type error. If two groups list the same key, the later group wins.
 
 ### Default Handler
 
@@ -202,43 +244,21 @@ const result = typedSwitch(status, {
 // result: { ok: true; data: string } | { ok: false; code: number } | null
 ```
 
-### Return Type Constraints
+### Enforcing a Return Type
 
-Enforce that all handlers return a type extending a constraint with `typedSwitch<Constraint>(...)`. The `<Constraint>` is optional; omit it when you want TypeScript to infer the return types freely.
+Annotate the result. Every handler's return type must fit, and exhaustiveness
+checking still applies:
 
 ```typescript
 interface HasId {
   id: string
 }
 
-// All handlers must return something with { id: string }
-const result = typedSwitch<HasId>(status, {
-  success: () => ({ id: '123', name: 'John' }),     // ✓ OK
-  error: () => ({ id: '456', code: 500 }),          // ✓ OK
-  pending: () => ({ id: '789' }),                   // ✓ OK
-})
-// result: HasId
-
-// This would be a compile error:
-typedSwitch<HasId>(status, {
-  success: () => ({ name: 'John' }),  // ✗ Error: missing 'id'
-  error: () => ({ id: '456' }),
+const result: HasId = typedSwitch(status, {
+  success: () => ({ id: '123', name: 'John' }),
+  error: () => ({ id: '456', code: 500 }),
   pending: () => ({ id: '789' }),
 })
-```
-
-Constraints also work with discriminated unions and default handlers:
-
-```typescript
-const result = typedSwitch<HasId>(
-  event,
-  'type',
-  {
-    click: () => ({ id: 'click-1', x: 10, y: 20 }),
-    scroll: () => ({ id: 'scroll-1', offset: 100 }),
-    keypress: () => ({ id: 'key-1', key: 'Enter' }),
-  }
-)
 ```
 
 ## Error Handling
@@ -284,11 +304,11 @@ function label(status: Status) {
 
 ### `typedSwitch(value, cases)`
 
-Switch on a string literal with exhaustive case handling.
+Switch on a string, number or boolean value with exhaustive case handling.
 
 ### `typedSwitch(value, cases, defaultHandler)`
 
-Switch on a string literal with partial cases and a default fallback.
+Switch on a string, number or boolean value with partial cases and a default fallback.
 
 ### `typedSwitch(object, key, cases)`
 
@@ -298,13 +318,9 @@ Switch on a discriminated union using the specified discriminant key (string, nu
 
 Switch on a discriminated union with partial cases and a default fallback.
 
-### `typedSwitch<Constraint>(value, cases)`
+### `typedSwitchGroup(value, keys, handler)` / `typedSwitchGroup(object, key, keys, handler)`
 
-Switch on a string literal while enforcing that each handler returns `Constraint` or `Promise<Constraint>`.
-
-### `typedSwitch<Constraint>(object, key, cases)`
-
-Switch on a discriminated union while enforcing that each handler returns `Constraint` or `Promise<Constraint>`.
+Returns cases that all call `handler`, for spreading into `typedSwitch` cases.
 
 ### `assertNever(value, message?)`
 
