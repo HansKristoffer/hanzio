@@ -8,6 +8,9 @@ import {
 	test
 } from 'bun:test'
 import * as childProcess from 'node:child_process'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { inspect } from 'node:util'
 import {
 	cloudflareWorkerEnvLoader,
@@ -24,6 +27,7 @@ const envKeys = [
 	'INFISICAL_TOKEN',
 	'INFISICAL_UNIVERSAL_AUTH_ACCESS_TOKEN',
 	'TOKEN',
+	'INFISICAL_UNIVERSAL_AUTH_FILE',
 	'TEST_INFISICAL_ID',
 	'TEST_INFISICAL_SECRET',
 	'TEST_CLI_SECRET',
@@ -70,6 +74,11 @@ beforeEach(() => {
 	for (const key of envKeys) {
 		delete process.env[key]
 	}
+	// Never this machine's real identity file.
+	process.env.INFISICAL_UNIVERSAL_AUTH_FILE = join(
+		mkdtempSync(join(tmpdir(), 'hanzio-')),
+		'universal-auth.json'
+	)
 
 	output = sessionToken('org-a')
 	remoteSecrets = [
@@ -106,6 +115,93 @@ afterEach(() => {
 			process.env[key] = value
 		}
 	}
+})
+
+describe('Infisical identity file', () => {
+	const writeIdentity = (identity: unknown) =>
+		writeFileSync(
+			process.env.INFISICAL_UNIVERSAL_AUTH_FILE!,
+			JSON.stringify(identity)
+		)
+	const httpLogin = (expected: { clientId: string; clientSecret: string }) => {
+		globalThis.fetch = mock(
+			async (url: string | URL | Request, init?: RequestInit) => {
+				if (String(url).endsWith('/universal-auth/login')) {
+					expect(JSON.parse(String(init?.body))).toEqual(expected)
+
+					return Response.json({ accessToken: 'machine-token' })
+				}
+
+				return Response.json({ secrets: remoteSecrets })
+			}
+		) as unknown as typeof fetch
+	}
+
+	test('stands in for missing client credentials', async () => {
+		writeIdentity({
+			clientId: 'file-id',
+			clientSecret: 'file-secret',
+			siteUrl: 'https://eu.infisical.com'
+		})
+		httpLogin({ clientId: 'file-id', clientSecret: 'file-secret' })
+		const sources: string[] = []
+
+		expect(
+			await loadInfisicalSecrets({
+				...options,
+				reportSource: (source) => sources.push(source)
+			})
+		).toEqual({ TEST_CLI_SECRET: 'remote-value' })
+		expect(sources).toEqual(['Infisical HTTP (identity file)'])
+		expect(execute).not.toHaveBeenCalled()
+	})
+
+	test('loses to environment credentials and to explicit CLI mode', async () => {
+		writeIdentity({
+			clientId: 'file-id',
+			clientSecret: 'file-secret',
+			siteUrl: 'https://eu.infisical.com'
+		})
+		process.env.INFISICAL_CLIENT_ID = 'env-id'
+		process.env.INFISICAL_CLIENT_SECRET = 'env-secret'
+		httpLogin({ clientId: 'env-id', clientSecret: 'env-secret' })
+		await loadInfisicalSecrets(options)
+
+		delete process.env.INFISICAL_CLIENT_ID
+		delete process.env.INFISICAL_CLIENT_SECRET
+		remoteSecrets = []
+		globalThis.fetch = mock(async () =>
+			Response.json({ secrets: [] })
+		) as unknown as typeof fetch
+		await loadInfisicalSecrets({ ...options, auth: 'cli' }).catch(() => {})
+		expect(execute).toHaveBeenCalledTimes(1)
+	})
+
+	test('is ignored for another Infisical instance', async () => {
+		writeIdentity({
+			clientId: 'file-id',
+			clientSecret: 'file-secret',
+			siteUrl: 'https://app.infisical.com'
+		})
+
+		expect(await loadInfisicalSecrets(options)).toEqual({
+			TEST_CLI_SECRET: 'remote-value'
+		})
+		expect(execute).toHaveBeenCalledTimes(1)
+	})
+
+	test('fails without echoing an invalid file', async () => {
+		writeFileSync(
+			process.env.INFISICAL_UNIVERSAL_AUTH_FILE!,
+			'{"clientSecret":"file-secret"'
+		)
+		const error = await loadInfisicalSecrets(options).catch(
+			(e: unknown) => e as Error
+		)
+
+		expect(error).toMatchObject({ code: 'CONFIGURATION' })
+		expect(String((error as Error).message)).not.toContain('file-secret')
+	})
 })
 
 describe('Infisical CLI fallback', () => {

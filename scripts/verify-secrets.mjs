@@ -72,6 +72,8 @@ try {
 	]) {
 		delete env[key]
 	}
+	// Never this machine's real machine identity file.
+	env.INFISICAL_UNIVERSAL_AUTH_FILE = join(temporary, 'no-identity.json')
 
 	const bun = execFileSync('which', ['bun'], { encoding: 'utf8' }).trim()
 

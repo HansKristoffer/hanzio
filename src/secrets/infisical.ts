@@ -5,6 +5,7 @@ import { getProcessEnvironment } from './environment'
 import { SecretLoadError } from './errors'
 import { readInfisicalCliToken } from './infisical-cli'
 import { validateInfisicalScope, type InfisicalScope } from './infisical-config'
+import { readInfisicalIdentityFile } from './infisical-identity-file'
 import { parseInfisicalSessionToken } from './infisical-session'
 
 export const DEFAULT_INFISICAL_SITE_URL = 'https://eu.infisical.com'
@@ -74,13 +75,25 @@ export async function loadInfisicalSecrets<K extends string>(
 	validateInfisicalScope(options)
 
 	const env = getProcessEnvironment()
-	const clientId = env?.[options.clientIdEnvKey]
-	const clientSecret = env?.[options.clientSecretEnvKey]
 	const mode = options.auth ?? 'auto'
 
 	if (!['auto', 'http', 'cli'].includes(mode)) {
 		throw new SecretLoadError('CONFIGURATION', 'Invalid Infisical auth mode.')
 	}
+
+	// Environment credentials win; with neither set, a machine identity file
+	// stands in for them (see readInfisicalIdentityFile).
+	const fromEnv = Boolean(
+		env?.[options.clientIdEnvKey] || env?.[options.clientSecretEnvKey]
+	)
+	const file =
+		mode === 'cli' || fromEnv
+			? undefined
+			: await readInfisicalIdentityFile(env, options.siteUrl)
+	const clientId = fromEnv ? env?.[options.clientIdEnvKey] : file?.clientId
+	const clientSecret = fromEnv
+		? env?.[options.clientSecretEnvKey]
+		: file?.clientSecret
 
 	// Explicit modes take precedence. Auto mode uses HTTP only when both
 	// credentials exist; a failed HTTP request must not switch accounts.
@@ -95,7 +108,9 @@ export async function loadInfisicalSecrets<K extends string>(
 			)
 		}
 
-		options.reportSource?.('Infisical HTTP')
+		options.reportSource?.(
+			file ? 'Infisical HTTP (identity file)' : 'Infisical HTTP'
+		)
 
 		return fetchInfisicalSecrets({ ...options, clientId, clientSecret })
 	}

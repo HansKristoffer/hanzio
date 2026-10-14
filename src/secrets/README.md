@@ -87,7 +87,11 @@ tokens belong in server or authenticated upload steps, outside this key list.
 | `cli` | Uses the signed-in CLI session even when client credentials exist. |
 
 Credentials come from `INFISICAL_CLIENT_ID` and `INFISICAL_CLIENT_SECRET`.
-Override those names with `clientIdEnvKey` and `clientSecretEnvKey`. HTTP
+Override those names with `clientIdEnvKey` and `clientSecretEnvKey`. When neither
+is set, `auto` and `http` read a machine identity from
+`~/.infisical/universal-auth.json` (`INFISICAL_UNIVERSAL_AUTH_FILE` overrides the
+path): `{ "clientId", "clientSecret", "siteUrl" }`, used only for that `siteUrl`'s
+instance. agentgate writes this file on every machine of a user. HTTP
 failures never switch to another authentication mode. If all required keys
 are already supplied by genuine environment overrides, authentication is skipped.
 
