@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.0](https://github.com/HansKristoffer/hanzio/compare/v3.0.0...v3.1.0) (2026-10-14)
+
+
+### Features
+
+* **secrets:** read a machine identity file when no client credentials are set ([#17](https://github.com/HansKristoffer/hanzio/issues/17)) ([b6a4735](https://github.com/HansKristoffer/hanzio/commit/b6a47354a0d5c673744c2a2acc0e409957aa6096))
+
 ## [3.0.0](https://github.com/HansKristoffer/hanzio/compare/v2.2.0...v3.0.0) (2026-10-11)
 
 
