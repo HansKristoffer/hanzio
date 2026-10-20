@@ -100,6 +100,26 @@ export function formatCurrency(
 	})
 }
 
+/**
+ * A price: whole amounts without minor units (`'2.500 kr.'`), fractional ones
+ * with the currency's usual digits (`'199,95 kr.'`) instead of rounding them
+ * into a price nobody charges.
+ */
+export function formatPrice(
+	amount: number,
+	currency: string,
+	locale: string
+): string {
+	return formatCurrency(
+		amount,
+		currency,
+		locale,
+		Number.isInteger(amount)
+			? { minimumFractionDigits: 0, maximumFractionDigits: 0 }
+			: undefined
+	)
+}
+
 /** Short compact notation: `1234` -> `"1.2K"` (en-US), `"1,2 t"` (da-DK). */
 export function formatCompactNumber(value: number, locale: string): string {
 	return formatNumber(value, locale, { notation: 'compact' })
@@ -355,6 +375,102 @@ export function formatDateRange(
 		: `${format.format(from)} – ${format.format(to)}`
 }
 
+// `hourCycle: 'h23'` on the `HH` presets: the name promises a 24-hour clock,
+// but `hour: '2-digit'` alone still renders "07:00 AM" under en-US.
+const DATE_PRESETS = {
+	'DD/MM/YYYY': { day: '2-digit', month: '2-digit', year: 'numeric' },
+	'DD/MM/YYYY HH:mm': {
+		day: '2-digit',
+		month: '2-digit',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+		hourCycle: 'h23'
+	},
+	'HH:mm': { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' },
+	ddd: { weekday: 'short' },
+	'D MMM': { day: 'numeric', month: 'short' },
+	'D MMM YYYY': { day: 'numeric', month: 'short', year: 'numeric' },
+	'dddd, MMMM D': { weekday: 'long', day: 'numeric', month: 'long' },
+	'MMMM YYYY': { month: 'long', year: 'numeric' }
+} as const satisfies Record<string, Intl.DateTimeFormatOptions>
+
+/**
+ * A named date layout. The names read like dayjs tokens, but the output
+ * follows the locale: `'D MMM'` is "5 Mar" in en-GB and "Mar 5" in en-US.
+ */
+export type DatePreset = keyof typeof DATE_PRESETS
+
+/** A date in one of the `DatePreset` layouts, in local time. */
+export function formatDate(
+	date: DateInput,
+	preset: DatePreset,
+	locale: string
+): string {
+	return getDateTimeFormat(locale, DATE_PRESETS[preset]).format(toTime(date))
+}
+
+/** Medium date and short time: "5 Mar 2026, 14:30" (en-GB). */
+export function formatDateTime(date: DateInput, locale: string): string {
+	return getDateTimeFormat(locale, {
+		dateStyle: 'medium',
+		timeStyle: 'short'
+	}).format(toTime(date))
+}
+
+/**
+ * Calendar days from today in local time: 0 today, -1 yesterday. Rounded,
+ * because a DST change makes one local day 23 or 25 hours long.
+ */
+function dayOffset(date: Date, now: Date): number {
+	const start = (d: Date) =>
+		new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+	return Math.round((start(date) - start(now)) / DAY_MS)
+}
+
+/** "today" / "yesterday" in the locale's own words. */
+const relativeDay = (offset: 0 | -1, locale: string) =>
+	getRelativeTimeFormat(locale, { numeric: 'auto' }).format(offset, 'day')
+
+/**
+ * Compact activity timestamp for a list row: the time today, "yesterday",
+ * else the date (with the year when it is not this year). Unparseable input
+ * returns `''`.
+ */
+export function formatCompactTime(
+	date: DateInput,
+	locale: string,
+	options: { now?: DateInput } = {}
+): string {
+	const value = new Date(toTime(date))
+	if (Number.isNaN(value.getTime())) return ''
+	const now = new Date(toTime(options.now ?? Date.now()))
+	const offset = dayOffset(value, now)
+	if (offset === 0) return formatDate(value, 'HH:mm', locale)
+	if (offset === -1) return relativeDay(-1, locale)
+	const sameYear = value.getFullYear() === now.getFullYear()
+	return formatDate(value, sameYear ? 'D MMM' : 'D MMM YYYY', locale)
+}
+
+/**
+ * Day-divider label for a chat timeline: "today", "yesterday", else weekday
+ * and date (with the year when it is not this year). Unparseable input
+ * returns `''`.
+ */
+export function formatDayDivider(
+	date: DateInput,
+	locale: string,
+	options: { now?: DateInput } = {}
+): string {
+	const value = new Date(toTime(date))
+	if (Number.isNaN(value.getTime())) return ''
+	const now = new Date(toTime(options.now ?? Date.now()))
+	const offset = dayOffset(value, now)
+	if (offset === 0 || offset === -1) return relativeDay(offset, locale)
+	const sameYear = value.getFullYear() === now.getFullYear()
+	return formatDate(value, sameYear ? 'dddd, MMMM D' : 'D MMM YYYY', locale)
+}
+
 /** "a, b, and c". Falls back to a comma join where `Intl.ListFormat` is missing. */
 export function formatList(
 	items: readonly string[],
@@ -368,6 +484,12 @@ export function formatList(
 }
 
 // ─── Counts ─────────────────────────────────────────────────────────────────
+
+/**
+ * Stands for "no value" in a cell or detail row that must keep its height, so
+ * absent values cannot drift between a hyphen and an em dash. Not translated.
+ */
+export const EM_DASH = '—'
 
 /** Badge count: `150` -> `"99+"`. Negative or NaN is `"0"`. */
 export function formatCappedCount(count: number, max = 99): string {
@@ -386,4 +508,30 @@ export function pluralize(
 ): string {
 	const form = forms[getPluralRules(locale).select(count)] ?? forms.other
 	return form.replaceAll('{count}', formatNumber(count, locale))
+}
+
+// ─── Bound to a locale ──────────────────────────────────────────────────────
+
+/**
+ * The date formatters with the locale read on every call, for apps whose
+ * locale lives in their i18n runtime:
+ * `export const fmt = withLocale(() => uiLocales.tag(appI18n.locale()))`.
+ */
+export function withLocale(getLocale: () => string) {
+	return {
+		formatDate: (date: DateInput, preset: DatePreset) =>
+			formatDate(date, preset, getLocale()),
+		formatDateTime: (date: DateInput) => formatDateTime(date, getLocale()),
+		formatCompactTime: (date: DateInput) =>
+			formatCompactTime(date, getLocale()),
+		formatDayDivider: (date: DateInput) => formatDayDivider(date, getLocale()),
+		formatRelativeTime: (
+			date: DateInput,
+			options?: FormatRelativeTimeOptions
+		) => formatRelativeTime(date, getLocale(), options),
+		formatNumber: (value: number, options?: Intl.NumberFormatOptions) =>
+			formatNumber(value, getLocale(), options),
+		formatPrice: (amount: number, currency: string) =>
+			formatPrice(amount, currency, getLocale())
+	}
 }
