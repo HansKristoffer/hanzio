@@ -76,3 +76,23 @@ test('context and globals flow from defineCli to guard and commands', () => {
 	}
 	expect(_typeCheck).toBeInstanceOf(Function)
 })
+
+test('a command that needs context requires defineCli({ context })', () => {
+	const _typeCheck = () => {
+		const whoami = defineCommand({
+			run: (_input, ctx: CommandContext<{ user: string }>) => ctx.context.user
+		})
+		// @ts-expect-error context is missing
+		defineCli({ name: 'app', commands: { whoami } })
+		defineCli({
+			name: 'app',
+			commands: { plain: defineCommand({ run: () => 'ok' }) }
+		})
+		defineCommand({
+			// @ts-expect-error aliases are strings
+			input: z.object({ region: z.string().meta({ alias: 1 }) }),
+			run: () => {}
+		})
+	}
+	expect(_typeCheck).toBeInstanceOf(Function)
+})

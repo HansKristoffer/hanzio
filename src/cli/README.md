@@ -59,7 +59,8 @@ handles would keep the process alive.
 | `.meta({ env: 'APP_REGION' })` | read from the environment when the flag is missing |
 
 Keys are camelCase in the schema and kebab-case on the command line (`dryRun`
-→ `--dry-run`). These are the same `.meta()` keys as `trpc-cli`, plus `env`.
+→ `--dry-run`). These are the same `.meta()` keys as `trpc-cli`, plus `env`;
+importing `hanzio/cli` types them on Zod's `GlobalMeta`.
 Pipes read their input side, so `z.stringbool()` takes `--submit true`.
 
 Every CLI gets `-h`/`--help` (root, groups and commands), `--version` when you
@@ -130,7 +131,8 @@ export const list = defineCommand({
 })
 ```
 
-`defineCli` rejects a command whose context type doesn't match `context`.
+`defineCli` rejects a command whose context type doesn't match `context`, and
+requires `context` once any command needs one.
 
 ## Errors and exit codes
 

@@ -10,6 +10,17 @@ import {
 	UsageError
 } from './fields'
 
+declare module 'zod' {
+	interface GlobalMeta {
+		/** hanzio/cli: read this key from positional arguments, in key order. */
+		positional?: boolean
+		/** hanzio/cli: one-letter short flag, e.g. `'r'` for `-r`. */
+		alias?: string
+		/** hanzio/cli: environment variable read when the flag is missing. */
+		env?: string
+	}
+}
+
 const commandKey: unique symbol = Symbol.for('hanzio/cli/command')
 
 /**
@@ -43,20 +54,20 @@ export type CliIO = {
 
 export type CommandContext<C = unknown> = {
 	/** What `defineCli({ context })` returned. */
-	context: C
+	readonly context: C
 	/** The validated `defineCli({ globals })` values. */
-	globals: Record<string, unknown>
+	readonly globals: Record<string, unknown>
 	/** Command names from the root, e.g. `['deal', 'list']`. */
-	path: readonly string[]
+	readonly path: readonly string[]
 	/** Every argument after the command names, unparsed. */
-	argv: readonly string[]
+	readonly argv: readonly string[]
 	/** Arguments after `--`. */
-	passthrough: readonly string[]
+	readonly passthrough: readonly string[]
 	/** `--json` was passed (as a global or a command option). */
-	json: boolean
-	stdout: CliWriter
-	stderr: CliWriter
-	env: Record<string, string | undefined>
+	readonly json: boolean
+	readonly stdout: CliWriter
+	readonly stderr: CliWriter
+	readonly env: Record<string, string | undefined>
 	/** Set to exit non-zero without printing an error. */
 	exitCode: number
 }
@@ -100,8 +111,6 @@ export type CliConfig<G extends AnyObject, C> = {
 	description?: string
 	/** Options accepted before or after any command, e.g. `--org`. */
 	globals?: G
-	/** Builds the `ctx.context` every command receives. */
-	context?: (globals: z.output<G>) => C | Promise<C>
 	/** Runs before every command; throw a `CliError` to refuse it. */
 	guard?: (call: {
 		path: readonly string[]
@@ -111,7 +120,14 @@ export type CliConfig<G extends AnyObject, C> = {
 	}) => unknown
 	/** A command (single-command CLI) or nested groups of commands. */
 	commands: CommandNode<C>
-}
+} & (undefined extends C
+	? { context?: ContextFunction<G, C> }
+	: { context: ContextFunction<G, C> })
+
+/** Builds the `ctx.context` every command receives. */
+type ContextFunction<G extends AnyObject, C> = (
+	globals: z.output<G>
+) => C | Promise<C>
 
 /**
  * A command. `input` is a Zod object whose keys become `--kebab-case` flags,
