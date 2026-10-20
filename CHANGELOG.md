@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.1.0](https://github.com/HansKristoffer/hanzio/compare/v3.0.0...v3.1.0) (2026-10-20)
+
+
+### Features
+
+* **i18n:** hanzio-i18n catalog checker, locale and framework setup, date/price/phone formatters and ISO data ([#19](https://github.com/HansKristoffer/hanzio/issues/19)) ([57fdd13](https://github.com/HansKristoffer/hanzio/commit/57fdd13d7efe5dd9662d6540302781f672b5d197))
+* **secrets:** read a machine identity file when no client credentials are set ([#17](https://github.com/HansKristoffer/hanzio/issues/17)) ([b6a4735](https://github.com/HansKristoffer/hanzio/commit/b6a47354a0d5c673744c2a2acc0e409957aa6096))
+
 ## [3.0.0](https://github.com/HansKristoffer/hanzio/compare/v2.2.0...v3.0.0) (2026-10-11)
 
 
