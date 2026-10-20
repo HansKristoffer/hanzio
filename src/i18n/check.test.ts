@@ -396,35 +396,6 @@ describe('banned vocabulary', () => {
 	})
 })
 
-describe('untranslated English', () => {
-	test('flags an English sentence shipped as a translation', () => {
-		const text = 'A customer is waiting for a human reply.'
-		expect(rules.untranslatedEnglish('handover', 'da', text, text)).toBe(true)
-		expect(
-			rules.untranslatedEnglish(
-				'handover',
-				'da',
-				text,
-				'En kunde venter på svar.'
-			)
-		).toBe(false)
-	})
-
-	test('ignores company names and short labels', () => {
-		expect(
-			rules.untranslatedEnglish(
-				'org',
-				'da',
-				'Hansen Biler A/S',
-				'Hansen Biler A/S'
-			)
-		).toBe(false)
-		expect(rules.untranslatedEnglish('email', 'da', 'Email', 'Email')).toBe(
-			false
-		)
-	})
-})
-
 describe('identical labels', () => {
 	test('flags a short label shipped untranslated', () => {
 		expect(
@@ -435,11 +406,19 @@ describe('identical labels', () => {
 		).toBe(false)
 	})
 
-	test('ignores single words, brands, URLs and selectors', () => {
+	test('flags a whole sentence shipped untranslated', () => {
+		const text = 'A customer is waiting for a human reply.'
+		expect(rules.identicalLabel('handover', 'da', text, text)).toBe(true)
+	})
+
+	test('ignores single words, brands, company names, URLs and selectors', () => {
 		expect(rules.identicalLabel('status', 'da', 'Status', 'Status')).toBe(false)
 		expect(rules.identicalLabel('label', 'da', 'Lullu AI', 'Lullu AI')).toBe(
 			false
 		)
+		expect(
+			rules.identicalLabel('org', 'da', 'Hansen Biler A/S', 'Hansen Biler A/S')
+		).toBe(false)
 		expect(
 			rules.identicalLabel(
 				'site',

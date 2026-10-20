@@ -2,7 +2,7 @@
  * Content rules for translation VALUES, which key and placeholder parity cannot
  * see: source code stored as copy ("row.name", "carTitle(car)") by an automated
  * extraction pass, copy in the wrong language committed to the base catalog,
- * banned product vocabulary, and English shipped untranslated.
+ * banned product vocabulary, and copy shipped untranslated.
  */
 
 export type ContentRulesConfig<Locale extends string = string> = {
@@ -73,15 +73,10 @@ const CODE_SHAPES: { name: string; pattern: RegExp }[] = [
 /** Acronyms correct in every language, on top of the configured brands. */
 const DEFAULT_BRANDS = ['API', 'URL', 'SMS', 'CSV', 'PDF', 'ID', 'OK']
 
-const ENGLISH_FUNCTION_WORDS =
-	/\b(?:the|an|is|are|was|were|you|your|and|to|for|with|from|this|that|will|can|not|of|in|on|it|we|our|has|have|been)\b/gi
-
 /** Any letter outside ASCII: the value is not plain English. */
 const NON_ASCII_LETTER = /(?![A-Za-z])\p{L}/u
 /** Paths, selectors, domains, emails and colour codes are not prose. */
 const NON_PROSE = /[/@#=_{}[\]<>]|\.[a-z]{2,}/
-
-export type ContentRules = ReturnType<typeof createContentRules>
 
 /** Compiles the configured rules once; each detector returns why, or null. */
 export function createContentRules(config: ContentRulesConfig = {}) {
@@ -163,30 +158,9 @@ export function createContentRules(config: ContentRulesConfig = {}) {
 		},
 
 		/**
-		 * A translation identical to its English source that reads as English
-		 * prose: three or more words, two distinct English function words.
-		 */
-		untranslatedEnglish(
-			key: string,
-			locale: string,
-			source: string,
-			translated: string
-		): boolean {
-			if (source !== translated) return false
-			if (isAllowedIdentical(key, locale) || isExempt(key)) return false
-			const value = translated.trim()
-			if (value.split(/\s+/).length < 3) return false
-			if (brandOrSymbols.test(value) || NON_ASCII_LETTER.test(value)) {
-				return false
-			}
-			const matches = value.match(ENGLISH_FUNCTION_WORDS) ?? []
-			return new Set(matches.map((m) => m.toLowerCase())).size >= 2
-		},
-
-		/**
-		 * A label of two or more words identical to its source ("Document
-		 * name"). Single words stay out of scope: "Status" and "Email" are
-		 * correct in many languages.
+		 * A translation of two or more words identical to its source ("Document
+		 * name", a whole English sentence). Single words stay out of scope:
+		 * "Status" and "Email" are correct in many languages.
 		 */
 		identicalLabel(
 			key: string,

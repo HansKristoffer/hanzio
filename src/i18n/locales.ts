@@ -1,10 +1,3 @@
-export type LocaleInfo = {
-	/** BCP-47 tag for `Intl` and `<html lang>`, e.g. `'da-DK'`. */
-	tag: string
-	/** The language naming itself, for locale pickers: `'Dansk'`. */
-	name: string
-}
-
 export type LocaleRegistry<L extends string> = {
 	/** Locale ids in declaration order. They name the catalog files. */
 	readonly locales: readonly L[]
@@ -43,7 +36,15 @@ const normalizeTag = (tag: string) =>
  * ```
  */
 export function defineLocales<
-	const T extends Record<string, LocaleInfo>
+	const T extends Record<
+		string,
+		{
+			/** BCP-47 tag for `Intl` and `<html lang>`, e.g. `'da-DK'`. */
+			tag: string
+			/** The language naming itself, for locale pickers: `'Dansk'`. */
+			name: string
+		}
+	>
 >(options: {
 	locales: T
 	defaultLocale: keyof T & string
@@ -117,9 +118,9 @@ export function createLocaleSelector<L extends string>(options: {
 	setLocale: (locale: L) => unknown
 	persist?: (locale: L) => Promise<unknown>
 	onError?: (error: unknown) => void
-}): (locale: L) => Promise<void> {
+}) {
 	const { getLocale, setLocale, persist, onError } = options
-	return async (next) => {
+	return async (next: L) => {
 		const previous = getLocale()
 		if (previous === next) return
 		await setLocale(next)

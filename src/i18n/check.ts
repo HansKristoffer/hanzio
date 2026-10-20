@@ -54,28 +54,9 @@ export function defineI18nConfig<
 	return config
 }
 
-type Compile = (
-	source: string,
-	options: { onError: (error: { message: string }) => void }
-) => unknown
-type VueCompiler = {
-	baseCompile: Compile
-	detectHtmlTag: (source: string) => boolean
-}
+type VueCompiler = typeof import('@intlify/message-compiler')
 
-async function loadVueCompiler(): Promise<VueCompiler | string> {
-	try {
-		return (await import('@intlify/message-compiler')) as VueCompiler
-	} catch {
-		return 'vue-i18n catalogs need @intlify/message-compiler installed to check message syntax'
-	}
-}
-
-function vueSyntaxIssues(
-	compiler: VueCompiler,
-	key: string,
-	value: string
-): string[] {
+function vueSyntaxIssues(compiler: VueCompiler, key: string, value: string) {
 	const issues: string[] = []
 	if (compiler.detectHtmlTag(value)) {
 		issues.push(
@@ -136,17 +117,19 @@ const KEY_FAMILY_PREFIX = /([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*\.)\$\{/g
 function findUnusedKeys(
 	root: string,
 	catalog: CatalogConfig,
-	sourceRoots: readonly string[],
 	keys: Iterable<string>
-): string[] {
+) {
 	const references = new Set<string>()
 	const prefixes = new Set(catalog.dynamicKeyPrefixes ?? [])
 	const catalogDir = join(root, catalog.dir) + sep
-	for (const path of sourceRoots.flatMap((dir) =>
+	const files = (catalog.sourceRoots ?? []).flatMap((dir) =>
 		collectSourceFiles(join(root, dir))
-	)) {
+	)
+
+	for (const path of files) {
 		// The generated key map lives next to the catalogs and names every key.
 		if (path.startsWith(catalogDir)) continue
+
 		const source = readFileSync(path, 'utf8')
 		for (const [reference] of source.matchAll(KEY_REFERENCE)) {
 			references.add(reference)
@@ -155,6 +138,7 @@ function findUnusedKeys(
 			if (prefix) prefixes.add(prefix)
 		}
 	}
+
 	return [...keys].filter(
 		(key) =>
 			!references.has(key) &&
@@ -179,20 +163,26 @@ export async function validateCatalogs(
 	const rules = createContentRules(config.rules)
 	const issues: CatalogIssue[] = []
 	const baseByCatalog = new Map<string, Messages>()
-	const compiler = config.catalogs.some((c) => c.runtime === 'vue-i18n')
-		? await loadVueCompiler()
-		: undefined
-	if (typeof compiler === 'string') {
-		issues.push({ catalog: 'config', message: compiler })
+
+	// An optional peer, loaded only when a catalog needs it.
+	let compiler: VueCompiler | undefined
+	if (config.catalogs.some((catalog) => catalog.runtime === 'vue-i18n')) {
+		try {
+			compiler = await import('@intlify/message-compiler')
+		} catch {
+			issues.push({
+				catalog: 'config',
+				message:
+					'vue-i18n catalogs need @intlify/message-compiler installed to check message syntax'
+			})
+		}
 	}
 
 	for (const catalog of config.catalogs) {
 		const report = (message: string, locale?: string) =>
 			issues.push({ catalog: catalog.name, locale, message })
 		const syntax = (locale: string, key: string, value: string) => {
-			if (catalog.runtime !== 'vue-i18n' || typeof compiler !== 'object') {
-				return
-			}
+			if (catalog.runtime !== 'vue-i18n' || !compiler) return
 			for (const message of vueSyntaxIssues(compiler, key, value)) {
 				report(message, locale)
 			}
@@ -287,9 +277,7 @@ export async function validateCatalogs(
 				}
 				const source = base.get(key)
 				if (source !== undefined) {
-					if (rules.untranslatedEnglish(key, locale, source, value)) {
-						report(`"${key}" is untranslated English: "${value}"`, locale)
-					} else if (rules.identicalLabel(key, locale, source, value)) {
+					if (rules.identicalLabel(key, locale, source, value)) {
 						report(
 							`"${key}" is identical to ${baseLocale}: "${value}" - translate it, or allow it in rules.identical.allowKeys if it is correct as-is`,
 							locale
@@ -308,12 +296,7 @@ export async function validateCatalogs(
 
 		if (catalog.sourceRoots?.length) {
 			const byNamespace = new Map<string, string[]>()
-			for (const key of findUnusedKeys(
-				root,
-				catalog,
-				catalog.sourceRoots,
-				base.keys()
-			)) {
+			for (const key of findUnusedKeys(root, catalog, base.keys())) {
 				const namespace = key.split('.')[0] ?? key
 				byNamespace.set(namespace, [...(byNamespace.get(namespace) ?? []), key])
 			}

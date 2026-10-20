@@ -244,8 +244,8 @@ What `check` reports:
 - Values that look like source code (`row.name`, `carTitle(car)`,
   `LABELS[key]`, `x ?? y`), in every locale. `rules.allowCodeShapes` lists the
   exceptions.
-- English left untranslated (three or more words, two English function words)
-  and labels of two or more words identical to the base. Brands, acronyms and
+- Translations of two or more words identical to the base value: an untranslated
+  label or sentence. Single words, brands, acronyms, paths and URLs, and
   `rules.identical.allowKeys` are allowed.
 - With `rules.wrongLanguage`: base values written in that language (two marker
   words, or one plus one of its `letters`).

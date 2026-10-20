@@ -6,19 +6,6 @@ import type { i18n as I18next, InitOptions, ResourceLanguage } from 'i18next'
 import { type AsyncStorageLike, createAsyncStorageItem } from '../storage'
 import type { LocaleRegistry } from '.'
 
-export type InitI18nextOptions<L extends string> = Omit<
-	InitOptions,
-	'lng' | 'resources'
-> & {
-	locales: LocaleRegistry<L>
-	resources: Record<L, ResourceLanguage>
-	/** Device languages in preference order, e.g. from `expo-localization`. */
-	deviceLocales?: () => readonly (string | null | undefined)[]
-	/** Remembers the chosen locale (a raw string). Needs `storage`. */
-	storageKey?: string
-	storage?: AsyncStorageLike
-}
-
 /**
  * Starts `i18n` in the persisted locale, then the first supported device
  * locale, then `locales.defaultLocale` (also the fallback). Interpolation uses
@@ -37,7 +24,15 @@ export type InitI18nextOptions<L extends string> = Omit<
  */
 export function initI18next<L extends string>(
 	i18n: I18next,
-	options: InitI18nextOptions<L>
+	options: Omit<InitOptions, 'lng' | 'resources'> & {
+		locales: LocaleRegistry<L>
+		resources: Record<L, ResourceLanguage>
+		/** Device languages in preference order, e.g. from `expo-localization`. */
+		deviceLocales?: () => readonly (string | null | undefined)[]
+		/** Remembers the chosen locale (a raw string). Needs `storage`. */
+		storageKey?: string
+		storage?: AsyncStorageLike
+	}
 ) {
 	const { locales, deviceLocales, storageKey, storage, ...initOptions } =
 		options
@@ -81,7 +76,7 @@ export function initI18next<L extends string>(
 		ready,
 		setLocale,
 		/** The active locale, or the default before `ready`. */
-		locale: (): L => locales.match(i18n.language) ?? locales.defaultLocale,
+		locale: () => locales.match(i18n.language) ?? locales.defaultLocale,
 		/**
 		 * Follows a server-side preference (the signed-in user's locale). An
 		 * unsupported or missing tag changes nothing.

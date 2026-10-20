@@ -11,22 +11,6 @@ import {
 	typedTranslate
 } from '.'
 
-export type CreateVueI18nOptions<L extends string> = Omit<
-	I18nOptions,
-	'legacy' | 'locale' | 'messages'
-> & {
-	locales: LocaleRegistry<L>
-	/** One catalog per locale; a missing locale is a type error. */
-	messages: Record<L, Messages>
-	/**
-	 * Remembers the chosen locale (a raw string) so screens before sign-in come
-	 * up in the right language. Omit to persist nothing.
-	 */
-	storageKey?: string
-	/** Defaults to `localStorage`, falling back to memory. */
-	storage?: SyncStorageLike
-}
-
 type BrowserGlobals = {
 	navigator?: { language?: string }
 	document?: { documentElement: { lang: string } }
@@ -43,7 +27,18 @@ const browser = globalThis as BrowserGlobals
  * make it the one place the app calls vue-i18n's `useI18n`.
  */
 export function createVueI18n<L extends string>(
-	options: CreateVueI18nOptions<L>
+	options: Omit<I18nOptions, 'legacy' | 'locale' | 'messages'> & {
+		locales: LocaleRegistry<L>
+		/** One catalog per locale; a missing locale is a type error. */
+		messages: Record<L, Messages>
+		/**
+		 * Remembers the chosen locale (a raw string) so screens before sign-in
+		 * come up in the right language. Omit to persist nothing.
+		 */
+		storageKey?: string
+		/** Defaults to `localStorage`, falling back to memory. */
+		storage?: SyncStorageLike
+	}
 ) {
 	const { locales, storageKey, storage, ...i18nOptions } = options
 	const persisted = storageKey

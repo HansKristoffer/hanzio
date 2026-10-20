@@ -124,8 +124,6 @@ export function createTranslator<const T extends Messages>(messages: T) {
 		)
 }
 
-export type TranslationValue = PlaceholderValue
-
 /** Generated key → placeholder-name map: `{ 'greeting': 'name', 'common.save': never }`. */
 export type TranslationParamsMap = Record<string, string>
 
@@ -139,13 +137,13 @@ export type TypedTranslate<Params extends TranslationParamsMap> = <
 >(
 	...args: [Params[Key]] extends [never]
 		? [key: Key]
-		: [key: Key, params: Record<Params[Key], TranslationValue>]
+		: [key: Key, params: Record<Params[Key], PlaceholderValue>]
 ) => string
 
 /** Explicit escape hatch for data-driven keys validated outside TypeScript. */
 export type DynamicTranslate = (
 	key: string,
-	params?: Record<string, TranslationValue>
+	params?: Record<string, PlaceholderValue>
 ) => string
 
 /**

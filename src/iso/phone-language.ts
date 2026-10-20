@@ -36,7 +36,7 @@ const CALLING_CODES = (
  */
 export function languageFromE164PhoneNumber(
 	phoneNumber: string | null | undefined
-): (typeof CALLING_CODE_LANGUAGE)[CallingCode] | null {
+) {
 	const digits = phoneNumber?.trim().replace(/^\+/, '').replace(/\D/g, '')
 	if (!digits) return null
 	const code = CALLING_CODES.find(
