@@ -7,6 +7,8 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { z } from 'zod'
+import { CliError, type CommandContext, defineCli, defineCommand } from '../cli'
 import {
 	type CatalogIssue,
 	type I18nConfig,
@@ -20,56 +22,69 @@ const CONFIG_NAMES = [
 	'i18n.config.js',
 	'i18n.config.mjs'
 ]
-const USAGE = 'Usage: hanzio-i18n <check|generate> [--config <file>]'
 
-function fail(message: string): never {
-	console.error(message)
-	process.exit(1)
+type Loaded = { config: I18nConfig; root: string }
+
+async function loadConfig(file: string | undefined): Promise<Loaded> {
+	const path = file
+		? resolve(file)
+		: CONFIG_NAMES.map((name) => resolve(name)).find((path) => existsSync(path))
+	if (!path || !existsSync(path))
+		throw new CliError(
+			`No i18n config found: pass --config or add ${CONFIG_NAMES[0]}.`
+		)
+	const loaded = (await import(pathToFileURL(path).href)) as {
+		default?: I18nConfig
+	}
+	if (!loaded.default?.catalogs)
+		throw new CliError(`${path} must default-export an i18n config`)
+	return { config: loaded.default, root: dirname(path) }
 }
 
-function printIssues(issues: CatalogIssue[]) {
+function failOnIssues(issues: CatalogIssue[], ctx: CommandContext) {
+	if (issues.length === 0) return
 	for (const issue of issues) {
 		const locale = issue.locale ? `/${issue.locale}` : ''
-		console.error(`❌ ${issue.catalog}${locale}: ${issue.message}`)
+		ctx.stderr.write(`❌ ${issue.catalog}${locale}: ${issue.message}\n`)
 	}
+	throw new CliError(`${issues.length} catalog problem(s)`)
 }
 
-const [command, ...rest] = process.argv.slice(2)
-const flag = rest.indexOf('--config')
-const configArg = flag === -1 ? undefined : rest[flag + 1]
-if (flag !== -1 && !configArg) fail(USAGE)
-const configPath = configArg
-	? resolve(configArg)
-	: CONFIG_NAMES.map((name) => resolve(name)).find((path) => existsSync(path))
-if (!configPath || !existsSync(configPath)) {
-	fail(
-		`No i18n config found: pass --config or add ${CONFIG_NAMES[0]}.\n${USAGE}`
-	)
-}
+const cli = defineCli({
+	name: 'hanzio-i18n',
+	globals: z.object({
+		config: z
+			.string()
+			.optional()
+			.describe('Config file (default: i18n.config.*)')
+	}),
+	context: (globals) => loadConfig(globals.config),
+	commands: {
+		check: defineCommand({
+			description: 'Validate the translation catalogs',
+			run: async (_input, ctx: CommandContext<Loaded>) => {
+				const { config, root } = ctx.context
+				failOnIssues(await validateCatalogs(config, { root }), ctx)
+				return config.catalogs
+					.map(
+						(catalog) =>
+							`✅ ${catalog.name}: ${config.locales.length} locale(s) valid`
+					)
+					.join('\n')
+			}
+		}),
+		generate: defineCommand({
+			description: "Write each catalog's generatedTypes",
+			run: (_input, ctx: CommandContext<Loaded>) => {
+				const { config, root } = ctx.context
+				const { written, issues } = writeCatalogTypes(config, { root })
+				failOnIssues(issues, ctx)
+				return (
+					written.map((path) => `Generated ${path}`).join('\n') || undefined
+				)
+			}
+		})
+	}
+})
 
-const loaded = (await import(pathToFileURL(configPath).href)) as {
-	default?: I18nConfig
-}
-const config = loaded.default
-if (!config?.catalogs) fail(`${configPath} must default-export an i18n config`)
-const root = dirname(configPath)
-
-if (command === 'check') {
-	const issues = await validateCatalogs(config, { root })
-	if (issues.length > 0) {
-		printIssues(issues)
-		process.exit(1)
-	}
-	for (const catalog of config.catalogs) {
-		console.log(`✅ ${catalog.name}: ${config.locales.length} locale(s) valid`)
-	}
-} else if (command === 'generate') {
-	const { written, issues } = writeCatalogTypes(config, { root })
-	if (issues.length > 0) {
-		printIssues(issues)
-		process.exit(1)
-	}
-	for (const path of written) console.log(`Generated ${path}`)
-} else {
-	fail(USAGE)
-}
+process.exitCode = await cli.run()

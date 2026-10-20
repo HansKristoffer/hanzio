@@ -203,7 +203,9 @@ Both read `i18n.config.ts` (or `.mts`, `.js`, `.mjs`, or `--config <file>`)
 from the current directory; paths in it are relative to the config file.
 `defineI18nConfig` rejects a `baseLocale`, `disjointNamespaces` catalog or
 `identical.allowKeys` locale the config does not declare. A
-`.ts` config needs Bun, or a Node version that strips types.
+`.ts` config needs Bun, or a Node version that strips types. The bin is built
+on [`hanzio/cli`](../cli/README.md), so it needs `zod` installed; `--help`
+lists its options and it exits 1 on catalog problems, 2 on bad arguments.
 
 ```ts
 import { defineI18nConfig } from 'hanzio/i18n/check'
