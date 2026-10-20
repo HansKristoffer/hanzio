@@ -6,7 +6,7 @@ function pipeInput(def: z.core.$ZodPipeDef): Schema {
 	return defOf(def.in).type === 'transform' ? def.out : def.in
 }
 
-function unwrapOnce(def: Def): Schema | undefined {
+export function unwrapOnce(def: Def): Schema | undefined {
 	switch (def.type) {
 		case 'optional':
 		case 'nullable':

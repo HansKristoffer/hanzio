@@ -137,6 +137,8 @@
 											"../redis/**",
 											"../http",
 											"../http/**",
+											"../cli",
+											"../cli/**",
 											"../testing",
 											"../testing/**"
 										],
