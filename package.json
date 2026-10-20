@@ -59,6 +59,12 @@
       "import": "./dist/src/api-wrapper/testing.js",
       "default": "./dist/src/api-wrapper/testing.js"
     },
+    "./api-wrapper/connection-auth": {
+      "types": "./dist/api-wrapper/connection-auth.d.ts",
+      "bun": "./src/api-wrapper/connection-auth.ts",
+      "import": "./dist/src/api-wrapper/connection-auth.js",
+      "default": "./dist/src/api-wrapper/connection-auth.js"
+    },
     "./jwt": {
       "types": "./dist/jwt/index.d.ts",
       "bun": "./src/jwt/index.ts",
@@ -160,11 +166,29 @@
       "bun": "./src/secrets/worker.ts",
       "import": "./dist/src/secrets/worker.js",
       "default": "./dist/src/secrets/worker.js"
+    },
+    "./redis": {
+      "types": "./dist/redis/index.d.ts",
+      "bun": "./src/redis/index.ts",
+      "import": "./dist/src/redis/index.js",
+      "default": "./dist/src/redis/index.js"
+    },
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "bun": "./src/http/index.ts",
+      "import": "./dist/src/http/index.js",
+      "default": "./dist/src/http/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "bun": "./src/testing/index.ts",
+      "import": "./dist/src/testing/index.js",
+      "default": "./dist/src/testing/index.js"
     }
   },
   "scripts": {
     "build": "rm -rf dist && bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/api-wrapper/testing.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/cool-console-log/index.ts ./src/format/index.ts ./src/format/phone.ts ./src/crypto/index.ts ./src/storage/index.ts ./src/i18n/index.ts ./src/i18n/vue.ts ./src/i18n/i18next.ts ./src/i18n/vite.ts ./src/i18n/check.ts ./src/i18n/cli.ts ./src/iso/index.ts ./src/secrets/index.ts ./src/secrets/vite.ts ./src/secrets/worker.ts --outdir ./dist --target node --packages external --splitting",
+    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/api-wrapper/testing.ts ./src/api-wrapper/connection-auth.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/cool-console-log/index.ts ./src/format/index.ts ./src/format/phone.ts ./src/crypto/index.ts ./src/storage/index.ts ./src/i18n/index.ts ./src/i18n/vue.ts ./src/i18n/i18next.ts ./src/i18n/vite.ts ./src/i18n/check.ts ./src/i18n/cli.ts ./src/iso/index.ts ./src/secrets/index.ts ./src/secrets/vite.ts ./src/secrets/worker.ts ./src/redis/index.ts ./src/http/index.ts ./src/testing/index.ts --outdir ./dist --target node --packages external --splitting",
     "build:types": "tsgo -p tsconfig.build.json",
     "prepublishOnly": "bun run build",
     "test": "bun test",

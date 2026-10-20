@@ -132,7 +132,13 @@
 											"../iso",
 											"../iso/**",
 											"../secrets",
-											"../secrets/**"
+											"../secrets/**",
+											"../redis",
+											"../redis/**",
+											"../http",
+											"../http/**",
+											"../testing",
+											"../testing/**"
 										],
 										"message": "The root entry must stay dependency-free and runtime-neutral. Move code that needs this import to a subpath module (see AGENTS.md)."
 									}

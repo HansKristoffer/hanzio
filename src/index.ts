@@ -1,7 +1,7 @@
 // Dependency-free helpers only. Modules that need zod, network access or a
 // specific runtime live on subpath exports (hanzio/zod, hanzio/api-wrapper,
 // hanzio/jwt, hanzio/sitemap, hanzio/p-queue, hanzio/cool-console-log,
-// hanzio/secrets).
+// hanzio/secrets, hanzio/redis, hanzio/http, hanzio/testing).
 export * from './typedswitch'
 export * from './array'
 export * from './string'

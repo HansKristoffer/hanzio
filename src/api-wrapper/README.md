@@ -648,6 +648,58 @@ Cache API:
 The cache is also exposed on the client itself as `api.cache` for use outside
 of action handlers (e.g. clearing auth on logout).
 
+### Sharing a login across clients
+
+`ctx.cache` lives for one client. When every request builds its own client
+(one per tenant or per connection, from stored credentials), use
+`ConnectionAuthCache` from `hanzio/api-wrapper/connection-auth` instead: one
+module-level cache shares a single token exchange per connection across all
+of them. It needs `node:crypto` (Bun, Node, Deno, or Workers with
+`nodejs_compat`), so it is not part of `hanzio/api-wrapper`.
+
+```ts
+import { ConnectionAuthCache } from 'hanzio/api-wrapper/connection-auth'
+
+const authCache = new ConnectionAuthCache() // keeps at most 1,000 connections
+
+export function createShopClient(connection: { id: string; apiKey: string; secret: string }) {
+	const auth = authCache.bind({
+		connectionId: connection.id,
+		authInputs: [connection.apiKey, connection.secret],
+		refreshMarginMs: 60_000,
+		exchange: () => login(connection) // resolves { token, expiresAt }
+	})
+
+	return {
+		async get(path: string, signal?: AbortSignal) {
+			for (let attempt = 0; ; attempt++) {
+				const current = await auth.get({ signal })
+				const response = await fetch(`https://shop.example.com${path}`, {
+					headers: { authorization: `Bearer ${current.token}` },
+					signal
+				})
+				// One retry with a new login when the token was refused.
+				if (response.status !== 401 || attempt > 0) return response
+				auth.reject(current)
+			}
+		}
+	}
+}
+```
+
+- Concurrent callers share one exchange, and aborting one caller's wait leaves
+  it running for the others.
+- Changing any `authInputs` value (a rotated secret) retires the old token: a
+  client still using the old credentials can finish its request but cannot
+  store its token. The inputs are kept only as an HMAC under a random key.
+- `reject(token)` drops a token the API refused, unless a newer login has
+  already replaced it. `get({ fresh: true })` always exchanges, for an explicit
+  credential check, and never falls back to the old token when it fails.
+- `clear()` forgets everything, including exchanges still in flight.
+
+`connectionAuthContract` in [`hanzio/testing`](../testing/README.md#connection-auth-contract)
+runs these races against your client.
+
 ## Endpoint Configuration Reference
 
 | Option | Required | Description |

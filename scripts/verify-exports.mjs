@@ -26,11 +26,15 @@ const expectedExports = {
 		'createEmitter',
 		'truncate',
 		'anySignal',
-		'contrastText'
+		'contrastText',
+		'createTaskPool',
+		'escapeHtml',
+		'toJsonValue'
 	],
-	'hanzio/zod': ['createZId', 'zodToTypeString'],
+	'hanzio/zod': ['createZId', 'zodToTypeString', 'zOptionalE164'],
 	'hanzio/api-wrapper': ['createApiClient', 'isHttpResponseError'],
 	'hanzio/api-wrapper/testing': ['createMockFetch', 'jsonResponse'],
+	'hanzio/api-wrapper/connection-auth': ['ConnectionAuthCache'],
 	'hanzio/jwt': ['jwtSign', 'jwtVerify'],
 	'hanzio/sitemap': ['getDomainSitemap'],
 	'hanzio/p-queue': ['default', 'PQueue'],
@@ -47,7 +51,10 @@ const expectedExports = {
 	'hanzio/iso': ['countryNames', 'currencyNames', 'languageNames', 'countryFlag'],
 	'hanzio/secrets': ['defineSecretSet', 'createSecretSet', 'readPublicConfig'],
 	'hanzio/secrets/vite': ['viteSecretSetPlugin', 'readPublicConfig'],
-	'hanzio/secrets/worker': ['defineSecretSet', 'createSecretSet', 'readPublicConfig', 'cloudflareWorkerEnvLoader']
+	'hanzio/secrets/worker': ['defineSecretSet', 'createSecretSet', 'readPublicConfig', 'cloudflareWorkerEnvLoader'],
+	'hanzio/redis': ['createManagedRedis', 'createRedisConcurrencyLimit', 'createLuaScript'],
+	'hanzio/http': ['withSseKeepAlive', 'createSseKeepAliveTransform'],
+	'hanzio/testing': ['ModuleMocker', 'createPrismaMock', 'connectionAuthContract', 'installWindowShim', 'noopLogger']
 }
 
 // Runs an ESM snippet from inside the temporary project and returns stdout.

@@ -97,6 +97,26 @@ export const zJsonObject: z.ZodType<JsonObject> = z.record(
 	zJsonValue
 )
 
+/** An E.164 phone number: `+`, then 7 to 15 digits with no leading zero. */
+export const E164_REGEX = /^\+[1-9]\d{6,14}$/
+
+/**
+ * An optional E.164 phone number for forms: a cleared input submits `''`,
+ * which means "no number", so `''` and `null` both parse to `null`.
+ *
+ * Deliberately not `union([regex, literal('')])`: that serializes the empty
+ * literal as `enum: [""]`, which Gemini function declarations reject.
+ */
+export const zOptionalE164 = z
+	.string()
+	.refine(
+		(value) => value === '' || E164_REGEX.test(value),
+		'Phone number must be in E.164 format (e.g. +14155551234)'
+	)
+	.describe('E.164 phone number (e.g. +14155551234); empty string clears it')
+	.nullable()
+	.transform((value) => value || null)
+
 /** `JSON.parse` + `schema.safeParse` without throwing. */
 export function parseJson<S extends z.ZodType>(
 	text: string,
