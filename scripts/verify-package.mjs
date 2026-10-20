@@ -30,7 +30,7 @@ try {
 	}
 	for (const file of Object.values(pkg.bin || {})) assert.ok(files.has(file.replace(/^\.\//, '')), `Missing binary: ${file}`)
 	writeFileSync(join(temporary, 'package.json'), JSON.stringify({ private: true, type: 'module' }))
-	execFileSync('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', join(temporary, packed.filename), 'zod@^4.3.6'], {
+	execFileSync('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', join(temporary, packed.filename), ...Object.entries(pkg.peerDependencies || {}).map(([name, range]) => `${name}@${range}`)], {
 		cwd: temporary, stdio: 'pipe', timeout: 120_000
 	})
 	const specifiers = Object.keys(pkg.exports).filter((key) => key !== './package.json').map((key) => pkg.name + (key === '.' ? '' : key.slice(1)))

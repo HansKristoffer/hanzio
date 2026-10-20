@@ -35,10 +35,16 @@ const expectedExports = {
 	'hanzio/sitemap': ['getDomainSitemap'],
 	'hanzio/p-queue': ['default', 'PQueue'],
 	'hanzio/cool-console-log': ['createCoolLogger', 'colorize'],
-	'hanzio/format': ['formatDuration', 'formatBytes', 'formatCappedCount'],
+	'hanzio/format': ['formatDuration', 'formatBytes', 'formatCappedCount', 'formatPrice', 'EM_DASH'],
+	'hanzio/format/phone': ['formatPhone'],
 	'hanzio/crypto': ['safeEqual', 'hmacSign', 'createSealer', 'randomToken'],
 	'hanzio/storage': ['createStorageItem', 'createAsyncStorageItem'],
-	'hanzio/i18n': ['interpolate', 'extractPlaceholders', 'createTranslator'],
+	'hanzio/i18n': ['interpolate', 'extractPlaceholders', 'createTranslator', 'defineLocales', 'typedTranslate'],
+	'hanzio/i18n/vue': ['createVueI18n', 'useTypedI18n'],
+	'hanzio/i18n/i18next': ['initI18next'],
+	'hanzio/i18n/vite': ['localeCatalogReloadPlugin'],
+	'hanzio/i18n/check': ['defineI18nConfig', 'validateCatalogs', 'writeCatalogTypes'],
+	'hanzio/iso': ['countryNames', 'currencyNames', 'languageNames', 'countryFlag'],
 	'hanzio/secrets': ['defineSecretSet', 'createSecretSet', 'readPublicConfig'],
 	'hanzio/secrets/vite': ['viteSecretSetPlugin', 'readPublicConfig'],
 	'hanzio/secrets/worker': ['defineSecretSet', 'createSecretSet', 'readPublicConfig', 'cloudflareWorkerEnvLoader']
@@ -105,7 +111,11 @@ try {
 		'hanzio root must not re-export subpath-only modules'
 	)
 
-	await symlink(join(root, 'node_modules/zod'), join(modules, 'zod'), 'dir')
+	// Optional peers, for the subpaths that load them.
+	for (const peer of Object.keys(pkg.peerDependencies)) {
+		await mkdir(dirname(join(modules, peer)), { recursive: true })
+		await symlink(join(root, 'node_modules', peer), join(modules, peer), 'dir')
+	}
 	for (const [specifier, names] of Object.entries(expectedExports)) {
 		const keys = JSON.parse(
 			run(

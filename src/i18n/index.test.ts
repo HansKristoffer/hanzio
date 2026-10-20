@@ -6,7 +6,11 @@ import {
 	interpolate,
 	type MessageKeys,
 	type PlaceholderNames,
-	type PlaceholderParams
+	type PlaceholderParams,
+	createLocaleSelector,
+	defineLocales,
+	type LocaleOf,
+	typedTranslate
 } from '.'
 
 describe('PlaceholderNames', () => {
@@ -124,5 +128,118 @@ describe('createTranslator', () => {
 		const tLoose = createTranslator(loose)
 		expect(tLoose('hi')).toBe('Hi {name}')
 		expect(tLoose('hi', { name: 'Ada' })).toBe('Hi Ada')
+	})
+})
+
+describe('TypedTranslate', () => {
+	type Params = {
+		'common.save': never
+		'greeting.named': 'name'
+		'items.count': 'count' | 'name'
+	}
+
+	test('enforces keys and named parameters', () => {
+		const t = typedTranslate<Params>(
+			(key: string, params?: Record<string, unknown>) =>
+				`${key}${params ? JSON.stringify(params) : ''}`
+		)
+		expect(t('greeting.named', { name: 'Ada' })).toBe(
+			'greeting.named{"name":"Ada"}'
+		)
+
+		function typeAssertions() {
+			t('common.save')
+			t('items.count', { count: 2, name: 'items' })
+			// @ts-expect-error invalid key
+			t('common.missing')
+			// @ts-expect-error parameters are required
+			t('greeting.named')
+			// @ts-expect-error misspelled parameter
+			t('greeting.named', { person: 'Ada' })
+			// @ts-expect-error parameter-free keys reject values
+			t('common.save', { name: 'Ada' })
+		}
+		expectTypeOf(typeAssertions).toBeFunction()
+	})
+})
+
+describe('defineLocales', () => {
+	const locales = defineLocales({
+		locales: {
+			en: { tag: 'en-US', name: 'English' },
+			da: { tag: 'da-DK', name: 'Dansk' },
+			nb: { tag: 'nb-NO', name: 'Norsk bokmål' }
+		},
+		defaultLocale: 'en',
+		aliases: { no: 'nb', nn: 'nb' }
+	})
+
+	test('infers the locale union', () => {
+		expectTypeOf<LocaleOf<typeof locales>>().toEqualTypeOf<'en' | 'da' | 'nb'>()
+		expect(locales.locales).toEqual(['en', 'da', 'nb'])
+		expect(locales.tag('da')).toBe('da-DK')
+		expect(locales.name('nb')).toBe('Norsk bokmål')
+	})
+
+	test('matches normalized BCP-47-ish tags', () => {
+		expect(locales.match('da-DK')).toBe('da')
+		expect(locales.match('EN_us')).toBe('en')
+		expect(locales.match(' da ')).toBe('da')
+		expect(locales.match('nb-NO')).toBe('nb')
+		expect(locales.match('no-NO')).toBe('nb')
+		expect(locales.match('de')).toBeNull()
+		expect(locales.match(null)).toBeNull()
+		for (const locale of locales.locales) {
+			expect(locales.match(locales.tag(locale))).toBe(locale)
+		}
+	})
+
+	test('resolve takes the first matching candidate, else the default', () => {
+		expect(locales.resolve(null, 'fr-FR', 'da-DK', 'nb')).toBe('da')
+		expect(locales.resolve(undefined, 'fr')).toBe('en')
+		expect(locales.resolve()).toBe('en')
+	})
+
+	test('rejects a default or alias outside the locales', () => {
+		expect(() =>
+			defineLocales({
+				locales: { en: { tag: 'en', name: 'English' } },
+				// @ts-expect-error not a declared locale
+				defaultLocale: 'da'
+			})
+		).toThrow('"da"')
+		expect(() =>
+			defineLocales({
+				locales: { en: { tag: 'en', name: 'English' } },
+				defaultLocale: 'en',
+				// @ts-expect-error not a declared locale
+				aliases: { no: 'nb' }
+			})
+		).toThrow('"nb"')
+	})
+})
+
+describe('createLocaleSelector', () => {
+	test('switches at once and rolls back when persisting fails', async () => {
+		let current = 'en' as 'en' | 'da'
+		const errors: unknown[] = []
+		let fail = false
+		const select = createLocaleSelector<'en' | 'da'>({
+			getLocale: () => current,
+			setLocale: (locale) => {
+				current = locale
+			},
+			persist: async () => {
+				if (fail) throw new Error('offline')
+			},
+			onError: (error) => errors.push(error)
+		})
+
+		await select('da')
+		expect(current).toBe('da')
+		fail = true
+		await select('en')
+		expect(current).toBe('da')
+		expect(errors).toHaveLength(1)
 	})
 })
