@@ -123,3 +123,37 @@ export function createTranslator<const T extends Messages>(messages: T) {
 			...(args as [Record<string, PlaceholderValue>?])
 		)
 }
+
+/** Generated key → placeholder-name map: `{ 'greeting': 'name', 'common.save': never }`. */
+export type TranslationParamsMap = Record<string, string>
+
+/**
+ * Strict `t` over a generated key → placeholder-name map (see `hanzio-i18n
+ * generate`). Keys without placeholders take no params; keys with placeholders
+ * require every named value.
+ */
+export type TypedTranslate<Params extends TranslationParamsMap> = <
+	Key extends keyof Params & string
+>(
+	...args: [Params[Key]] extends [never]
+		? [key: Key]
+		: [key: Key, params: Record<Params[Key], PlaceholderValue>]
+) => string
+
+/** Explicit escape hatch for data-driven keys validated outside TypeScript. */
+export type DynamicTranslate = (
+	key: string,
+	params?: Record<string, PlaceholderValue>
+) => string
+
+/**
+ * Narrows a framework's string-wide `t` (vue-i18n, i18next) to the generated
+ * map. Types only; returns `t` unchanged.
+ */
+export function typedTranslate<Params extends TranslationParamsMap>(
+	t: (...args: never[]) => unknown
+): TypedTranslate<Params> {
+	return t as unknown as TypedTranslate<Params>
+}
+
+export * from './locales'

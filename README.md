@@ -19,6 +19,11 @@ from `dist`. `zod` is an optional peer dependency: the Zod helpers, the API
 wrapper and the secrets loader share the consumer application's Zod instance,
 while the root entry never loads it.
 
+The other optional peers belong to one subpath each: `libphonenumber-js` for
+`hanzio/format/phone`, `vue-i18n` for `hanzio/i18n/vue`, `i18next` for
+`hanzio/i18n/i18next`, `vite` for `hanzio/i18n/vite`, and
+`@intlify/message-compiler` for checking vue-i18n catalogs with `hanzio-i18n`.
+
 ## Imports
 
 The root export contains only dependency-free, runtime-neutral helpers (array,
@@ -42,10 +47,16 @@ subpath export:
 | `hanzio/sitemap` | Sitemap discovery and crawling ([docs](src/sitemap/README.md)) |
 | `hanzio/p-queue` | Promise queue ([docs](src/p-queue/README.md)) |
 | `hanzio/cool-console-log` | Colored terminal logging |
-| `hanzio/format` | Cached `Intl` formatters: numbers, currency, bytes, durations, relative time ([docs](src/format/README.md)) |
+| `hanzio/format` | Cached `Intl` formatters: numbers, currency, bytes, durations, dates, relative time ([docs](src/format/README.md)) |
+| `hanzio/format/phone` | Phone numbers as people read them; needs `libphonenumber-js` ([docs](src/format/README.md#phone-numbers)) |
 | `hanzio/crypto` | Web Crypto helpers: constant-time compare, HMAC/webhook verification, sealing, tokens ([docs](src/crypto/README.md)) |
 | `hanzio/storage` | Typed localStorage/AsyncStorage items that never throw ([docs](src/storage/README.md)) |
-| `hanzio/i18n` | Typed `{placeholder}` interpolation and translators ([docs](src/i18n/README.md)) |
+| `hanzio/i18n` | Typed `{placeholder}` interpolation, translators, `TypedTranslate` and locale registries ([docs](src/i18n/README.md)) |
+| `hanzio/i18n/vue` | vue-i18n setup with locale persistence and a typed composer ([docs](src/i18n/README.md#vue-i18n)) |
+| `hanzio/i18n/i18next` | i18next setup with device locale, persistence and server sync ([docs](src/i18n/README.md#i18next)) |
+| `hanzio/i18n/vite` | Vite dev plugin that reloads edited vue-i18n catalogs ([docs](src/i18n/README.md#vue-i18n)) |
+| `hanzio/i18n/check` | Catalog checks behind the `hanzio-i18n` bin ([docs](src/i18n/README.md#catalog-checks)) |
+| `hanzio/iso` | ISO country, currency and language codes with English names ([docs](src/iso/README.md)) |
 | `hanzio/secrets` | Typed secret sets from env/Infisical ([docs](src/secrets/README.md)) |
 | `hanzio/secrets/vite` | Vite `define` helpers for secret sets |
 | `hanzio/secrets/worker` | Secret sets for Cloudflare Workers |

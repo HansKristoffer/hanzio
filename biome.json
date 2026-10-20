@@ -129,6 +129,8 @@
 											"../storage/**",
 											"../i18n",
 											"../i18n/**",
+											"../iso",
+											"../iso/**",
 											"../secrets",
 											"../secrets/**",
 											"../redis",

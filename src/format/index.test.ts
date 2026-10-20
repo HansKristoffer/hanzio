@@ -5,7 +5,13 @@ import {
 	formatClockDuration,
 	formatCompactNumber,
 	formatCurrency,
+	formatCompactTime,
+	formatDate,
 	formatDateRange,
+	formatDateTime,
+	formatDayDivider,
+	formatPrice,
+	withLocale,
 	formatDuration,
 	formatList,
 	formatNumber,
@@ -277,4 +283,75 @@ describe('pluralize', () => {
 	test('falls back to other when the form is missing', () => {
 		expect(pluralize(1, { other: '{count} fish' }, 'en-US')).toBe('1 fish')
 	})
+})
+
+describe('date presets', () => {
+	// Local-time constructors: these formatters work in the runtime's zone.
+	const date = new Date(2026, 2, 5, 7, 4)
+
+	test('formatDate follows the locale, with a 24-hour HH', () => {
+		expect(formatDate(date, 'D MMM', 'en-GB')).toBe('5 Mar')
+		expect(formatDate(date, 'D MMM', 'en-US')).toBe('Mar 5')
+		expect(formatDate(date, 'HH:mm', 'en-US')).toBe('07:04')
+		expect(formatDate(date, 'DD/MM/YYYY', 'da-DK')).toBe('05.03.2026')
+		expect(formatDate(date, 'MMMM YYYY', 'en-US')).toBe('March 2026')
+	})
+
+	test('formatDateTime uses medium date and short time', () => {
+		// The joiner (", " or " at ") differs between ICU versions.
+		expect(formatDateTime(date, 'en-GB')).toMatch(/^5 Mar 2026.+07:04$/)
+	})
+
+	test('formatCompactTime: time today, yesterday, then the date', () => {
+		const now = new Date(2026, 2, 5, 18, 0)
+		expect(formatCompactTime(date, 'en-GB', { now })).toBe('07:04')
+		expect(
+			formatCompactTime(new Date(2026, 2, 4, 23, 0), 'en-GB', { now })
+		).toBe('yesterday')
+		expect(formatCompactTime(new Date(2026, 0, 2), 'en-GB', { now })).toBe(
+			'2 Jan'
+		)
+		expect(formatCompactTime(new Date(2025, 0, 2), 'en-GB', { now })).toBe(
+			'2 Jan 2025'
+		)
+		expect(formatCompactTime('nope', 'en-GB', { now })).toBe('')
+	})
+
+	test('formatDayDivider: today, yesterday, then weekday and date', () => {
+		const now = new Date(2026, 2, 5, 18, 0)
+		expect(formatDayDivider(date, 'en-US', { now })).toBe('today')
+		expect(formatDayDivider(new Date(2026, 2, 4), 'da-DK', { now })).toBe(
+			'i går'
+		)
+		expect(formatDayDivider(new Date(2026, 2, 2), 'en-US', { now })).toBe(
+			'Monday, March 2'
+		)
+		expect(formatDayDivider(new Date(2025, 2, 2), 'en-GB', { now })).toBe(
+			'2 Mar 2025'
+		)
+	})
+})
+
+// Intl separates currency symbols with a no-break space.
+const plain = (value: string) => value.replace(/\s/g, ' ')
+
+describe('formatPrice', () => {
+	test('drops minor units on whole amounts only', () => {
+		expect(plain(formatPrice(2500, 'DKK', 'da-DK'))).toBe('2.500 kr.')
+		expect(plain(formatPrice(199.95, 'DKK', 'da-DK'))).toBe('199,95 kr.')
+		expect(formatPrice(12.5, 'USD', 'en-US')).toBe('$12.50')
+		expect(formatPrice(1500.5, 'JPY', 'en-US')).toBe('¥1,501')
+	})
+})
+
+test('withLocale reads the locale on every call', () => {
+	let locale = 'en-US'
+	const fmt = withLocale(() => locale)
+	expect(fmt.formatNumber(1234.5)).toBe('1,234.5')
+	locale = 'da-DK'
+	expect(fmt.formatNumber(1234.5)).toBe('1.234,5')
+	expect(plain(fmt.formatPrice(10, 'EUR'))).toBe('10 €')
+	expect(fmt.formatDate(new Date(2026, 2, 5), 'D MMM YYYY')).toBe(
+		'5. mar. 2026'
+	)
 })

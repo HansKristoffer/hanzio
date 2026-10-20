@@ -6,6 +6,9 @@
   "module": "./dist/src/index.js",
   "main": "./dist/src/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "hanzio-i18n": "./dist/src/i18n/cli.js"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -92,6 +95,12 @@
       "import": "./dist/src/format/index.js",
       "default": "./dist/src/format/index.js"
     },
+    "./format/phone": {
+      "types": "./dist/format/phone.d.ts",
+      "bun": "./src/format/phone.ts",
+      "import": "./dist/src/format/phone.js",
+      "default": "./dist/src/format/phone.js"
+    },
     "./crypto": {
       "types": "./dist/crypto/index.d.ts",
       "bun": "./src/crypto/index.ts",
@@ -109,6 +118,36 @@
       "bun": "./src/i18n/index.ts",
       "import": "./dist/src/i18n/index.js",
       "default": "./dist/src/i18n/index.js"
+    },
+    "./i18n/vue": {
+      "types": "./dist/i18n/vue.d.ts",
+      "bun": "./src/i18n/vue.ts",
+      "import": "./dist/src/i18n/vue.js",
+      "default": "./dist/src/i18n/vue.js"
+    },
+    "./i18n/i18next": {
+      "types": "./dist/i18n/i18next.d.ts",
+      "bun": "./src/i18n/i18next.ts",
+      "import": "./dist/src/i18n/i18next.js",
+      "default": "./dist/src/i18n/i18next.js"
+    },
+    "./i18n/vite": {
+      "types": "./dist/i18n/vite.d.ts",
+      "bun": "./src/i18n/vite.ts",
+      "import": "./dist/src/i18n/vite.js",
+      "default": "./dist/src/i18n/vite.js"
+    },
+    "./i18n/check": {
+      "types": "./dist/i18n/check.d.ts",
+      "bun": "./src/i18n/check.ts",
+      "import": "./dist/src/i18n/check.js",
+      "default": "./dist/src/i18n/check.js"
+    },
+    "./iso": {
+      "types": "./dist/iso/index.d.ts",
+      "bun": "./src/iso/index.ts",
+      "import": "./dist/src/iso/index.js",
+      "default": "./dist/src/iso/index.js"
     },
     "./secrets": {
       "types": "./dist/secrets/index.d.ts",
@@ -149,7 +188,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/api-wrapper/testing.ts ./src/api-wrapper/connection-auth.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/cool-console-log/index.ts ./src/format/index.ts ./src/crypto/index.ts ./src/storage/index.ts ./src/i18n/index.ts ./src/secrets/index.ts ./src/secrets/vite.ts ./src/secrets/worker.ts ./src/redis/index.ts ./src/http/index.ts ./src/testing/index.ts --outdir ./dist --target node --packages external --splitting",
+    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/api-wrapper/testing.ts ./src/api-wrapper/connection-auth.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/cool-console-log/index.ts ./src/format/index.ts ./src/format/phone.ts ./src/crypto/index.ts ./src/storage/index.ts ./src/i18n/index.ts ./src/i18n/vue.ts ./src/i18n/i18next.ts ./src/i18n/vite.ts ./src/i18n/check.ts ./src/i18n/cli.ts ./src/iso/index.ts ./src/secrets/index.ts ./src/secrets/vite.ts ./src/secrets/worker.ts ./src/redis/index.ts ./src/http/index.ts ./src/testing/index.ts --outdir ./dist --target node --packages external --splitting",
     "build:types": "tsgo -p tsconfig.build.json",
     "prepublishOnly": "bun run build",
     "test": "bun test",
@@ -163,19 +202,44 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
+    "@intlify/message-compiler": "^11.4.16",
     "@opentelemetry/api": "^1.9.1",
     "@types/bun": "latest",
     "@typescript/native-preview": "^7.0.0-dev.20260306.1",
     "husky": "^9.1.7",
+    "i18next": "^25.10.10",
+    "libphonenumber-js": "^1.13.15",
     "miniflare": "^4.20260730.0",
     "typescript": "^5.7.0",
     "vite": "^8.2.2",
+    "vue": "^3.5.44",
+    "vue-i18n": "^11.4.16",
     "zod": "^4.3.6"
   },
   "peerDependencies": {
+    "@intlify/message-compiler": ">=10.0.0",
+    "i18next": ">=23.0.0",
+    "libphonenumber-js": "^1.10.0",
+    "vite": ">=6.0.0",
+    "vue-i18n": ">=10.0.0",
     "zod": "^4.3.6"
   },
   "peerDependenciesMeta": {
+    "@intlify/message-compiler": {
+      "optional": true
+    },
+    "i18next": {
+      "optional": true
+    },
+    "libphonenumber-js": {
+      "optional": true
+    },
+    "vite": {
+      "optional": true
+    },
+    "vue-i18n": {
+      "optional": true
+    },
     "zod": {
       "optional": true
     }
