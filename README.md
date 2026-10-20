@@ -37,6 +37,7 @@ subpath export:
 | `hanzio/zod` | Branded IDs, JSON schemas, schema introspection and defaults, schema-to-type rendering, min/max filters |
 | `hanzio/api-wrapper` | Typed HTTP clients ([docs](src/api-wrapper/README.md)) |
 | `hanzio/api-wrapper/testing` | `createMockFetch` / `jsonResponse` for testing API clients |
+| `hanzio/api-wrapper/connection-auth` | One shared token exchange per connection for API clients; needs `node:crypto` ([docs](src/api-wrapper/README.md#sharing-a-login-across-clients)) |
 | `hanzio/jwt` | HS256/384/512 JWTs via Web Crypto ([docs](src/jwt/README.md)) |
 | `hanzio/sitemap` | Sitemap discovery and crawling ([docs](src/sitemap/README.md)) |
 | `hanzio/p-queue` | Promise queue ([docs](src/p-queue/README.md)) |
@@ -48,6 +49,9 @@ subpath export:
 | `hanzio/secrets` | Typed secret sets from env/Infisical ([docs](src/secrets/README.md)) |
 | `hanzio/secrets/vite` | Vite `define` helpers for secret sets |
 | `hanzio/secrets/worker` | Secret sets for Cloudflare Workers |
+| `hanzio/redis` | Bun Redis: self-healing client with shared subscriptions, fleet-wide concurrency limiter ([docs](src/redis/README.md)) |
+| `hanzio/http` | SSE keep-alive comments and anti-buffering headers ([docs](src/http/README.md)) |
+| `hanzio/testing` | `bun:test` kit: restorable module mocks, Prisma deep mock, window shim, auth race contract ([docs](src/testing/README.md)) |
 
 `scripts/verify-exports.mjs` imports every entry above from the packed tarball
 in CI, so this table and `package.json#exports` can't drift apart.
@@ -257,6 +261,28 @@ if (parsed.ok) parsed.data
 new RegExp(`\\b${escapeRegExp(term)}\\b`, 'i')
 ```
 
+`escapeHtml` escapes text for HTML. `stripEmoji` removes emoji from text that
+is spoken, tidying the spaces they leave. `fileExtension` reads a lowercased
+extension, or `undefined`.
+
+```ts
+import { escapeHtml, fileExtension, stripEmoji } from 'hanzio'
+
+`<title>${escapeHtml(name)}</title>`
+stripEmoji('Hi there 👋, welcome') // "Hi there, welcome"
+fileExtension('uploads/Photo.JPG') // "jpg"
+fileExtension('README') ?? 'bin' // "bin"
+```
+
+`toJsonValue` normalizes a value the way a JSON round trip does (dropping
+`undefined` properties), so it can go into a JSON column.
+
+```ts
+import { toJsonValue } from 'hanzio'
+
+toJsonValue({ ok: true, error: undefined }) // { ok: true }
+```
+
 ### Promise
 
 `tryCatch` converts a promise, or a function that may throw synchronously, into
@@ -298,6 +324,19 @@ const res = await withTimeout((signal) => fetch(url, { signal }), 5_000)
 import { pMap } from 'hanzio'
 
 const users = await pMap(ids, (id) => fetchUser(id), { concurrency: 4 })
+```
+
+`createTaskPool` bounds work that arrives over time, such as pages a crawler
+discovers. The first failure or an abort discards queued tasks, and `drain`
+rejects with it once the active tasks settle. Pass `stopOnError: false` to keep
+going after a failed task.
+
+```ts
+import { createTaskPool } from 'hanzio'
+
+const pool = createTaskPool({ concurrency: 4, signal })
+for await (const page of discoverPages(signal)) void pool.run(() => scrape(page, signal))
+await pool.drain()
 ```
 
 `promiseTimeout` resolves after a delay (and rejects early if its signal
@@ -773,6 +812,17 @@ type UserId = GenericId<'User'>
 const userId: UserId = UserId.parse('usr_123')
 ```
 
+`zOptionalE164` is a form field for an optional phone number: `''` and `null`
+parse to `null`, anything else must match `E164_REGEX`.
+
+```ts
+import { E164_REGEX, zOptionalE164 } from 'hanzio/zod'
+
+zOptionalE164.parse('+4512345678') // '+4512345678'
+zOptionalE164.parse('') // null
+z.string().regex(E164_REGEX, 'Use E.164, e.g. +4512345678')
+```
+
 `zSingleOrArray` accepts either one schema value or an array of schema values.
 
 ```ts
@@ -1159,6 +1209,55 @@ cancellation, optional schema validation, per-key source metadata, and
 Cloudflare bindings without Node compatibility. See the
 [migration notes](src/secrets/README.md#migration-notes) for stricter environment
 validation and browser exposure rules.
+
+### Redis (`hanzio/redis`)
+
+For Bun servers. `createManagedRedis` keeps one command connection and one
+subscriber connection that reconnect on their own; subscriptions are shared
+per channel and come back after a reconnect. `createRedisConcurrencyLimit` caps
+how many calls run at once across every process, using Redis' clock, and runs
+uncapped when Redis is unreachable. See the [Redis docs](src/redis/README.md).
+
+```ts
+import { createManagedRedis, createRedisConcurrencyLimit } from 'hanzio/redis'
+
+const redis = createManagedRedis({ url: () => getSecret('REDIS_URL') })
+const unsubscribe = await redis.subscribe('events', (message) => handle(message))
+
+const withLimit = createRedisConcurrencyLimit({
+	key: 'openai',
+	max: 20,
+	slotTtlMs: 30_000,
+	send: (command, args) => redis.getClient().send(command, args)
+})
+await withLimit(() => callOpenAi(request), signal)
+```
+
+### HTTP (`hanzio/http`)
+
+`withSseKeepAlive(response)` adds `:` comments to a quiet SSE stream and
+headers that stop proxies from buffering it. See the [HTTP docs](src/http/README.md).
+
+```ts
+import { withSseKeepAlive } from 'hanzio/http'
+
+return withSseKeepAlive(createUIMessageStreamResponse({ stream }))
+```
+
+### Testing (`hanzio/testing`)
+
+Helpers for `bun:test`: a `mock.module` that can be undone, a deep Prisma mock,
+a minimal `window` for browser-facing code, and a contract suite for API
+clients built on `ConnectionAuthCache`. See the [testing docs](src/testing/README.md).
+
+```ts
+import { createPrismaMock, ModuleMocker } from 'hanzio/testing'
+
+const prismaMock = createPrismaMock<typeof prisma>(mock)
+const moduleMocker = new ModuleMocker()
+await moduleMocker.mock(posthogModulePath, () => ({ captureException: mock() }))
+afterAll(() => moduleMocker.clear())
+```
 
 ## Development
 

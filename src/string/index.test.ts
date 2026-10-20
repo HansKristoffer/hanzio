@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	escapeHtml,
 	escapeRegExp,
+	fileExtension,
 	extractNumber,
 	foldForSearch,
 	generateId,
@@ -11,6 +13,8 @@ import {
 	sha256Id,
 	slugify,
 	stableStringify,
+	stripEmoji,
+	toJsonValue,
 	truncate
 } from '.'
 
@@ -270,5 +274,71 @@ describe('safeJsonParse', () => {
 		expect(failed.ok).toBe(false)
 		expect(failed.error).toBeInstanceOf(SyntaxError)
 		expect(safeJsonParse('').ok).toBe(false)
+	})
+})
+
+describe('escapeHtml', () => {
+	test('escapes markup and both quote styles', () => {
+		expect(escapeHtml(`<a href="x" title='y'>Tom & Jerry</a>`)).toBe(
+			'&lt;a href=&quot;x&quot; title=&#39;y&#39;&gt;Tom &amp; Jerry&lt;/a&gt;'
+		)
+	})
+})
+
+describe('stripEmoji', () => {
+	test('drops a lone emoji and tidies the spacing it leaves', () => {
+		expect(stripEmoji('Hi there 👋, welcome')).toBe('Hi there, welcome')
+		expect(stripEmoji('Hej! 👋 Du snakker med Emma.')).toBe(
+			'Hej! Du snakker med Emma.'
+		)
+		expect(stripEmoji('Thanks 😊')).toBe('Thanks')
+	})
+
+	test('drops multi-codepoint emoji sequences whole', () => {
+		// ZWJ family, skin-tone modifier, and a flag (regional indicators).
+		expect(stripEmoji('Welcome 👨‍👩‍👧 home')).toBe('Welcome home')
+		expect(stripEmoji('Nice work 👍🏽 today')).toBe('Nice work today')
+		expect(stripEmoji('Team 🇩🇰 here')).toBe('Team here')
+	})
+
+	test('keeps digits, # and * that carry the Emoji property but are plain text', () => {
+		const text = 'Order #42 total 1,234 - dial *9 or (415) 555-1212.'
+		expect(stripEmoji(text)).toBe(text)
+	})
+})
+
+describe('fileExtension', () => {
+	test('reads the last extension, lowercased', () => {
+		expect(fileExtension('Photo.JPG')).toBe('jpg')
+		expect(fileExtension('archive.tar.gz')).toBe('gz')
+		expect(fileExtension('uploads/v1.2/report.pdf')).toBe('pdf')
+		expect(fileExtension('C:\\docs\\notes.TXT')).toBe('txt')
+	})
+
+	test('is undefined without an extension', () => {
+		expect(fileExtension('README')).toBeUndefined()
+		expect(fileExtension('.env')).toBeUndefined()
+		expect(fileExtension('trailing.')).toBeUndefined()
+		expect(fileExtension('v1.2/README')).toBeUndefined()
+	})
+})
+
+describe('toJsonValue', () => {
+	test('drops undefined properties instead of keeping them', () => {
+		expect(
+			toJsonValue({ name: 'search', ok: true, error: undefined, items: [] })
+		).toEqual({ name: 'search', ok: true, items: [] })
+		expect(Object.keys(toJsonValue({ a: undefined }) as object)).toEqual([])
+	})
+
+	test('serializes dates and non-finite numbers like JSON', () => {
+		expect(toJsonValue({ at: new Date(0), n: Number.NaN })).toEqual({
+			at: '1970-01-01T00:00:00.000Z',
+			n: null
+		})
+	})
+
+	test('maps top-level undefined to null', () => {
+		expect(toJsonValue(undefined)).toBeNull()
 	})
 })
