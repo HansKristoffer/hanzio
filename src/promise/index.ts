@@ -253,6 +253,106 @@ export async function pMap<T, R>(
 	return results
 }
 
+export type TaskPool = {
+	/** Queues `task`; it starts once a slot is free. */
+	run<T>(task: () => Promise<T>): Promise<T>
+	/** Resolves once every queued and active task has settled; rejects with the first failure. */
+	drain(): Promise<void>
+	/** Throws the abort reason or the first failure, if any. */
+	throwIfFailed(): void
+}
+
+/**
+ * A bounded pool for work that arrives over time, such as a crawl that queues
+ * pages as it discovers them (`pMap` needs the whole list up front).
+ *
+ * The first failure, or an abort, discards queued tasks and rejects later
+ * `run` calls; `drain` waits for active tasks to settle before rejecting with
+ * it. Pass the same `signal` to the tasks' IO so an abort interrupts them too.
+ * `stopOnError: false` keeps the pool running when a task fails, for callers
+ * that retry or fall back per task.
+ *
+ * A `run` promise that is never awaited does not cause an unhandled rejection;
+ * `drain` still reports its failure.
+ *
+ * @example
+ * const pool = createTaskPool({ concurrency: 4, signal })
+ * for await (const page of discoverPages(signal)) void pool.run(() => scrape(page, signal))
+ * await pool.drain()
+ */
+export function createTaskPool(options: {
+	concurrency: number
+	signal?: AbortSignal
+	stopOnError?: boolean
+}): TaskPool {
+	const { concurrency, signal, stopOnError = true } = options
+	if (!Number.isInteger(concurrency) || concurrency < 1)
+		throw new Error(
+			`Task concurrency must be a positive integer, got ${concurrency}`
+		)
+	const queued: { start: () => void; reject: (error: unknown) => void }[] = []
+	const idle: (() => void)[] = []
+	let active = 0
+	let failed = false
+	let failure: unknown
+	const throwIfFailed = () => {
+		signal?.throwIfAborted()
+		if (failed) throw failure
+	}
+	const stop = (error: unknown) => {
+		if (!failed) {
+			failed = true
+			failure = error
+		}
+		for (const task of queued.splice(0)) task.reject(failure)
+	}
+	const dispatch = () => {
+		if (signal?.aborted) stop(signal.reason)
+		while (!failed && active < concurrency && queued.length) {
+			active += 1
+			queued.shift()!.start()
+		}
+		if (!active && !queued.length)
+			for (const resolve of idle.splice(0)) resolve()
+	}
+	const run = <T>(task: () => Promise<T>): Promise<T> => {
+		const result = new Promise<T>((resolve, reject) => {
+			if (failed || signal?.aborted) {
+				stop(signal?.aborted ? signal.reason : failure)
+				reject(failure)
+				return
+			}
+			queued.push({
+				reject,
+				start: () => {
+					void Promise.resolve()
+						.then(() => {
+							throwIfFailed()
+							return task()
+						})
+						.then(resolve, (error: unknown) => {
+							if (stopOnError || signal?.aborted) stop(error)
+							reject(error)
+						})
+						.finally(() => {
+							active -= 1
+							dispatch()
+						})
+				}
+			})
+			dispatch()
+		})
+		void result.catch(() => {})
+		return result
+	}
+	const drain = async () => {
+		if (active || queued.length)
+			await new Promise<void>((resolve) => idle.push(resolve))
+		throwIfFailed()
+	}
+	return { run, drain, throwIfFailed }
+}
+
 const clock = (): number => globalThis.performance?.now() ?? Date.now()
 
 /** Starts a clock; call the returned function to read elapsed ms. */

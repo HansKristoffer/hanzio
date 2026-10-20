@@ -322,3 +322,62 @@ function safeDecodeURIComponent(value: string): string {
 		return value
 	}
 }
+
+/** Escapes `& < > " '` for HTML or XML text and attribute values. */
+export function escapeHtml(text: string): string {
+	return text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;')
+}
+
+/**
+ * Pictographs plus the parts that build an emoji sequence: regional indicators
+ * (flags), skin tones, the keycap combiner, the emoji variation selector and
+ * the zero-width joiner. Digits, `#` and `*` also carry the `Emoji` property
+ * but are ordinary text, so they are deliberately not matched.
+ */
+const EMOJI_PATTERN =
+	/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u{1F3FB}-\u{1F3FF}\u{20E3}\u{FE0F}\u{200D}]/gu
+
+/**
+ * Removes emoji and tidies the spacing they leave, so `'Hi there 👋, welcome'`
+ * becomes `'Hi there, welcome'`. Use it for text that is spoken (TTS drops
+ * emoji from the audio but not from the transcript). Text without emoji is
+ * returned unchanged.
+ */
+export function stripEmoji(text: string): string {
+	const stripped = text.replace(EMOJI_PATTERN, '')
+	if (stripped === text) return text
+	return stripped
+		.replace(/ {2,}/g, ' ')
+		.replace(/ +([,.!?;:])/g, '$1')
+		.trim()
+}
+
+/**
+ * Lowercased extension of a file name or path, without the dot. `undefined`
+ * when there is none; like `path.extname`, a leading dot (`.env`) is not one.
+ */
+export function fileExtension(filename: string): string | undefined {
+	const name = filename.slice(
+		Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\')) + 1
+	)
+	const dot = name.lastIndexOf('.')
+	if (dot <= 0 || dot === name.length - 1) return undefined
+	return name.slice(dot + 1).toLowerCase()
+}
+
+/**
+ * Normalizes a value the way a JSON round trip does: `undefined` properties
+ * are dropped, `Date`s become ISO strings and `NaN` becomes `null`. Top-level
+ * `undefined` becomes `null`. Use it before storing loosely typed data in a
+ * JSON column. Throws on `bigint` and circular references.
+ */
+export function toJsonValue(value: unknown): JsonValue {
+	if (value === undefined) return null
+	const text = JSON.stringify(value)
+	return text === undefined ? null : (JSON.parse(text) as JsonValue)
+}
