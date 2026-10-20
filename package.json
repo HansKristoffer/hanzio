@@ -179,6 +179,12 @@
       "import": "./dist/src/http/index.js",
       "default": "./dist/src/http/index.js"
     },
+    "./cli": {
+      "types": "./dist/cli/index.d.ts",
+      "bun": "./src/cli/index.ts",
+      "import": "./dist/src/cli/index.js",
+      "default": "./dist/src/cli/index.js"
+    },
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "bun": "./src/testing/index.ts",
@@ -188,7 +194,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/api-wrapper/testing.ts ./src/api-wrapper/connection-auth.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/cool-console-log/index.ts ./src/format/index.ts ./src/format/phone.ts ./src/crypto/index.ts ./src/storage/index.ts ./src/i18n/index.ts ./src/i18n/vue.ts ./src/i18n/i18next.ts ./src/i18n/vite.ts ./src/i18n/check.ts ./src/i18n/cli.ts ./src/iso/index.ts ./src/secrets/index.ts ./src/secrets/vite.ts ./src/secrets/worker.ts ./src/redis/index.ts ./src/http/index.ts ./src/testing/index.ts --outdir ./dist --target node --packages external --splitting",
+    "build:js": "bun build ./src/index.ts ./src/zod/index.ts ./src/api-wrapper/index.ts ./src/api-wrapper/testing.ts ./src/api-wrapper/connection-auth.ts ./src/jwt/index.ts ./src/sitemap/index.ts ./src/p-queue/index.ts ./src/cool-console-log/index.ts ./src/format/index.ts ./src/format/phone.ts ./src/crypto/index.ts ./src/storage/index.ts ./src/i18n/index.ts ./src/i18n/vue.ts ./src/i18n/i18next.ts ./src/i18n/vite.ts ./src/i18n/check.ts ./src/i18n/cli.ts ./src/iso/index.ts ./src/secrets/index.ts ./src/secrets/vite.ts ./src/secrets/worker.ts ./src/redis/index.ts ./src/http/index.ts ./src/cli/index.ts ./src/testing/index.ts --outdir ./dist --target node --packages external --splitting",
     "build:types": "tsgo -p tsconfig.build.json",
     "prepublishOnly": "bun run build",
     "test": "bun test",

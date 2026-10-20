@@ -9,7 +9,7 @@ logging.
 
 ```bash
 bun add hanzio
-# only needed for hanzio/zod, hanzio/api-wrapper and hanzio/secrets
+# only needed for hanzio/zod, hanzio/api-wrapper, hanzio/secrets and hanzio/cli
 bun add zod
 ```
 
@@ -62,6 +62,7 @@ subpath export:
 | `hanzio/secrets/worker` | Secret sets for Cloudflare Workers |
 | `hanzio/redis` | Bun Redis: self-healing client with shared subscriptions, fleet-wide concurrency limiter ([docs](src/redis/README.md)) |
 | `hanzio/http` | SSE keep-alive comments and anti-buffering headers ([docs](src/http/README.md)) |
+| `hanzio/cli` | Typed CLIs from Zod schemas: flags, help, completion, exit codes; needs `node:util` ([docs](src/cli/README.md)) |
 | `hanzio/testing` | `bun:test` kit: restorable module mocks, Prisma deep mock, window shim, auth race contract ([docs](src/testing/README.md)) |
 
 `scripts/verify-exports.mjs` imports every entry above from the packed tarball
