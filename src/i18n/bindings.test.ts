@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, expectTypeOf, test } from 'bun:test'
 import i18next from 'i18next'
 import { createMemoryStorage } from '../storage'
 import { defineLocales } from '.'
@@ -32,6 +32,22 @@ describe('createVueI18n', () => {
 		setLocale('en')
 		expect(i18n.global.locale.value).toBe('en')
 		expect(storage.getItem('ui-locale')).toBe('en')
+	})
+
+	test('types messages and the composer by the registry', () => {
+		const vue = createVueI18n({ locales, messages })
+
+		function typeAssertions() {
+			expectTypeOf(vue.setLocale).parameter(0).toEqualTypeOf<'en' | 'da'>()
+			const { locale, t } = vue.useI18n<{ hi: 'name' }>()
+			expectTypeOf(locale.value).toEqualTypeOf<'en' | 'da'>()
+			t('hi', { name: 'Ada' })
+			// @ts-expect-error params required
+			t('hi')
+			// @ts-expect-error the da catalog is missing
+			createVueI18n({ locales, messages: { en: messages.en } })
+		}
+		expectTypeOf(typeAssertions).toBeFunction()
 	})
 
 	test('falls back to the default locale', () => {
@@ -78,6 +94,7 @@ describe('initI18next', () => {
 		expect(app.locale()).toBe('en')
 
 		const next = initI18next(i18next.createInstance(), {
+			showSupportNotice: false,
 			locales,
 			resources,
 			deviceLocales: () => ['da'],

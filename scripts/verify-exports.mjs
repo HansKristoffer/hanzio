@@ -40,7 +40,7 @@ const expectedExports = {
 	'hanzio/crypto': ['safeEqual', 'hmacSign', 'createSealer', 'randomToken'],
 	'hanzio/storage': ['createStorageItem', 'createAsyncStorageItem'],
 	'hanzio/i18n': ['interpolate', 'extractPlaceholders', 'createTranslator', 'defineLocales', 'typedTranslate'],
-	'hanzio/i18n/vue': ['createVueI18n', 'useTypedI18n'],
+	'hanzio/i18n/vue': ['createVueI18n'],
 	'hanzio/i18n/i18next': ['initI18next'],
 	'hanzio/i18n/vite': ['localeCatalogReloadPlugin'],
 	'hanzio/i18n/check': ['defineI18nConfig', 'validateCatalogs', 'writeCatalogTypes'],

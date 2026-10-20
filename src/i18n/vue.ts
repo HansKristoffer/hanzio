@@ -1,4 +1,4 @@
-// vue-i18n bindings: a locale-registry-aware `createI18n` and a typed
+// vue-i18n bindings: a locale-registry-aware `createI18n` with a typed
 // composer. Needs `vue-i18n` (and so `vue`).
 
 import type { WritableComputedRef } from 'vue'
@@ -6,15 +6,18 @@ import { createI18n, type I18nOptions, useI18n } from 'vue-i18n'
 import { createStorageItem, type SyncStorageLike } from '../storage'
 import {
 	type LocaleRegistry,
+	type Messages,
 	type TranslationParamsMap,
 	typedTranslate
 } from '.'
 
 export type CreateVueI18nOptions<L extends string> = Omit<
 	I18nOptions,
-	'legacy' | 'locale'
+	'legacy' | 'locale' | 'messages'
 > & {
 	locales: LocaleRegistry<L>
+	/** One catalog per locale; a missing locale is a type error. */
+	messages: Record<L, Messages>
 	/**
 	 * Remembers the chosen locale (a raw string) so screens before sign-in come
 	 * up in the right language. Omit to persist nothing.
@@ -35,7 +38,9 @@ const browser = globalThis as BrowserGlobals
  * `createI18n` in composition mode, starting in the persisted locale, then the
  * browser language, then `locales.defaultLocale` (also the fallback locale).
  * `setLocale` is the one write path: it switches vue-i18n, persists the choice
- * and keeps `<html lang>` accurate.
+ * and keeps `<html lang>` accurate. `useI18n<Params>()` is vue-i18n's composer
+ * with the locale and `t` narrowed to the registry and a generated key map;
+ * make it the one place the app calls vue-i18n's `useI18n`.
  */
 export function createVueI18n<L extends string>(
 	options: CreateVueI18nOptions<L>
@@ -69,22 +74,14 @@ export function createVueI18n<L extends string>(
 		setLocale(locale: L) {
 			apply(locale)
 			persisted?.set(locale)
+		},
+		useI18n<Params extends TranslationParamsMap>() {
+			const composer = useI18n()
+			return {
+				...composer,
+				locale: composer.locale as WritableComputedRef<L>,
+				t: typedTranslate<Params>(composer.t)
+			}
 		}
-	}
-}
-
-/**
- * vue-i18n's composer with the locale and `t` narrowed to your registry and
- * generated key map. The one place an app should call `useI18n`.
- */
-export function useTypedI18n<
-	L extends string,
-	Params extends TranslationParamsMap
->() {
-	const composer = useI18n()
-	return {
-		...composer,
-		locale: composer.locale as WritableComputedRef<L>,
-		t: typedTranslate<Params>(composer.t)
 	}
 }

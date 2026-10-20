@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, expectTypeOf, test } from 'bun:test'
 import {
 	mkdirSync,
 	mkdtempSync,
@@ -12,6 +12,7 @@ import { generateCatalogTypes } from './catalog'
 import {
 	type CatalogConfig,
 	type ContentRulesConfig,
+	defineI18nConfig,
 	validateCatalogs,
 	writeCatalogTypes
 } from './check'
@@ -465,4 +466,42 @@ describe('identical labels', () => {
 			rules.identicalLabel('deal.sendEmail', 'de', 'Send email', 'Send email')
 		).toBe(true)
 	})
+})
+
+test('defineI18nConfig only accepts declared locales and catalogs', () => {
+	const config = defineI18nConfig({
+		baseLocale: 'en',
+		locales: ['en', 'da'],
+		catalogs: [
+			{ name: 'platform', dir: 'a', runtime: 'vue-i18n' },
+			{ name: 'widget', dir: 'b', runtime: 'vue-i18n' }
+		],
+		disjointNamespaces: [['platform', 'widget']],
+		rules: { identical: { allowKeys: { 'common.send': ['da'] } } }
+	})
+	expectTypeOf(config.locales).toEqualTypeOf<readonly ('en' | 'da')[]>()
+
+	function typeAssertions() {
+		defineI18nConfig({
+			// @ts-expect-error not a declared locale
+			baseLocale: 'de',
+			locales: ['en', 'da'],
+			catalogs: []
+		})
+		defineI18nConfig({
+			baseLocale: 'en',
+			locales: ['en'],
+			catalogs: [{ name: 'platform', dir: 'a', runtime: 'plain' }],
+			// @ts-expect-error not a declared catalog
+			disjointNamespaces: [['platform', 'widgte']]
+		})
+		defineI18nConfig({
+			baseLocale: 'en',
+			locales: ['en', 'da'],
+			catalogs: [],
+			// @ts-expect-error not a declared locale
+			rules: { identical: { allowKeys: { 'common.send': ['nb'] } } }
+		})
+	}
+	expectTypeOf(typeAssertions).toBeFunction()
 })

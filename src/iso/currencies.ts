@@ -163,7 +163,9 @@ export const currencyNames = {
 
 export type CurrencyCode = keyof typeof currencyNames
 
-export const currencyCodes = Object.keys(currencyNames) as CurrencyCode[]
+export const currencyCodes = Object.keys(
+	currencyNames
+) as readonly CurrencyCode[]
 
 export function isCurrencyCode(value: unknown): value is CurrencyCode {
 	return typeof value === 'string' && Object.hasOwn(currencyNames, value)

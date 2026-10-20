@@ -17,7 +17,7 @@ import {
 describe('countries', () => {
 	test('lists every ISO 3166-1 alpha-2 code once, sorted', () => {
 		expect(countryCodes).toHaveLength(249)
-		expect([...countryCodes].sort()).toEqual(countryCodes)
+		expect(countryCodes).toEqual([...countryCodes].sort())
 		expect(isCountryCode('DK')).toBe(true)
 		expect(isCountryCode('dk')).toBe(false)
 		expect(isCountryCode('toString')).toBe(false)

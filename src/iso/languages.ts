@@ -187,7 +187,9 @@ export const languageNames = {
 
 export type LanguageCode = keyof typeof languageNames
 
-export const languageCodes = Object.keys(languageNames) as LanguageCode[]
+export const languageCodes = Object.keys(
+	languageNames
+) as readonly LanguageCode[]
 
 export function isLanguageCode(value: unknown): value is LanguageCode {
 	return typeof value === 'string' && Object.hasOwn(languageNames, value)

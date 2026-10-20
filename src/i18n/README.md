@@ -132,21 +132,22 @@ const selectLocale = createLocaleSelector({
 
 `hanzio/i18n/vue` needs `vue-i18n`. `createVueI18n` calls `createI18n` in
 composition mode, starting in the persisted locale, then the browser language,
-then the default (also the fallback). `setLocale` switches, persists and sets
-`<html lang>`. Other options go to `createI18n` unchanged.
+then the default (also the fallback). `messages` needs a catalog for every
+locale in the registry. `setLocale` switches, persists and sets `<html lang>`.
+Other options go to `createI18n` unchanged.
 
 ```ts
-import { createVueI18n, useTypedI18n } from 'hanzio/i18n/vue'
+import { createVueI18n } from 'hanzio/i18n/vue'
 
-export const { i18n, setLocale } = createVueI18n({
+export const { i18n, setLocale, useI18n } = createVueI18n({
 	locales: uiLocales,
 	messages: { en, da, nb },
 	storageKey: 'app.ui-locale',
 	datetimeFormats: { en: dateFormats, da: dateFormats, nb: dateFormats }
 })
 
-// Call useI18n only through this, so every t is typed.
-export const useAppI18n = () => useTypedI18n<UiLocale, AppTranslationParams>()
+// The app's only useI18n: locale is UiLocale, t is checked against the map.
+export const useAppI18n = () => useI18n<AppTranslationParams>()
 ```
 
 The stored value is the raw locale id. After sign-in, call `setLocale` with the
@@ -199,7 +200,9 @@ hanzio-i18n generate  # writes each catalog's generatedTypes
 ```
 
 Both read `i18n.config.ts` (or `.mts`, `.js`, `.mjs`, or `--config <file>`)
-from the current directory; paths in it are relative to the config file. A
+from the current directory; paths in it are relative to the config file.
+`defineI18nConfig` rejects a `baseLocale`, `disjointNamespaces` catalog or
+`identical.allowKeys` locale the config does not declare. A
 `.ts` config needs Bun, or a Node version that strips types.
 
 ```ts

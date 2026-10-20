@@ -25,22 +25,32 @@ export type { CatalogConfig, CatalogIssue, CatalogRuntime } from './catalog'
 export { generateCatalogTypes, parseMessages } from './catalog'
 export type { ContentRulesConfig } from './content-rules'
 
-export type I18nConfig = {
+export type I18nConfig<
+	Locale extends string = string,
+	Catalog extends string = string
+> = {
 	/** The source-of-truth locale; usually `'en'`. */
-	baseLocale: string
+	baseLocale: NoInfer<Locale>
 	/** Every shipped locale, the base included. Each needs a catalog file. */
-	locales: readonly string[]
-	catalogs: readonly CatalogConfig[]
+	locales: readonly Locale[]
+	catalogs: readonly (CatalogConfig & { name: Catalog })[]
 	/**
 	 * Groups of catalogs merged into one runtime (`{ ...platform, ...widget }`),
 	 * so their top-level keys must not overlap.
 	 */
-	disjointNamespaces?: readonly (readonly string[])[]
-	rules?: ContentRulesConfig
+	disjointNamespaces?: readonly (readonly NoInfer<Catalog>[])[]
+	rules?: ContentRulesConfig<NoInfer<Locale>>
 }
 
-/** Identity helper that types an `i18n.config.ts` default export. */
-export function defineI18nConfig<const T extends I18nConfig>(config: T): T {
+/**
+ * Types an `i18n.config.ts` default export: `baseLocale`, the catalog names
+ * in `disjointNamespaces` and the locales in `rules.identical.allowKeys` must
+ * be ones the config declares.
+ */
+export function defineI18nConfig<
+	const Locale extends string,
+	const Catalog extends string
+>(config: I18nConfig<Locale, Catalog>): I18nConfig<Locale, Catalog> {
 	return config
 }
 

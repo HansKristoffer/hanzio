@@ -254,7 +254,7 @@ export const countryNames = {
 export type CountryCode = keyof typeof countryNames
 
 /** All 249 ISO 3166-1 alpha-2 codes, sorted. */
-export const countryCodes = Object.keys(countryNames) as CountryCode[]
+export const countryCodes = Object.keys(countryNames) as readonly CountryCode[]
 
 export function isCountryCode(value: unknown): value is CountryCode {
 	return typeof value === 'string' && Object.hasOwn(countryNames, value)

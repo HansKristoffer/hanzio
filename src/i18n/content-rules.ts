@@ -5,7 +5,7 @@
  * banned product vocabulary, and English shipped untranslated.
  */
 
-export type ContentRulesConfig = {
+export type ContentRulesConfig<Locale extends string = string> = {
 	/**
 	 * Key prefixes the vocabulary and untranslated rules skip, such as internal
 	 * admin tooling or a marketing site with its own copy owner.
@@ -36,7 +36,7 @@ export type ContentRulesConfig = {
 		/** Leading words (brands, acronyms) that make a value correct as-is. */
 		brands?: readonly string[]
 		/** Keys correct as-is, in the listed locales or `'all'`. */
-		allowKeys?: Readonly<Record<string, readonly string[] | 'all'>>
+		allowKeys?: Readonly<Record<string, readonly Locale[] | 'all'>>
 	}
 }
 
