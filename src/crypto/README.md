@@ -127,18 +127,32 @@ await sealer.open(sealed)
 - `sealJson` stores `JSON.stringify(value)`. It throws for `undefined` and for
   functions.
 
-### Migrating lullu `secret-json.ts`
+- `fallbacks: [{ salt, info }]`: older contexts `open` also tries, so values
+  sealed before a rename stay readable. `seal` always uses `salt` and `info`.
+- `passthroughUnsealed: true`: `open` and `openJson` return a value that was
+  never sealed (`{}`, a legacy plaintext) unchanged instead of throwing.
+  Malformed `enc:v1:` values and other envelope versions still throw.
 
-The envelope and key derivation match `apps/backend/src/lib/crypto/secret-json.ts`,
-so values already stored keep opening and don't need to be re-encrypted:
+### Synchronous sealing (`hanzio/crypto/node`)
+
+`createSealerSync` takes the same options and writes the same envelope on
+`node:crypto`, for code that cannot await (formatters, getters, Prisma result
+extensions). Either sealer opens what the other sealed.
 
 ```ts
-const sealer = createSealer({
+import { createSealerSync } from 'hanzio/crypto/node'
+
+const secrets = createSealerSync({
 	secret: getSecret('APP_SECRET'),
 	salt: 'lullu.secret-json.salt.v1',
-	info: 'lullu.secret-json.aes-256-gcm.v1'
+	info: 'lullu.secret-json.aes-256-gcm.v1',
+	fallbacks: [{ salt: 'hellu.secret-json.salt.v1', info: 'hellu.secret-json.aes-256-gcm.v1' }],
+	passthroughUnsealed: true
 })
+
+const stored = secrets.sealJson(credentials)
+const credentials = secrets.openJson<Credentials>(row.credentials)
 ```
 
-lullu's `openSecretJson` returns non-sealed values unchanged. `open` throws on
-them instead, so keep the `value.startsWith('enc:')` check in the app.
+The envelope and key derivation match lullu/hellu's `secret-json.ts`, so values
+already stored keep opening without re-encryption.

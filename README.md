@@ -50,6 +50,7 @@ subpath export:
 | `hanzio/format` | Cached `Intl` formatters: numbers, currency, bytes, durations, dates, relative time ([docs](src/format/README.md)) |
 | `hanzio/format/phone` | Phone numbers as people read them; needs `libphonenumber-js` ([docs](src/format/README.md#phone-numbers)) |
 | `hanzio/crypto` | Web Crypto helpers: constant-time compare, HMAC/webhook verification, sealing, tokens ([docs](src/crypto/README.md)) |
+| `hanzio/crypto/node` | Synchronous sealing on `node:crypto`, same envelope as `hanzio/crypto` ([docs](src/crypto/README.md#synchronous-sealing-hanziocryptonode)) |
 | `hanzio/storage` | Typed localStorage/AsyncStorage items that never throw ([docs](src/storage/README.md)) |
 | `hanzio/i18n` | Typed `{placeholder}` interpolation, translators, `TypedTranslate` and locale registries ([docs](src/i18n/README.md)) |
 | `hanzio/i18n/vue` | vue-i18n setup with locale persistence and a typed composer ([docs](src/i18n/README.md#vue-i18n)) |
