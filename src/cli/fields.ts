@@ -1,9 +1,21 @@
-import { z } from 'zod'
+import type { z } from 'zod'
 import { unwrapOnce } from '../zod/introspect'
-import { defOf, type Schema } from '../zod/zodToTypeString'
+import { type Def, defOf, type Schema } from '../zod/zodToTypeString'
 
-/** Thrown for bad argv. The CLI prints it with a `--help` hint and exits 2. */
-export class UsageError extends Error {}
+// No runtime `zod` import: a CLI made only of raw commands loads without it.
+
+/** Thrown for bad argv; `cli.run()` turns it into a `CliUsageError`. */
+export class UsageError extends Error {
+	constructor(
+		message: string,
+		readonly kind:
+			| 'missing-command'
+			| 'unknown-command'
+			| 'invalid-arguments' = 'invalid-arguments'
+	) {
+		super(message)
+	}
+}
 
 /** One key of an input or globals object, read as a flag or a positional. */
 export type Field = {
@@ -16,9 +28,51 @@ export type Field = {
 	hasDefault: boolean
 	defaultValue: unknown
 	description?: string
+	/** One-letter short flag. */
 	alias?: string
-	env?: string
+	/** Extra long flag names, from multi-character aliases. */
+	aliases: string[]
+	env: string[]
+	/** `--name` alone is `true`, `--name=value` is the value. */
+	optionalValue: boolean
 	choices?: string[]
+}
+
+/** The `parseArgs` option name. A `noX` key is its own flag, never `--x` negated. */
+export const optionName = (field: Field) =>
+	field.flag.startsWith('no-') ? field.key : field.flag
+
+const strings = (value: unknown, what: string, key: string): string[] => {
+	const list = value === undefined ? [] : Array.isArray(value) ? value : [value]
+	if (list.some((item) => typeof item !== 'string' || !item))
+		throw new Error(
+			`hanzio/cli: ${what} ${JSON.stringify(value)} of "${key}" must be a string or string[]`
+		)
+	return list
+}
+
+const kindOf = (def: Def) =>
+	def.type === 'boolean'
+		? 'boolean'
+		: def.type === 'number'
+			? 'number'
+			: 'string'
+
+function choicesOf(def: Def): string[] | undefined {
+	if (def.type === 'enum') return Object.values(def.entries).map(String)
+	if (def.type === 'literal') return def.values.map(String)
+	return undefined
+}
+
+// `z.union([z.boolean(), z.string()])` (or `z.literal(true)`): an optional value.
+function optionalValueOf(def: Def): Def | undefined {
+	if (def.type !== 'union' || def.options.length !== 2) return undefined
+	const [a, b] = def.options.map(defOf) as [Def, Def]
+	const flag = (d: Def) =>
+		d.type === 'boolean' || (d.type === 'literal' && d.values.includes(true))
+	if (flag(a) && kindOf(b) === 'string' && b.type !== 'literal') return b
+	if (flag(b) && kindOf(a) === 'string' && a.type !== 'literal') return a
+	return undefined
 }
 
 const kebab = (key: string) =>
@@ -37,7 +91,10 @@ function toField(key: string, schema: Schema): Field {
 	let defaultValue: unknown
 	let current = schema
 	for (;;) {
-		const meta = z.globalRegistry.get(current)
+		// `.meta()` with no argument reads Zod's global registry.
+		const meta = (
+			current as { meta?: () => Record<string, unknown> | undefined }
+		).meta?.()
 		if (meta) metas.unshift(meta)
 		const def = defOf(current)
 		if (def.type === 'optional') optional = true
@@ -61,20 +118,12 @@ function toField(key: string, schema: Schema): Field {
 		}
 		def = defOf(element)
 	}
-	const alias = meta.alias
-	if (alias !== undefined && (typeof alias !== 'string' || alias.length !== 1))
-		throw new Error(
-			`hanzio/cli: alias ${JSON.stringify(alias)} of "${key}" must be one character`
-		)
+	const valueDef = multiple ? undefined : optionalValueOf(def)
+	const names = strings(meta.alias, 'alias', key)
 	return {
 		key,
 		flag: kebab(key),
-		kind:
-			def.type === 'boolean'
-				? 'boolean'
-				: def.type === 'number'
-					? 'number'
-					: 'string',
+		kind: valueDef ? 'string' : kindOf(def),
 		multiple,
 		positional: meta.positional === true,
 		optional,
@@ -82,14 +131,11 @@ function toField(key: string, schema: Schema): Field {
 		defaultValue,
 		description:
 			typeof meta.description === 'string' ? meta.description : undefined,
-		alias,
-		env: typeof meta.env === 'string' ? meta.env : undefined,
-		choices:
-			def.type === 'enum'
-				? Object.values(def.entries).map(String)
-				: def.type === 'literal'
-					? def.values.map(String)
-					: undefined
+		alias: names.find((name) => name.length === 1),
+		aliases: names.filter((name) => name.length > 1).map(kebab),
+		env: strings(meta.env, 'env', key),
+		optionalValue: valueDef !== undefined,
+		choices: choicesOf(valueDef ?? def)
 	}
 }
 
@@ -108,14 +154,16 @@ function coerce(field: Field, value: string | boolean): unknown {
 
 /**
  * Builds the raw object Zod validates: flag values and positionals by key,
- * numbers coerced, `.meta({ env })` as fallback, and a missing required
- * boolean or array read as `false` or `[]`.
+ * numbers coerced, `.meta({ env })` as fallback (blank variables count as
+ * unset), and a missing required boolean or array read as `false` or `[]`.
+ * Extra positionals are a usage error unless `strict` is false.
  */
 export function readFields(
 	fields: Field[],
 	values: Record<string, string | boolean | (string | boolean)[] | undefined>,
 	positionals: string[],
-	env: Record<string, string | undefined>
+	env: Record<string, string | undefined>,
+	strict = true
 ): Record<string, unknown> {
 	const result: Record<string, unknown> = {}
 	const queue = [...positionals]
@@ -127,11 +175,13 @@ export function readFields(
 					? queue.splice(0)
 					: undefined
 				: queue.shift()
-		else raw = values[field.flag]
-		if (raw === undefined && field.env && env[field.env] !== undefined) {
-			const value = env[field.env] as string
-			raw = field.multiple ? [value] : value
-		}
+		else raw = values[optionName(field)]
+		if (field.optionalValue && raw === '') raw = true
+		const value =
+			raw === undefined
+				? field.env.map((name) => env[name]).find((value) => value?.trim())
+				: undefined
+		if (value !== undefined) raw = field.multiple ? [value] : value
 		if (raw === undefined) {
 			if (field.optional || field.hasDefault) continue
 			if (field.multiple) raw = []
@@ -142,7 +192,8 @@ export function readFields(
 			? raw.map((item) => coerce(field, item))
 			: coerce(field, raw)
 	}
-	if (queue.length) throw new UsageError(`Unexpected argument "${queue[0]}"`)
+	if (strict && queue.length)
+		throw new UsageError(`Unexpected argument "${queue[0]}"`)
 	return result
 }
 
@@ -154,14 +205,20 @@ export function fieldLabel(field: Field): string {
 				? `[${field.flag}]`
 				: `<${field.flag}>`
 	const name =
-		field.kind === 'boolean' && field.defaultValue === true
+		field.kind === 'boolean' &&
+		field.defaultValue === true &&
+		!field.flag.startsWith('no-')
 			? `--[no-]${field.flag}`
 			: `--${field.flag}`
+	const type = `<${field.choices?.join('|') ?? field.kind}>`
 	const value =
 		field.kind === 'boolean'
 			? ''
-			: ` <${field.choices?.join('|') ?? field.kind}>${field.multiple ? '...' : ''}`
-	return `${field.alias ? `-${field.alias}, ` : ''}${name}${value}`
+			: field.optionalValue
+				? `[=${type}]`
+				: ` ${type}${field.multiple ? '...' : ''}`
+	const aliases = field.aliases.map((alias) => `, --${alias}`).join('')
+	return `${field.alias ? `-${field.alias}, ` : ''}${name}${aliases}${value}`
 }
 
 export function fieldHelp(field: Field): string {
@@ -172,7 +229,7 @@ export function fieldHelp(field: Field): string {
 	return [
 		field.description,
 		showDefault && `(default: ${JSON.stringify(field.defaultValue)})`,
-		field.env && `[env: ${field.env}]`
+		field.env.length > 0 && `[env: ${field.env.join(', ')}]`
 	]
 		.filter(Boolean)
 		.join(' ')

@@ -54,7 +54,7 @@ const expectedExports = {
 	'hanzio/secrets/worker': ['defineSecretSet', 'createSecretSet', 'readPublicConfig', 'cloudflareWorkerEnvLoader'],
 	'hanzio/redis': ['createManagedRedis', 'createRedisConcurrencyLimit', 'createLuaScript'],
 	'hanzio/http': ['withSseKeepAlive', 'createSseKeepAliveTransform'],
-	'hanzio/cli': ['defineCli', 'defineCommand', 'CliError'],
+	'hanzio/cli': ['defineCli', 'defineCommand', 'CliError', 'CliUsageError'],
 	'hanzio/testing': ['ModuleMocker', 'createPrismaMock', 'connectionAuthContract', 'installWindowShim', 'noopLogger']
 }
 
