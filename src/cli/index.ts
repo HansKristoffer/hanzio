@@ -387,6 +387,7 @@ complete -F ${fn} ${config.name}
 					const child = Object.hasOwn(group, token) ? group[token] : undefined
 					if (!child) {
 						const names = Object.keys(group)
+						if (builtIn(group)) names.push('completion')
 						const guess = closest(token, names)
 						throw new UsageError(
 							`Unknown command "${[...path, token].join(' ')}".${guess ? ` Did you mean "${[...path, guess].join(' ')}"?` : ` Commands: ${names.join(', ')}`}`

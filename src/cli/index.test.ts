@@ -211,6 +211,10 @@ describe('usage errors exit 2', () => {
 		)
 		const nested = await run(evals, ['check', 'doc'])
 		expect(nested.stderr).toContain('Did you mean "check docs"?')
+		const builtIn = await run(evals, ['complet'])
+		expect(builtIn.stderr).toContain('Did you mean "completion"?')
+		const listed = await run(evals, ['zzzzzzzzzzzz'])
+		expect(listed.stderr).toContain(', lazy, completion')
 	})
 
 	test('unexpected extra positional', async () => {
