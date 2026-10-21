@@ -9,7 +9,7 @@ logging.
 
 ```bash
 bun add hanzio
-# only needed for hanzio/zod, hanzio/api-wrapper, hanzio/secrets and hanzio/cli
+# only needed for hanzio/zod, hanzio/api-wrapper, hanzio/secrets and hanzio/cli commands with an input
 bun add zod
 ```
 

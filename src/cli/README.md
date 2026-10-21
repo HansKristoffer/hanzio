@@ -6,7 +6,8 @@ description: Typed CLIs from Zod object schemas, parsed with node:util parseArgs
 
 Each command's `input` is a Zod object: its keys become flags, Zod validates
 them, and `run` gets the typed result. Parsing is `node:util` `parseArgs`, so
-there is no extra dependency. Runs in Bun and Node 22.4+; needs `zod` 4.
+there is no extra dependency. Runs in Bun and Node 22.4+. Commands with an
+`input` need `zod` 4; a CLI made only of `raw` commands loads without it.
 
 ```ts
 // src/cli.ts
@@ -51,20 +52,27 @@ handles would keep the process alive.
 | `z.string()`, `z.enum([...])` | `--name value` or `--name=value` |
 | `z.number()` | `--repeats 3`, coerced before validation |
 | `z.boolean()` | `--json`; `--no-json` sets `false`; missing is `false` |
+| `noWatch: z.boolean()` | its own flag `--no-watch`, not `--watch` negated |
 | `z.array(z.string())` | repeatable: `--model a --model b`; missing is `[]` |
+| `z.union([z.boolean(), z.string()])` | `--expose` is `true`, `--expose=api,web` is the string |
 | `.optional()`, `.default(x)` | may be left out |
 | `.describe('…')` | help text |
 | `.meta({ positional: true })` | positional, in key order; an array takes the rest |
-| `.meta({ alias: 'r' })` | `-r value` |
-| `.meta({ env: 'APP_REGION' })` | read from the environment when the flag is missing |
+| `.meta({ alias: 'r' })` | `-r value`; longer aliases are flags: `alias: ['r', 'region-name']` |
+| `.meta({ env: 'APP_REGION' })` | read from the environment when the flag is missing; a list is tried in order, and blank values count as unset |
 
 Keys are camelCase in the schema and kebab-case on the command line (`dryRun`
 → `--dry-run`). These are the same `.meta()` keys as `trpc-cli`, plus `env`;
 importing `hanzio/cli` types them on Zod's `GlobalMeta`.
 Pipes read their input side, so `z.stringbool()` takes `--submit true`.
 
-Every CLI gets `-h`/`--help` (root, groups and commands), `--version` when you
-pass `version`, and "Did you mean …?" for mistyped commands and flags.
+Every CLI gets `-h`/`--help` (root, groups and commands), `--version` and
+`-v` when you pass `version`, and "Did you mean …?" for mistyped commands and
+flags. A root command named `version` also answers `--version` and `-v`, so it
+decides the format (`tool v1.2.3`).
+
+`defineCommand({ strict: false })` ignores unknown flags and extra
+positionals instead of exiting 2.
 
 ## Commands
 
@@ -81,6 +89,30 @@ A command is one of:
   the same with a description for the command list.
 - `defineCommand({ raw: true, run })`, which skips parsing: every argument
   after the command name is in `ctx.argv` (for `tool prisma migrate dev`).
+
+The first line of `description` is the command's summary in command lists;
+its help shows all of it. `usage: '[name...] [--all]'` replaces the generated
+arguments in both, and `examples: ['tool stop api']` adds an Examples section
+to its help.
+
+```ts
+defineCli({
+	name: 'evals',
+	defaultCommand: 'run', // `evals` and `evals --case x` run `evals run`
+	commands: { run, inspect }
+})
+```
+
+`defaultCommand` runs when no command name is given, or when the first
+argument is a flag that isn't a global. Pass a function to read it from the
+environment: `defaultCommand: (env) => env.RELEASE_COMMAND`.
+
+`unknownCommand: (name, path) => node` resolves a name the group doesn't
+have, for commands that come from config. Return `undefined` for the usual
+"Unknown command" error.
+
+`help: (text, { path }) => text` rewrites every help screen (`path` is `[]`
+for the root), to add sections such as the tasks a config defines.
 
 `run(input, ctx)` gets:
 
@@ -118,7 +150,9 @@ const cli = defineCli({
 })
 ```
 
-Globals are accepted before or after the command names. `context` runs after
+Globals are accepted before or after the command names. A positional global
+comes before the first command name, so `globals: z.object({ module:
+z.string().meta({ positional: true }) })` reads `tool ./app.ts list`. `context` runs after
 parsing, so `--help` never connects anywhere. `guard` runs before every
 command. A command defined in its own file types its context by annotating
 `ctx`:
@@ -149,6 +183,29 @@ message is printed without a stack. Other errors print their stack. With
 ```
 --repeats: Invalid input: expected number, received string
 Run "better-mastra-evals run --help" for usage.
+```
+
+`onError(error, io)` sees every error first. Return the exit code, or
+`undefined` for the default output; `io.print()` writes that output and
+returns its code. Usage errors are `CliUsageError`s with a `kind`
+(`missing-command`, `unknown-command`, `invalid-arguments`), the command
+`path`, and the `help` for it:
+
+```ts
+defineCli({
+	name: 'tool',
+	commands,
+	onError: (error, io) => {
+		// Help instead of an error when run without a command.
+		if (error instanceof CliUsageError && error.kind === 'missing-command') {
+			io.stdout.write(error.help)
+			return 0
+		}
+		// Keep the message, but exit 1 on bad arguments.
+		const code = io.print()
+		return code === 2 ? 1 : code
+	}
+})
 ```
 
 ## Shell completion

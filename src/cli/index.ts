@@ -6,6 +6,7 @@ import {
 	fieldHelp,
 	fieldLabel,
 	fieldsOf,
+	optionName,
 	readFields,
 	UsageError
 } from './fields'
@@ -14,10 +15,16 @@ declare module 'zod' {
 	interface GlobalMeta {
 		/** hanzio/cli: read this key from positional arguments, in key order. */
 		positional?: boolean
-		/** hanzio/cli: one-letter short flag, e.g. `'r'` for `-r`. */
-		alias?: string
-		/** hanzio/cli: environment variable read when the flag is missing. */
-		env?: string
+		/**
+		 * hanzio/cli: other names for the flag: one letter for `-r`, longer for
+		 * `--region-name`.
+		 */
+		alias?: string | readonly string[]
+		/**
+		 * hanzio/cli: environment variables read in order when the flag is
+		 * missing. Blank values count as unset.
+		 */
+		env?: string | readonly string[]
 	}
 }
 
@@ -52,6 +59,37 @@ export type CliIO = {
 	env?: Record<string, string | undefined>
 }
 
+/**
+ * Bad arguments, passed to `defineCli({ onError })`. `help` is the help of
+ * the group or command the arguments were for, ending in a newline.
+ */
+export class CliUsageError extends CliError {
+	readonly kind: 'missing-command' | 'unknown-command' | 'invalid-arguments'
+	readonly path: readonly string[]
+	readonly help: string
+
+	constructor(
+		message: string,
+		details: Pick<CliUsageError, 'kind' | 'path' | 'help'>
+	) {
+		super(message, { exitCode: 2 })
+		this.name = 'CliUsageError'
+		this.kind = details.kind
+		this.path = details.path
+		this.help = details.help
+	}
+}
+
+/** What `defineCli({ onError })` gets besides the error. */
+export type CliErrorIO = {
+	readonly stdout: CliWriter
+	readonly stderr: CliWriter
+	readonly env: Record<string, string | undefined>
+	readonly json: boolean
+	/** Prints the error the default way and returns its exit code. */
+	print(): number
+}
+
 export type CommandContext<C = unknown> = {
 	/** What `defineCli({ context })` returned. */
 	readonly context: C
@@ -75,8 +113,11 @@ export type CommandContext<C = unknown> = {
 export type Command<C = unknown> = {
 	readonly [commandKey]: true
 	readonly description?: string
+	readonly usage?: string
+	readonly examples?: readonly string[]
 	readonly input?: AnyObject
 	readonly raw?: boolean
+	readonly strict?: boolean
 	readonly run?: (input: never, ctx: CommandContext<C>) => unknown
 	readonly output?: (result: never, ctx: CommandContext<C>) => unknown
 	readonly load?: LazyCommand<C>
@@ -120,6 +161,31 @@ export type CliConfig<G extends AnyObject, C> = {
 	}) => unknown
 	/** A command (single-command CLI) or nested groups of commands. */
 	commands: CommandNode<C>
+	/**
+	 * The root command to run when no command name is given, or when the first
+	 * argument is a flag that isn't a global. A function reads it from `env`.
+	 */
+	defaultCommand?:
+		| string
+		| ((env: Record<string, string | undefined>) => string | undefined)
+	/** Resolves a command name the group doesn't have, e.g. from config. */
+	unknownCommand?: (
+		name: string,
+		path: readonly string[]
+	) => CommandNode<C> | undefined | Promise<CommandNode<C> | undefined>
+	/** Rewrites a help screen; `path` is `[]` for the root. */
+	help?: (
+		text: string,
+		info: { path: readonly string[] }
+	) => string | Promise<string>
+	/**
+	 * Handles every error, usage errors included (`CliUsageError`). Return the
+	 * exit code, or `undefined` for `io.print()`.
+	 */
+	onError?: (
+		error: unknown,
+		io: CliErrorIO
+	) => number | undefined | Promise<number | undefined>
 } & (undefined extends C
 	? { context?: ContextFunction<G, C> }
 	: { context: ContextFunction<G, C> })
@@ -139,14 +205,22 @@ export function defineCommand<
 	R = unknown,
 	C = unknown
 >(definition: {
+	/** The first line is the summary in command lists; help shows it all. */
 	description?: string
+	/** Replaces the generated arguments in usage lines, e.g. `'[name...] [--all]'`. */
+	usage?: string
+	/** Command lines shown under "Examples:" in the command's help. */
+	examples?: readonly string[]
 	input?: S
+	/** `false` ignores unknown flags and extra positionals. */
+	strict?: boolean
 	run: (input: z.output<S>, ctx: CommandContext<C>) => R
 	output?: (result: Awaited<R>, ctx: CommandContext<C>) => unknown
 }): Command<C>
 /** A command that skips parsing: everything after its name is in `ctx.argv`. */
 export function defineCommand<R = unknown, C = unknown>(definition: {
 	description?: string
+	usage?: string
 	raw: true
 	run: (input: Record<string, never>, ctx: CommandContext<C>) => R
 	output?: (result: Awaited<R>, ctx: CommandContext<C>) => unknown
@@ -154,6 +228,7 @@ export function defineCommand<R = unknown, C = unknown>(definition: {
 /** A lazy command whose description shows in help before it loads. */
 export function defineCommand<C = unknown>(definition: {
 	description?: string
+	usage?: string
 	load: LazyCommand<C>
 }): Command<C>
 export function defineCommand(definition: object): Command {
@@ -174,21 +249,18 @@ async function loadCommand(node: Command | LazyCommand): Promise<Command> {
 	return loadCommand(command)
 }
 
-/** Leaf commands under a group, by path, without loading lazy ones. */
+/** Leaf commands under a group as help rows, without loading lazy ones. */
 function listCommands(
 	group: CommandGroup,
 	prefix: string[] = []
-): [string[], string | undefined][] {
-	return Object.entries(group).flatMap(([name, node]) =>
-		typeof node === 'function' || isCommand(node)
-			? [
-					[
-						[...prefix, name],
-						typeof node === 'function' ? undefined : node.description
-					]
-				]
-			: listCommands(node, [...prefix, name])
-	)
+): [string, string | undefined][] {
+	return Object.entries(group).flatMap(([name, node]) => {
+		if (typeof node !== 'function' && !isCommand(node))
+			return listCommands(node, [...prefix, name])
+		const command = typeof node === 'function' ? undefined : node
+		const names = [...prefix, name, command?.usage].filter(Boolean).join(' ')
+		return [[names, command?.description?.split('\n')[0]]]
+	})
 }
 
 function table(rows: [string, string | undefined][]): string {
@@ -208,21 +280,29 @@ export function defineCli<G extends AnyObject = EmptyObject, C = undefined>(
 ): Cli {
 	// The context type only matters at the call site; internally any command runs.
 	const root = config.commands as unknown as CommandNode
+	const unknownCommand = config.unknownCommand as
+		| ((name: string, path: readonly string[]) => unknown)
+		| undefined
 	const builtIn = (group: CommandGroup) =>
 		group === root && !Object.hasOwn(group, 'completion')
 
 	const versionRow: [string, string][] = config.version
 		? [['--version', 'Show version']]
 		: []
+	const section = (title: string, fields: Field[]) =>
+		fields.length ? [`${title}:\n${table(optionRows(fields))}`] : []
+	const positionalsOf = (fields: Field[]) =>
+		fields.filter((field) => field.positional)
+	const optionsOf = (fields: Field[]) =>
+		fields.filter((field) => !field.positional)
 
 	function groupHelp(group: CommandGroup, path: string[], globals: Field[]) {
-		const usage = [config.name, ...path].join(' ')
-		const commands = listCommands(group).map(
-			([names, description]): [string, string | undefined] => [
-				names.join(' '),
-				description
-			]
-		)
+		const usage = [
+			config.name,
+			...positionalsOf(globals).map(fieldLabel),
+			...path
+		].join(' ')
+		const commands = listCommands(group)
 		if (builtIn(group))
 			commands.push([
 				'completion <bash|zsh>',
@@ -237,13 +317,14 @@ export function defineCli<G extends AnyObject = EmptyObject, C = undefined>(
 						''
 					]),
 			`Usage: ${usage} <command> [options]`,
+			...section('\nArguments', positionalsOf(globals)),
 			'',
 			'Commands:',
 			table(commands),
 			'',
 			'Options:',
 			table([
-				...optionRows(globals),
+				...optionRows(optionsOf(globals)),
 				helpRow,
 				...(path.length ? [] : versionRow)
 			]),
@@ -252,39 +333,49 @@ export function defineCli<G extends AnyObject = EmptyObject, C = undefined>(
 		].join('\n')
 	}
 
-	function commandHelp(
-		command: Command,
-		path: string[],
-		fields: Field[],
-		globals: Field[]
-	) {
-		const positionals = fields.filter((field) => field.positional)
-		const options = fields.filter((field) => !field.positional)
-		const sections = [
-			`Usage: ${[config.name, ...path, ...positionals.map(fieldLabel)].join(' ')} [options]`
+	function commandHelp(command: Command, path: string[], globals: Field[]) {
+		const fields = command.raw ? [] : fieldsOf(command.input)
+		const positionals = [...positionalsOf(globals), ...positionalsOf(fields)]
+		const usage = [
+			config.name,
+			...positionalsOf(globals).map(fieldLabel),
+			...path,
+			command.usage ?? [...positionalsOf(fields).map(fieldLabel), '[options]']
 		]
+		const sections = [`Usage: ${usage.flat().join(' ')}`]
 		const description = command.description ?? config.description
 		if (description) sections.push(description)
-		if (positionals.length)
-			sections.push(`Arguments:\n${table(optionRows(positionals))}`)
+		sections.push(...section('Arguments', positionals))
 		sections.push(
 			`Options:\n${table([
-				...optionRows(options),
+				...optionRows(optionsOf(fields)),
 				helpRow,
 				...(path.length ? [] : versionRow)
 			])}`
 		)
-		if (globals.length)
-			sections.push(`Global options:\n${table(optionRows(globals))}`)
+		sections.push(...section('Global options', optionsOf(globals)))
+		if (command.examples?.length)
+			sections.push(
+				`Examples:\n${command.examples.map((line) => `  ${line}`).join('\n')}`
+			)
 		return sections.join('\n\n')
+	}
+
+	async function helpText(
+		node: CommandGroup | Command,
+		path: string[],
+		globals: Field[]
+	) {
+		const text = isCommand(node)
+			? commandHelp(node, path, globals)
+			: groupHelp(node, path, globals)
+		return config.help ? config.help(text, { path }) : text
 	}
 
 	async function completion(shell: string, globals: Field[]) {
 		const fn = `_${config.name.replace(/\W/g, '_')}_completion`
 		const flags = (fields: Field[]) =>
-			[...fields, ...globals]
-				.filter((field) => !field.positional)
-				.map((field) => `--${field.flag}`)
+			optionsOf([...fields, ...globals]).map((field) => `--${field.flag}`)
 		const cases: [string, string[]][] = []
 		const visit = async (node: CommandNode, path: string[]) => {
 			if (typeof node === 'function' || isCommand(node)) {
@@ -334,63 +425,131 @@ complete -F ${fn} ${config.name}
 			const env = io.env ?? process.env
 			let usage = config.name
 			let json = false
+			let globalFields: Field[] = []
+			// The group or command a usage error's help describes.
+			let current: { node: CommandGroup | Command; path: string[] } = {
+				node: {},
+				path: []
+			}
 			try {
-				const globalFields = fieldsOf(config.globals)
-				const positional = globalFields.find((field) => field.positional)
-				if (positional)
+				globalFields = fieldsOf(config.globals)
+				const globalPositionals = positionalsOf(globalFields)
+				const array = globalPositionals.find((field) => field.multiple)
+				if (array)
 					throw new Error(
-						`hanzio/cli: global "${positional.key}" can't be positional`
+						`hanzio/cli: positional global "${array.key}" can't be an array`
 					)
+				const longNames = (field: Field) => [
+					`--${field.flag}`,
+					...field.aliases.map((alias) => `--${alias}`)
+				]
+				const names = (field: Field) => [
+					...longNames(field),
+					...(field.alias ? [`-${field.alias}`] : [])
+				]
+				const globalOptions = optionsOf(globalFields)
 				const valueFlags = new Set(
-					globalFields
-						.filter((field) => field.kind !== 'boolean')
-						.flatMap((field) => [
-							`--${field.flag}`,
-							...(field.alias ? [`-${field.alias}`] : [])
-						])
+					globalOptions
+						.filter((field) => field.kind !== 'boolean' && !field.optionalValue)
+						.flatMap(names)
+				)
+				const globalFlags = new Set(
+					globalOptions.flatMap((field) => [
+						...names(field),
+						`--no-${field.flag}`
+					])
 				)
 				const isHelp = (token: string) => token === '--help' || token === '-h'
+				const isVersion = (token: string) =>
+					token === '--version' ||
+					(token === '-v' &&
+						!globalOptions.some((field) => field.alias === 'v'))
+				const isFlag = (token: string) => token.startsWith('-') && token !== '-'
 
-				// Walk the command names; options before and between them are globals.
+				// Walk the command names; options before and between them are globals,
+				// and positional globals come before the first command name.
+				const args = [...argv]
+				let defaultCommand =
+					typeof config.defaultCommand === 'function'
+						? config.defaultCommand(env)
+						: config.defaultCommand
+				let injected = -1
 				let node: CommandNode = root
 				const path: string[] = []
 				const pre: string[] = []
+				const positionals: string[] = []
 				let index = 0
 				while (typeof node !== 'function' && !isCommand(node)) {
 					const group: CommandGroup = node
-					const token = argv[index]
-					if (token === undefined || token === '--') {
-						if (pre.some(isHelp)) {
-							stdout.write(`${groupHelp(group, path, globalFields)}\n`)
-							return 0
+					current = { node: group, path: [...path] }
+					const token = args[index]
+					const end = token === undefined || token === '--'
+					if (end && pre.some(isHelp)) {
+						stdout.write(`${await helpText(group, path, globalFields)}\n`)
+						return 0
+					}
+					if (end && !path.length && pre.some(isVersion)) {
+						if (Object.hasOwn(group, 'version')) {
+							pre.splice(0, pre.length, ...pre.filter((t) => !isVersion(t)))
+							args.splice(index, 0, 'version')
+							injected = index
+							continue
 						}
-						if (!path.length && config.version && pre.includes('--version')) {
+						if (config.version) {
 							stdout.write(`${config.version}\n`)
 							return 0
 						}
-						throw new UsageError(
-							`${path.length ? `${usage}: missing` : 'Missing'} command\n\n${groupHelp(group, path, globalFields)}`
-						)
 					}
-					index++
-					if (token.startsWith('-') && token !== '-') {
-						pre.push(token)
-						if (valueFlags.has(token) && argv[index] !== undefined)
-							pre.push(argv[index++] as string)
+					if (
+						!path.length &&
+						defaultCommand !== undefined &&
+						(end ||
+							(isFlag(token) &&
+								!isHelp(token) &&
+								!isVersion(token) &&
+								!globalFlags.has(token.split('=')[0] as string)))
+					) {
+						args.splice(index, 0, defaultCommand)
+						injected = index
+						defaultCommand = undefined
 						continue
 					}
-					if (token === 'completion' && builtIn(group)) {
-						const [shell = 'bash'] = argv.slice(index)
+					if (end)
+						throw new UsageError(
+							`${path.length ? `${usage}: missing` : 'Missing'} command\n\n${await helpText(group, path, globalFields)}`,
+							'missing-command'
+						)
+					index++
+					if (isFlag(token)) {
+						pre.push(token)
+						if (valueFlags.has(token) && args[index] !== undefined)
+							pre.push(args[index++] as string)
+						continue
+					}
+					if (token === 'completion' && builtIn(group) && !positionals.length) {
+						const [shell = 'bash'] = args.slice(index)
 						stdout.write(await completion(shell, globalFields))
 						return 0
 					}
-					const child = Object.hasOwn(group, token) ? group[token] : undefined
+					if (
+						!path.length &&
+						index - 1 !== injected &&
+						positionals.length < globalPositionals.length
+					) {
+						positionals.push(token)
+						usage = `${usage} ${token}`
+						continue
+					}
+					const child =
+						(Object.hasOwn(group, token) ? group[token] : undefined) ??
+						((await unknownCommand?.(token, path)) as CommandNode | undefined)
 					if (!child) {
 						const names = Object.keys(group)
 						if (builtIn(group)) names.push('completion')
 						const guess = closest(token, names)
 						throw new UsageError(
-							`Unknown command "${[...path, token].join(' ')}".${guess ? ` Did you mean "${[...path, guess].join(' ')}"?` : ` Commands: ${names.join(', ')}`}`
+							`Unknown command "${[...path, token].join(' ')}".${guess ? ` Did you mean "${[...path, guess].join(' ')}"?` : ` Commands: ${names.join(', ')}`}`,
+							'unknown-command'
 						)
 					}
 					node = child
@@ -399,14 +558,15 @@ complete -F ${fn} ${config.name}
 				}
 
 				const command = await loadCommand(node)
-				const rest = argv.slice(index)
+				current = { node: command, path }
+				const rest = args.slice(index)
 				const fields = command.raw ? [] : fieldsOf(command.input)
 				const dash = rest.indexOf('--')
 				const tokens = command.raw
 					? pre
 					: [...pre, ...(dash < 0 ? rest : rest.slice(0, dash))]
 				if (!command.raw && tokens.some(isHelp)) {
-					stdout.write(`${commandHelp(command, path, fields, globalFields)}\n`)
+					stdout.write(`${await helpText(command, path, globalFields)}\n`)
 					return 0
 				}
 				if (!path.length && config.version && tokens.includes('--version')) {
@@ -418,24 +578,41 @@ complete -F ${fn} ${config.name}
 					string,
 					{ type: 'string' | 'boolean'; multiple: boolean; short?: string }
 				> = {}
-				for (const field of [...globalFields, ...fields]) {
-					if (field.positional) continue
-					if (field.flag === 'help' || Object.hasOwn(options, field.flag))
-						throw new Error(`hanzio/cli: --${field.flag} is declared twice`)
-					options[field.flag] = {
+				// Every long name a user may type, mapped to its parseArgs option.
+				const canonical = new Map<string, Field>()
+				const all = optionsOf([...globalFields, ...fields])
+				for (const field of all) {
+					const name = optionName(field)
+					for (const long of longNames(field)) {
+						if (long === '--help' || canonical.has(long))
+							throw new Error(`hanzio/cli: ${long} is declared twice`)
+						canonical.set(long, field)
+					}
+					options[name] = {
 						type: field.kind === 'boolean' ? 'boolean' : 'string',
 						multiple: field.multiple,
 						...(field.alias ? { short: field.alias } : {})
 					}
 				}
+				// Aliases, `noX` flags and bare optional-value flags become the
+				// option's own name before parsing.
+				const rewritten = tokens.map((token) => {
+					const eq = token.indexOf('=')
+					const field = canonical.get(eq < 0 ? token : token.slice(0, eq))
+					if (!field) return token
+					const value =
+						eq < 0 ? (field.optionalValue ? '=' : '') : token.slice(eq)
+					return `--${optionName(field)}${value}`
+				})
+				const strict = command.strict !== false
 				let parsed: ReturnType<typeof parseArgs>
 				try {
 					parsed = parseArgs({
-						args: tokens,
+						args: rewritten,
 						options,
 						allowPositionals: true,
 						allowNegative: true,
-						strict: true
+						strict
 					})
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error)
@@ -443,7 +620,7 @@ complete -F ${fn} ${config.name}
 					if (!unknown) throw new UsageError(message.split('. ')[0] ?? message)
 					const guess = closest(
 						unknown.replace(/^--?/, ''),
-						Object.keys(options)
+						all.flatMap((field) => [field.flag, ...field.aliases])
 					)
 					throw new UsageError(
 						`Unknown option ${unknown}.${guess ? ` Did you mean --${guess}?` : ''}`
@@ -456,7 +633,13 @@ complete -F ${fn} ${config.name}
 					fields: Field[],
 					positionals: string[]
 				) => {
-					const raw = readFields(fields, parsed.values, positionals, env)
+					const raw = readFields(
+						fields,
+						parsed.values,
+						positionals,
+						env,
+						strict
+					)
 					if (!schema) return raw
 					const result = await schema.safeParseAsync(raw)
 					if (result.success) return result.data as Record<string, unknown>
@@ -471,7 +654,11 @@ complete -F ${fn} ${config.name}
 					}
 					return raw
 				}
-				const globals = await validate(config.globals, globalFields, [])
+				const globals = await validate(
+					config.globals,
+					globalFields,
+					positionals
+				)
 				const input = await validate(
 					command.raw ? undefined : command.input,
 					fields,
@@ -508,17 +695,41 @@ complete -F ${fn} ${config.name}
 				await output(result, ctx)
 				return ctx.exitCode
 			} catch (error) {
-				if (error instanceof UsageError) {
-					stderr.write(`${error.message}\nRun "${usage} --help" for usage.\n`)
-					return 2
+				const failure =
+					error instanceof UsageError
+						? new CliUsageError(error.message, {
+								kind: error.kind,
+								path: current.path,
+								help: config.onError
+									? `${await helpText(current.node, current.path, globalFields)}\n`
+									: ''
+							})
+						: error
+				let printed: number | undefined
+				const print = () => {
+					if (printed !== undefined) return printed
+					const message =
+						failure instanceof Error ? failure.message : String(failure)
+					if (failure instanceof CliUsageError)
+						stderr.write(`${message}\nRun "${usage} --help" for usage.\n`)
+					else if (json) stderr.write(`${JSON.stringify({ error: message })}\n`)
+					else
+						stderr.write(
+							`${failure instanceof Error && !(failure instanceof CliError) ? (failure.stack ?? message) : message}\n`
+						)
+					printed = failure instanceof CliError ? failure.exitCode : 1
+					return printed
 				}
-				const message = error instanceof Error ? error.message : String(error)
-				if (json) stderr.write(`${JSON.stringify({ error: message })}\n`)
-				else
-					stderr.write(
-						`${error instanceof Error && !(error instanceof CliError) ? (error.stack ?? message) : message}\n`
-					)
-				return error instanceof CliError ? error.exitCode : 1
+				if (!config.onError) return print()
+				return (
+					(await config.onError(failure, {
+						stdout,
+						stderr,
+						env,
+						json,
+						print
+					})) ?? print()
+				)
 			}
 		}
 	}
