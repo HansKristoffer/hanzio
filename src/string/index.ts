@@ -8,7 +8,7 @@ export type JsonValue =
 	| JsonObject
 	| JsonArray
 export type JsonObject = { [key: string]: JsonValue | undefined }
-export type JsonArray = Array<JsonValue | undefined>
+export type JsonArray = JsonValue[]
 
 /**
  * Parses the first number-like token in a string. Only a `-` directly before
