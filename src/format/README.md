@@ -87,6 +87,13 @@ formatDateTime(date, 'en-GB') // '5 Mar 2026, 07:04' (newer ICU: '5 Mar 2026 at 
 Presets: `'DD/MM/YYYY'`, `'DD/MM/YYYY HH:mm'`, `'HH:mm'`, `'ddd'`, `'D MMM'`,
 `'D MMM YYYY'`, `'dddd, MMMM D'`, `'MMMM YYYY'`.
 
+For any other layout, pass `Intl.DateTimeFormat` options instead of a preset:
+
+```ts
+formatDate(date, { weekday: 'long', day: 'numeric', month: 'long' }, 'en-GB') // 'Thursday 5 March'
+formatDate(date, { dateStyle: 'short', timeZone: 'Europe/Copenhagen' }, 'da-DK') // '05.03.2026'
+```
+
 `formatCompactTime(date, locale, { now? })` is an activity timestamp for list
 rows: the time today, "yesterday", else the date (with the year when it is not
 this year). `formatDayDivider(date, locale, { now? })` labels a chat timeline:

@@ -401,13 +401,17 @@ const DATE_PRESETS = {
  */
 export type DatePreset = keyof typeof DATE_PRESETS
 
-/** A date in one of the `DatePreset` layouts, in local time. */
+/**
+ * A date in one of the `DatePreset` layouts, or with any
+ * `Intl.DateTimeFormat` options, in local time unless they set `timeZone`.
+ */
 export function formatDate(
 	date: DateInput,
-	preset: DatePreset,
+	format: DatePreset | Intl.DateTimeFormatOptions,
 	locale: string
 ): string {
-	return getDateTimeFormat(locale, DATE_PRESETS[preset]).format(toTime(date))
+	const options = typeof format === 'string' ? DATE_PRESETS[format] : format
+	return getDateTimeFormat(locale, options).format(toTime(date))
 }
 
 /** Medium date and short time: "5 Mar 2026, 14:30" (en-GB). */
@@ -519,8 +523,10 @@ export function pluralize(
  */
 export function withLocale(getLocale: () => string) {
 	return {
-		formatDate: (date: DateInput, preset: DatePreset) =>
-			formatDate(date, preset, getLocale()),
+		formatDate: (
+			date: DateInput,
+			format: DatePreset | Intl.DateTimeFormatOptions
+		) => formatDate(date, format, getLocale()),
 		formatDateTime: (date: DateInput) => formatDateTime(date, getLocale()),
 		formatCompactTime: (date: DateInput) =>
 			formatCompactTime(date, getLocale()),

@@ -297,6 +297,26 @@ describe('date presets', () => {
 		expect(formatDate(date, 'MMMM YYYY', 'en-US')).toBe('March 2026')
 	})
 
+	test('formatDate takes Intl.DateTimeFormat options instead of a preset', () => {
+		expect(
+			formatDate(
+				date,
+				{ weekday: 'long', day: 'numeric', month: 'long' },
+				'en-GB'
+			)
+		).toBe('Thursday 5 March')
+		expect(
+			formatDate(
+				Date.UTC(2026, 2, 5, 23, 30),
+				{ dateStyle: 'short', timeZone: 'Asia/Tokyo' },
+				'en-GB'
+			)
+		).toBe('06/03/2026')
+		expect(
+			withLocale(() => 'en-US').formatDate(date, { year: '2-digit' })
+		).toBe('26')
+	})
+
 	test('formatDateTime uses medium date and short time', () => {
 		// The joiner (", " or " at ") differs between ICU versions.
 		expect(formatDateTime(date, 'en-GB')).toMatch(/^5 Mar 2026.+07:04$/)
