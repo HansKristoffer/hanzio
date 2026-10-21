@@ -33,9 +33,18 @@ await moduleMocker.mock(path.resolve(import.meta.dir, '../lib/posthog.ts'), () =
 afterAll(() => moduleMocker.clear())
 ```
 
-Bun resolves a relative specifier from the file that registers the mock, which
-would be hanzio's. Pass absolute paths or package names, or give the
-constructor a resolver for your own shorthand:
+Bun resolves a specifier from the file that registers the mock, which would be
+hanzio's: a relative path points into hanzio, and under isolated installs a
+package name can find another copy or none. Pass your source root, and the
+mocker resolves package names from there and other paths relative to it:
+
+```ts
+const moduleMocker = new ModuleMocker(path.resolve(import.meta.dir, '..'))
+await moduleMocker.mock('lib/posthog.ts', () => ({ captureException: mock() }))
+await moduleMocker.mock('ai', () => ({ generateText: mock() }))
+```
+
+Or give the constructor a resolver for your own shorthand:
 
 ```ts
 const moduleMocker = new ModuleMocker((specifier) =>
