@@ -1024,6 +1024,97 @@ describe('typedSwitch annotated return type', () => {
 		expect(sync).toMatchObject({ id: '1' })
 		expect(await async).toEqual({ id: 'a' })
 	})
+
+	type Tone = 'info' | 'danger'
+	type Badge = { label: string; tone: Tone }
+	type OrderBy = { name?: 'asc' | 'desc' }[]
+
+	test('an annotation keeps literal returns in every mode', () => {
+		const plain: Tone = typedSwitch(getStatus('success'), {
+			success: () => 'info',
+			error: () => 'danger'
+		})
+		const plainDefault: Tone = typedSwitch(
+			getTriStatus('pending'),
+			{ error: () => 'danger' },
+			() => 'info'
+		)
+		const object: Tone = typedSwitch(
+			getEvent({ type: 'key', key: 'a' }),
+			'type',
+			{
+				click: () => 'info',
+				scroll: () => 'info',
+				key: (e) => (e.key ? 'danger' : 'info')
+			}
+		)
+		const objectDefault: Tone = typedSwitch(
+			getEvent({ type: 'click', x: 1, y: 2 }),
+			'type',
+			{ click: () => 'danger' },
+			() => 'info'
+		)
+
+		expect([plain, plainDefault, object, objectDefault]).toEqual([
+			'info',
+			'info',
+			'danger',
+			'danger'
+		])
+	})
+
+	test('a declared return type keeps literals nested in objects and arrays', () => {
+		const badge = (status: 'success' | 'error'): Badge =>
+			typedSwitch(status, {
+				success: () => ({ label: 'Done', tone: 'info' }),
+				error: () => ({ label: 'Failed', tone: 'danger' })
+			})
+		function orderBy(order: Order): OrderBy {
+			return typedSwitch(order, 'status', {
+				pending: () => [{ name: 'asc' }],
+				completed: () => [{ name: 'desc' }],
+				cancelled: () => []
+			})
+		}
+
+		expect(badge('error')).toEqual({ label: 'Failed', tone: 'danger' })
+		expect(
+			orderBy(getOrder({ status: 'pending', createdAt: new Date() }))
+		).toEqual([{ name: 'asc' }])
+	})
+
+	test('without an annotation the handlers return types are unioned', () => {
+		const result = typedSwitch(getStatus('success'), {
+			success: () => 'info',
+			error: () => 1
+		})
+
+		expectTypeOf(result).toEqualTypeOf<string | number>()
+	})
+
+	test('generic calls around typedSwitch infer from the handlers', () => {
+		const optional = <T>(value?: T) => value as T
+		const state = <S>(initial: S | (() => S)) =>
+			(typeof initial === 'function' ? (initial as () => S)() : initial) as S
+
+		const fromOptional = optional(
+			typedSwitch(getStatus('success'), {
+				success: () => 'a',
+				error: () => 'b'
+			})
+		)
+		const fromState = state(
+			typedSwitch(getEvent({ type: 'key', key: 'k' }), 'type', {
+				click: () => 'a',
+				scroll: () => 'b',
+				key: () => 'c'
+			})
+		)
+
+		expectTypeOf(fromOptional).toEqualTypeOf<string>()
+		expectTypeOf(fromState).toEqualTypeOf<string>()
+		expect([fromOptional, fromState]).toEqual(['a', 'c'])
+	})
 })
 
 describe('typedSwitch plain number and boolean values', () => {

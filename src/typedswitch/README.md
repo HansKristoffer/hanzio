@@ -246,20 +246,31 @@ const result = typedSwitch(status, {
 
 ### Enforcing a Return Type
 
-Annotate the result. Every handler's return type must fit, and exhaustiveness
-checking still applies:
+Annotate the result, or switch in a function with a declared return type.
+Every handler is checked against it, exhaustiveness checking still applies,
+and literals keep their types instead of widening to `string`:
 
 ```typescript
-interface HasId {
-  id: string
-}
+type Severity = 'success' | 'info' | 'warn' | 'danger'
 
-const result: HasId = typedSwitch(status, {
-  success: () => ({ id: '123', name: 'John' }),
-  error: () => ({ id: '456', code: 500 }),
-  pending: () => ({ id: '789' }),
+const severity: Severity = typedSwitch(quality, {
+  excellent: () => 'success',
+  good: () => 'info',
+  fair: () => 'warn',
+  poor: () => 'danger',
 })
+
+function orderBy(sort: Sort): Prisma.OrderOrderByWithRelationInput[] {
+  return typedSwitch(sort, {
+    name: () => [{ name: 'asc' }],
+    newest: () => [{ createdAt: 'desc' }],
+  })
+}
 ```
+
+Without an annotation, or inside a generic call such as `useState(typedSwitch(...))`,
+the result is the union of the handlers' widened return types. In Vue, annotate
+the getter: `computed((): Severity => typedSwitch(...))`.
 
 ## Error Handling
 
