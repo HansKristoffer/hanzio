@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.0](https://github.com/HansKristoffer/hanzio/compare/v3.1.1...v3.2.0) (2026-10-21)
+
+
+### Features
+
+* annotated typedSwitch results keep literals, hanzio-i18n runs under Node, formatDate takes Intl options ([#24](https://github.com/HansKristoffer/hanzio/issues/24)) ([9982793](https://github.com/HansKristoffer/hanzio/commit/99827934297de4d2bdd99b0dadc291f0eb954f1b))
+
 ## [3.1.1](https://github.com/HansKristoffer/hanzio/compare/v3.1.0...v3.1.1) (2026-10-21)
 
 
