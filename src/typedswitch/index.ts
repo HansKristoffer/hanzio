@@ -88,6 +88,23 @@ type RawCasesReturnType<Cases> = {
 	[K in keyof Cases]: RawHandlerReturnType<Cases[K]>
 }[keyof Cases]
 
+/**
+ * `R` is only inferred from the call's contextual type. Without one it stays
+ * `unknown`, and the overload returns the handlers' own return types.
+ */
+type Annotated<R, Inferred> = unknown extends R ? Inferred : R
+
+/**
+ * TypeScript fixes a handler's return type the first time it checks it, and
+ * an object-mode call (`value, key, cases`) is first tried against the
+ * plain-value overload with a default (`value, cases, defaultCase`). This type
+ * types those cases' handlers by the annotation there too, so they keep their
+ * literals. No value satisfies it: `default` would have to be `never`.
+ */
+type ObjectCasesContext<R> = { [key: string]: (value: never) => R } & {
+	default: never
+}
+
 /** Only required, defined handlers guarantee that a case is handled. */
 type HandledCaseKeys<Cases> = {
 	// biome-ignore lint/complexity/noBannedTypes: Empty-object assignability detects optional keys and index signatures.
@@ -173,6 +190,65 @@ type CasesRecord = Record<string, Handler | undefined>
 // Function overloads
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Each mode has two overloads. The first four take the result type `R` from
+// the call's contextual type, such as an annotated variable or a declared
+// return type, so handlers that return literals ('info', [{ name: 'asc' }])
+// keep them. When that does not type-check, for example inside a generic call
+// like useState(typedSwitch(...)), the last four union the handlers' types.
+
+// Plain value input - all cases required, typed by the annotation
+export function typedSwitch<
+	T extends Discriminant,
+	R,
+	Cases extends { [V in T as `${V}`]: (value: V) => R } & NoUnknownCases<
+		Cases,
+		`${T}`
+	>
+>(value: T, cases: Cases): Annotated<R, RawCasesReturnType<Cases>>
+
+// Plain value input - partial cases with default, typed by the annotation.
+// It comes before the object overloads, which also take three arguments.
+export function typedSwitch<
+	T extends Discriminant,
+	R,
+	Cases extends {
+		[V in T as `${V}`]?: (value: V) => R
+	} & NoUnknownCases<Cases, `${T}`>,
+	DefaultCase extends
+		| ((value: Exclude<T, ValuesForKeys<T, HandledCaseKeys<Cases>>>) => R)
+		| ObjectCasesContext<R>
+>(
+	value: T,
+	cases: Cases,
+	defaultCase: DefaultCase
+): Annotated<R, RawCasesReturnType<Cases> | RawHandlerReturnType<DefaultCase>>
+
+// Object input with key - all cases required, typed by the annotation
+export function typedSwitch<
+	T extends object,
+	K extends keyof T,
+	R,
+	Cases extends ObjectCases<T, K, R> &
+		NoUnknownCases<Cases, `${Extract<T[K], Discriminant>}`>
+>(value: T, key: K, cases: Cases): Annotated<R, RawCasesReturnType<Cases>>
+
+// Object input with key - partial cases with default, typed by the annotation
+export function typedSwitch<
+	T extends object,
+	K extends keyof T,
+	R,
+	Cases extends PartialObjectCases<T, K, R> &
+		NoUnknownCases<Cases, `${Extract<T[K], Discriminant>}`>,
+	DefaultCase extends (
+		value: Exclude<T, Record<K, ValuesForKeys<T[K], HandledCaseKeys<Cases>>>>
+	) => R
+>(
+	value: T,
+	key: K,
+	cases: Cases,
+	defaultCase: DefaultCase
+): Annotated<R, RawCasesReturnType<Cases> | RawHandlerReturnType<DefaultCase>>
+
 // Plain value input - all cases required (no default)
 export function typedSwitch<
 	T extends Discriminant,
@@ -181,6 +257,14 @@ export function typedSwitch<
 		`${T}`
 	>
 >(value: T, cases: Cases): RawCasesReturnType<Cases>
+
+// Object input with key - all cases required (no default)
+export function typedSwitch<
+	T extends object,
+	K extends keyof T,
+	Cases extends ObjectCases<T, K, unknown> &
+		NoUnknownCases<Cases, `${Extract<T[K], Discriminant>}`>
+>(value: T, key: K, cases: Cases): RawCasesReturnType<Cases>
 
 // Plain value input - partial cases allowed (with default)
 // The default handler only receives the cases not covered by `cases`.
@@ -197,14 +281,6 @@ export function typedSwitch<
 	cases: Cases,
 	defaultCase: DefaultCase
 ): RawCasesReturnType<Cases> | RawHandlerReturnType<DefaultCase>
-
-// Object input with key - all cases required (no default)
-export function typedSwitch<
-	T extends object,
-	K extends keyof T,
-	Cases extends ObjectCases<T, K, unknown> &
-		NoUnknownCases<Cases, `${Extract<T[K], Discriminant>}`>
->(value: T, key: K, cases: Cases): RawCasesReturnType<Cases>
 
 // Object input with key - partial cases allowed (with default)
 // The default handler only receives the union members not covered by `cases`.

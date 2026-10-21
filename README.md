@@ -562,6 +562,12 @@ const text = typedSwitch(response as Response, 'code', {
 	404: () => 'Not found'
 })
 
+// Annotate the result to keep literal return types
+const tone: 'info' | 'danger' = typedSwitch(response as Response, 'code', {
+	200: () => 'info',
+	404: () => 'danger'
+})
+
 const event = { type: 'scroll', offset: 4 } as Event
 typedSwitch(event, 'type', {
 	...typedSwitchGroup(event, 'type', ['click', 'scroll'], (e) => e.type)

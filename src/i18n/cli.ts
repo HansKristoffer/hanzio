@@ -5,6 +5,7 @@
 // a Node version that strips types.
 
 import { existsSync } from 'node:fs'
+import * as nodeModule from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
@@ -25,6 +26,44 @@ const CONFIG_NAMES = [
 
 type Loaded = { config: I18nConfig; root: string }
 
+// Node resolves a config's imports like a browser: `./src/locales` fails
+// because it names neither a file nor an extension. Bun resolves it like a
+// bundler. These are the suffixes TypeScript's bundler resolution tries.
+const BUNDLER_SUFFIXES = [
+	'.ts',
+	'.mts',
+	'.js',
+	'.mjs',
+	'/index.ts',
+	'/index.mts',
+	'/index.js',
+	'/index.mjs'
+]
+
+function resolveLikeBundlers() {
+	// Missing under Bun, which needs no help, and under Node before 22.15.
+	nodeModule.registerHooks?.({
+		resolve(specifier, context, nextResolve) {
+			try {
+				return nextResolve(specifier, context)
+			} catch (error) {
+				const code = (error as { code?: string }).code
+				const retry =
+					specifier.startsWith('.') &&
+					(code === 'ERR_MODULE_NOT_FOUND' ||
+						code === 'ERR_UNSUPPORTED_DIR_IMPORT')
+				if (!retry) throw error
+				for (const suffix of BUNDLER_SUFFIXES) {
+					try {
+						return nextResolve(specifier + suffix, context)
+					} catch {}
+				}
+				throw error
+			}
+		}
+	})
+}
+
 async function loadConfig(file: string | undefined): Promise<Loaded> {
 	const path = file
 		? resolve(file)
@@ -33,6 +72,7 @@ async function loadConfig(file: string | undefined): Promise<Loaded> {
 		throw new CliError(
 			`No i18n config found: pass --config or add ${CONFIG_NAMES[0]}.`
 		)
+	resolveLikeBundlers()
 	const loaded = (await import(pathToFileURL(path).href)) as {
 		default?: I18nConfig
 	}

@@ -40,6 +40,15 @@ try {
 	if (pkg.name === 'plantr') {
 		execFileSync('bun', ['-e', `import { createSeederInstance } from 'plantr'; const { defineSeeder, runSeeders } = createSeederInstance({ context: base => base }); const seed = defineSeeder({ name: 'smoke', run: async ({ expect }) => { expect(1).toBe(1); return 1; } }); const result = await runSeeders([seed], { verbose: false, printResults: false }); if (!result.success) process.exit(1);`], { cwd: temporary, stdio: 'inherit', timeout: 30_000 })
 	}
+	if (pkg.name === 'hanzio') {
+		// `npx hanzio-i18n check` runs the bin with Node, which must load a TypeScript config whose imports are written for a bundler.
+		mkdirSync(join(temporary, 'locales'))
+		writeFileSync(join(temporary, 'locales/index.ts'), `export const locales: string[] = ['en', 'da']\n`)
+		writeFileSync(join(temporary, 'locales/en.json'), '{"hi":"Hello"}')
+		writeFileSync(join(temporary, 'locales/da.json'), '{"hi":"Hej"}')
+		writeFileSync(join(temporary, 'i18n.config.ts'), `import { defineI18nConfig } from 'hanzio/i18n/check'\nimport { locales } from './locales'\n\nexport default defineI18nConfig({ baseLocale: 'en', locales, catalogs: [{ name: 'app', dir: 'locales' }] })\n`)
+		execFileSync(process.execPath, ['node_modules/.bin/hanzio-i18n', 'check'], { cwd: temporary, stdio: 'pipe', timeout: 30_000 })
+	}
 	if (pkg.name === 'expo-release') {
 		execFileSync('bun', ['node_modules/expo-release/dist/cli.js', '--help'], { cwd: temporary, stdio: 'pipe', timeout: 10_000 })
 	}
