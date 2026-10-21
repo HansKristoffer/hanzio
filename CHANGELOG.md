@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.0](https://github.com/HansKristoffer/hanzio/compare/v3.2.0...v3.3.0) (2026-10-21)
+
+
+### Features
+
+* **cli:** default commands, error and help hooks, positional globals and more flag shapes ([#27](https://github.com/HansKristoffer/hanzio/issues/27)) ([366a065](https://github.com/HansKristoffer/hanzio/commit/366a065de821fbbe5494b39471effb58bf6059bd))
+
 ## [3.2.0](https://github.com/HansKristoffer/hanzio/compare/v3.1.1...v3.2.0) (2026-10-21)
 
 
