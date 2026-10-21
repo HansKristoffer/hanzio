@@ -1,6 +1,11 @@
 import type { Mock, mock } from 'bun:test'
 
-export type PrismaMethodMock = Mock<(...args: unknown[]) => Promise<unknown>>
+/**
+ * `never[]` parameters let `mockImplementation` take a callback that types its
+ * arguments; the plain call signature keeps the mock callable with any.
+ */
+export type PrismaMethodMock = Mock<(...args: never[]) => Promise<unknown>> &
+	((...args: unknown[]) => Promise<unknown>)
 
 /**
  * A Prisma client where every model delegate and every method is a Bun mock,

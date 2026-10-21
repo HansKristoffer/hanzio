@@ -176,10 +176,23 @@ export type RedisConcurrencyLimitOptions = {
 	maxStartsPerSecond?: number
 	failOpenAfterMs?: number
 	commandTimeoutMs?: number
-	/** Receives throttled warnings. Defaults to `console`. */
-	logger?: Pick<Console, 'warn'>
+	/** Receives throttled warnings with `{ key, error }`. Defaults to `console`. */
+	logger?: { warn(message: string, attributes: Record<string, unknown>): void }
+	/** The label `onWait` and `onQueueDepth` report under. Default: `key`. */
+	metricLabel?: string
 	/** Called when a caller starts queueing; the returned function runs once it stops. */
-	onWait?: (stage: ConcurrencyLimitStage) => (() => void) | void
+	onWait?: (
+		stage: ConcurrencyLimitStage,
+		metricLabel: string
+	) => (() => void) | void
+	/**
+	 * Called once with `queueDepth`, to register a gauge; the returned function
+	 * runs on `dispose()`.
+	 */
+	onQueueDepth?: (
+		queueDepth: () => number,
+		metricLabel: string
+	) => (() => void) | void
 }
 
 export type RedisConcurrencyLimit = {
@@ -216,10 +229,11 @@ export type RedisConcurrencyLimit = {
  * That verdict is shared per limiter: once tripped, later calls degrade
  * immediately while a background probe watches for Redis to come back.
  *
- * `onWait` and `queueDepth` feed metrics. A limiter minted per tenant or per
- * customer host should report under a shared pool label rather than its key,
- * or every key ever touched leaves a permanent series. Call `dispose()` when
- * such a limiter is discarded, and unregister any gauge reading `queueDepth`.
+ * `onWait` and `onQueueDepth` feed metrics under `metricLabel`. A limiter
+ * minted per tenant or per customer host should share one pool label rather
+ * than default to its key, or every key ever touched leaves a permanent
+ * series. Call `dispose()` when such a limiter is discarded; it also runs the
+ * unregister function `onQueueDepth` returned.
  *
  * @example
  * const withLimit = createRedisConcurrencyLimit({
@@ -236,6 +250,7 @@ export function createRedisConcurrencyLimit(
 	if (!Number.isInteger(input.max) || input.max < 1)
 		throw new Error(`max must be a positive integer, got ${input.max}`)
 	const logger = input.logger ?? console
+	const metricLabel = input.metricLabel ?? input.key
 	const commandTimeoutMs = input.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS
 	const send = withCommandTimeout(input.send, commandTimeoutMs)
 	const ttlMs = String(input.slotTtlMs)
@@ -399,7 +414,7 @@ export function createRedisConcurrencyLimit(
 			depth: () => queue.length,
 			/** Resolves true once the token holds a slot, false when failing open. */
 			acquire(token: string) {
-				const stopWait = input.onWait?.(stage)
+				const stopWait = input.onWait?.(stage, metricLabel)
 				const granted = new Promise<boolean>((resolve) => {
 					queue.push({ token, settle: resolve })
 				})
@@ -437,6 +452,7 @@ export function createRedisConcurrencyLimit(
 				)
 
 	const queueDepth = () => slotPump.depth() + (startPump?.depth() ?? 0)
+	let unregisterQueueDepth = input.onQueueDepth?.(queueDepth, metricLabel)
 
 	// -------------------------------------------------------------- heartbeat
 
@@ -573,6 +589,8 @@ export function createRedisConcurrencyLimit(
 	 * before it resolves - so there is nothing left to heartbeat.
 	 */
 	function dispose() {
+		unregisterQueueDepth?.()
+		unregisterQueueDepth = undefined
 		if (probeTimer) {
 			clearTimeout(probeTimer)
 			probeTimer = null

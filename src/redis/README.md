@@ -89,17 +89,19 @@ Metrics and logs are hooks:
 ```ts
 const withLimit = createRedisConcurrencyLimit({
 	...options,
-	logger, // throttled warnings; defaults to console
-	onWait: (stage) => {
-		const timer = waitHistogram.startTimer({ pool: 'openai', stage })
+	logger, // logger.warn(message, { key, error }), throttled; defaults to console
+	metricLabel: 'openai', // defaults to key
+	onWait: (stage, label) => {
+		const timer = waitHistogram.startTimer({ pool: label, stage })
 		return () => timer.stop()
-	}
+	},
+	onQueueDepth: (queueDepth, label) => queueDepthGauge.register(label, queueDepth)
 })
-queueDepthGauge.observe(() => withLimit.queueDepth())
 ```
 
-A limiter created per tenant or per host should report under a shared pool
-label, not its key, and must be `dispose()`d when discarded.
+A limiter created per tenant or per host should share one `metricLabel`, not
+default to its key, and must be `dispose()`d when discarded. `dispose()` runs
+the function `onQueueDepth` returned, so the gauge stops reading the limiter.
 
 ## Lua scripts
 

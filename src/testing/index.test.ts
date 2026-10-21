@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
@@ -20,6 +20,13 @@ export const farewell = 'bye'
 export const shout = (text: string) => \`\${text.toUpperCase()}!\`
 `
 )
+const onlyHere = path.join(fixtureDir, 'node_modules/only-here')
+mkdirSync(onlyHere, { recursive: true })
+writeFileSync(
+	path.join(onlyHere, 'package.json'),
+	'{"name":"only-here","type":"module","main":"index.js"}'
+)
+writeFileSync(path.join(onlyHere, 'index.js'), "export const name = 'real'\n")
 
 describe('ModuleMocker', () => {
 	const moduleMocker = new ModuleMocker()
@@ -38,6 +45,24 @@ describe('ModuleMocker', () => {
 		await moduleMocker.mock(fixture, () => ({ greeting: 'mocked' }))
 		moduleMocker.clear()
 
+		expect((await import(fixture)).greeting).toBe('hello')
+	})
+
+	test('resolves paths and package names from a base directory', async () => {
+		const fromFixtures = new ModuleMocker(fixtureDir)
+		await fromFixtures.mock('greeting.ts', () => ({ farewell: 'ciao' }))
+		await fromFixtures.mock('./greeting.ts', () => ({ greeting: 'hej' }))
+		expect(await import(fixture)).toMatchObject({
+			greeting: 'hej',
+			farewell: 'ciao'
+		})
+
+		// A package installed only under the base directory, as with isolated installs.
+		const resolved = Bun.resolveSync('only-here', fixtureDir)
+		await fromFixtures.mock('only-here', () => ({ name: 'mocked' }))
+		expect((await import(resolved)).name).toBe('mocked')
+		fromFixtures.clear()
+		expect((await import(resolved)).name).toBe('real')
 		expect((await import(fixture)).greeting).toBe('hello')
 	})
 
@@ -87,6 +112,9 @@ describe('createPrismaMock', () => {
 function typeTests() {
 	const prisma = createPrismaMock<FakePrisma>(mock)
 	prisma.user.findUnique.mockResolvedValue(null)
+	prisma.user.findUnique.mockImplementation(
+		async (args: { where: { id: string } }) => ({ id: args.where.id })
+	)
 	// @ts-expect-error models the client does not have are not mocked
 	prisma.post.findMany.mockResolvedValue([])
 	// @ts-expect-error neither are methods missing from a delegate

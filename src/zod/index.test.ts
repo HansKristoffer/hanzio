@@ -121,6 +121,20 @@ describe('zJsonValue', () => {
 		expect(typed).toBe(1)
 	})
 
+	test('fits a Prisma-style JSON field schema without a cast', () => {
+		// Prisma's own `JsonValue` shape: arrays never hold `undefined`.
+		type PrismaJsonValue =
+			| string
+			| number
+			| boolean
+			| null
+			| { [key in string]?: PrismaJsonValue }
+			| PrismaJsonValue[]
+
+		const schema: z.ZodType<PrismaJsonValue> = zJsonValue
+		expect(schema.parse([1, { a: null }])).toEqual([1, { a: null }])
+	})
+
 	test('zJsonObject accepts objects only', () => {
 		expect(zJsonObject.parse({ a: { b: [1] } })).toEqual({ a: { b: [1] } })
 		expect(() => zJsonObject.parse([1])).toThrow()

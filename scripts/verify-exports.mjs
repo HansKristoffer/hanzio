@@ -42,6 +42,7 @@ const expectedExports = {
 	'hanzio/format': ['formatDuration', 'formatBytes', 'formatCappedCount', 'formatPrice', 'EM_DASH'],
 	'hanzio/format/phone': ['formatPhone'],
 	'hanzio/crypto': ['safeEqual', 'hmacSign', 'createSealer', 'randomToken'],
+	'hanzio/crypto/node': ['createSealerSync', 'SealerError'],
 	'hanzio/storage': ['createStorageItem', 'createAsyncStorageItem'],
 	'hanzio/i18n': ['interpolate', 'extractPlaceholders', 'createTranslator', 'defineLocales', 'typedTranslate'],
 	'hanzio/i18n/vue': ['createVueI18n'],
