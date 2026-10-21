@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.1](https://github.com/HansKristoffer/hanzio/compare/v3.1.0...v3.1.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **cli:** suggest the built-in completion command on a typo ([#22](https://github.com/HansKristoffer/hanzio/issues/22)) ([a6d749a](https://github.com/HansKristoffer/hanzio/commit/a6d749a097602b15b9c5e886845fc01b37f2977e))
+
 ## [3.1.0](https://github.com/HansKristoffer/hanzio/compare/v3.0.0...v3.1.0) (2026-10-20)
 
 
