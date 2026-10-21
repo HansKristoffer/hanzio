@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, expectTypeOf, test } from 'bun:test'
 import { createRedisConcurrencyLimit } from './concurrency-limit'
 
 const quiet = { warn: () => {} }
@@ -513,5 +513,56 @@ describe('createRedisConcurrencyLimit', () => {
 			'stop:slot',
 			'stop:slot'
 		])
+	})
+
+	test('reports under metricLabel and unregisters the gauge on dispose', async () => {
+		const redis = fakeRedis({ key: 'tenant:42', max: 1, slotTtlMs: 30_000 })
+		const gauges = new Map<string, () => number>()
+		const waits: string[] = []
+		const withLimit = createRedisConcurrencyLimit({
+			key: 'tenant:42',
+			max: 1,
+			slotTtlMs: 30_000,
+			send: redis.send,
+			metricLabel: 'tenants',
+			onWait: (stage, label) => {
+				waits.push(`${label}:${stage}`)
+			},
+			onQueueDepth: (depth, label) => {
+				gauges.set(label, depth)
+				return () => gauges.delete(label)
+			}
+		})
+
+		await withLimit(async () => {})
+		expect(waits).toEqual(['tenants:slot'])
+		expect(gauges.get('tenants')?.()).toBe(0)
+
+		withLimit.dispose()
+		withLimit.dispose()
+		expect(gauges.size).toBe(0)
+	})
+
+	test('logs warnings with their attributes', async () => {
+		const warnings: [string, Record<string, unknown>][] = []
+		const withLimit = createRedisConcurrencyLimit({
+			key: 'test:inflight',
+			max: 1,
+			slotTtlMs: 30_000,
+			failOpenAfterMs: 0,
+			logger: {
+				warn: (message, attributes) => {
+					expectTypeOf(attributes).toEqualTypeOf<Record<string, unknown>>()
+					warnings.push([message, attributes])
+				}
+			},
+			send: async () => {
+				throw new Error('connection refused')
+			}
+		})
+
+		await withLimit(async () => {})
+		withLimit.dispose()
+		expect(warnings[0]?.[1]).toMatchObject({ key: 'test:inflight' })
 	})
 })
