@@ -24,6 +24,7 @@ bun add typedswitch
 - **Async-aware** — Async handlers preserve their `Promise` return type
 - **Grouped cases** — Share one handler between several values, fully typed
 - **Default handlers** — Handle remaining cases with a fallback
+- **Nullable values** — `null` and `undefined` are cases like any other
 - **Typo-proof cases** — A case key that isn't a value of the union is a compile error
 - **`assertNever`** — Exhaustiveness checking for regular `switch` statements
 
@@ -195,6 +196,30 @@ const description = typedSwitch(
   },
   (e) => `Unhandled event: ${e.type}`  // e: scroll or keypress event (unhandled members only)
 )
+```
+
+### Values That Can Be Null or Undefined
+
+When the value can be `null` or `undefined`, handle it with a `null` or
+`undefined` case. These are required like any other case, unless a default
+handler catches them:
+
+```typescript
+const status: 'success' | 'error' | null = row.status
+
+const label = typedSwitch(status, {
+  success: () => 'Done!',
+  error: () => 'Failed!',
+  null: () => 'Not started',
+})
+
+// Same for an object that can be null or undefined
+typedSwitch(maybeEvent, 'type', {
+  click: (e) => e.x,
+  scroll: (e) => e.offset,
+  keypress: (e) => 0,
+  undefined: () => -1,
+})
 ```
 
 ### Async Handlers

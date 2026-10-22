@@ -23,6 +23,9 @@
  *    typedSwitch(code, { 200: (c) => 'ok', 404: (c) => 'missing' }) // c: 200, 404
  *    typedSwitch(flag, { true: () => 'on', false: () => 'off' })
  *
+ *    // A value that can be null or undefined needs `null` and `undefined` cases (or a default)
+ *    typedSwitch(maybeStatus, { success: …, error: …, undefined: () => 'none' })
+ *
  *
  * 2. OBJECT INPUT - switch on a discriminated union with custom key:
  *
@@ -140,24 +143,49 @@ export type PartialStringSwitchCases<T extends string, R> = {
 /** Discriminant values supported in object mode. Cases are keyed by `${value}`. */
 type Discriminant = string | number | boolean
 
-/** Discriminant values of `V` whose case key (`${value}`) is in `Keys` */
-type ValuesForKeys<V, Keys> = V extends Discriminant
+/** Values the plain mode switches on. `null` and `undefined` get `null` and `undefined` cases. */
+type PlainValue = Discriminant | null | undefined
+
+/** Values of `V` whose case key (`${value}`) is in `Keys` */
+type ValuesForKeys<V, Keys> = V extends PlainValue
 	? `${V}` extends `${Keys & (string | number)}`
 		? V
 		: never
 	: never
 
-type ObjectCases<T, K extends keyof T, R> = {
-	[V in Extract<T[K], Discriminant> as `${V}`]: (
-		value: Extract<T, Record<K, V>>
+type Nullish = null | undefined
+
+/** Discriminant values of `T`, plus `null` and `undefined` when `T` can be them */
+type ObjectCaseValue<T, K extends keyof NonNullable<T>> =
+	| Extract<NonNullable<T>[K], Discriminant>
+	| Extract<T, Nullish>
+
+/** A `null` or `undefined` case receives the value itself. */
+type ObjectCaseInput<T, K extends PropertyKey, V> = V extends Nullish
+	? V
+	: Extract<T, Record<K, V>>
+
+type ObjectCases<T, K extends keyof NonNullable<T>, R> = {
+	[V in ObjectCaseValue<T, K> as `${V}`]: (value: ObjectCaseInput<T, K, V>) => R
+}
+
+type PartialObjectCases<T, K extends keyof NonNullable<T>, R> = {
+	[V in ObjectCaseValue<T, K> as `${V}`]?: (
+		value: ObjectCaseInput<T, K, V>
 	) => R
 }
 
-type PartialObjectCases<T, K extends keyof T, R> = {
-	[V in Extract<T[K], Discriminant> as `${V}`]?: (
-		value: Extract<T, Record<K, V>>
-	) => R
-}
+type ObjectCaseKey<
+	T,
+	K extends keyof NonNullable<T>
+> = `${ObjectCaseValue<T, K>}`
+
+/** The members, `null` and `undefined` that no required case of `Cases` handles */
+type UnhandledObjects<T, K extends keyof NonNullable<T>, Cases> = Exclude<
+	T,
+	| Record<K, ValuesForKeys<NonNullable<T>[K], HandledCaseKeys<Cases>>>
+	| ValuesForKeys<Extract<T, Nullish>, HandledCaseKeys<Cases>>
+>
 
 /** Cases for object input with custom key - all cases required */
 export type ObjectSwitchCases<
@@ -183,6 +211,17 @@ type NoUnknownCases<Cases, Allowed extends string> = {
 		: P]: never
 }
 
+/**
+ * When every overload fails, TypeScript reports only the last one that takes
+ * that many arguments. For three, that is the plain-value overload with a
+ * default, so a mistake in an object-mode call would be reported as "not
+ * assignable to PlainValue". Given an object, this rest parameter makes that
+ * overload want a fourth argument, so TypeScript skips it and reports the
+ * object overload's error, which names the missing or unknown case. `T` must
+ * accept objects there, or it falls back to its constraint and the skip is lost.
+ */
+type SkipForObjects<T> = [T] extends [PlainValue] ? [] : [never]
+
 type Handler = (value: unknown) => unknown
 type CasesRecord = Record<string, Handler | undefined>
 
@@ -198,7 +237,7 @@ type CasesRecord = Record<string, Handler | undefined>
 
 // Plain value input - all cases required, typed by the annotation
 export function typedSwitch<
-	T extends Discriminant,
+	T extends PlainValue,
 	R,
 	Cases extends { [V in T as `${V}`]: (value: V) => R } & NoUnknownCases<
 		Cases,
@@ -209,7 +248,7 @@ export function typedSwitch<
 // Plain value input - partial cases with default, typed by the annotation.
 // It comes before the object overloads, which also take three arguments.
 export function typedSwitch<
-	T extends Discriminant,
+	T extends PlainValue,
 	R,
 	Cases extends {
 		[V in T as `${V}`]?: (value: V) => R
@@ -225,23 +264,21 @@ export function typedSwitch<
 
 // Object input with key - all cases required, typed by the annotation
 export function typedSwitch<
-	T extends object,
-	K extends keyof T,
+	T extends object | Nullish,
+	K extends keyof NonNullable<T>,
 	R,
 	Cases extends ObjectCases<T, K, R> &
-		NoUnknownCases<Cases, `${Extract<T[K], Discriminant>}`>
+		NoUnknownCases<Cases, ObjectCaseKey<T, K>>
 >(value: T, key: K, cases: Cases): Annotated<R, RawCasesReturnType<Cases>>
 
 // Object input with key - partial cases with default, typed by the annotation
 export function typedSwitch<
-	T extends object,
-	K extends keyof T,
+	T extends object | Nullish,
+	K extends keyof NonNullable<T>,
 	R,
 	Cases extends PartialObjectCases<T, K, R> &
-		NoUnknownCases<Cases, `${Extract<T[K], Discriminant>}`>,
-	DefaultCase extends (
-		value: Exclude<T, Record<K, ValuesForKeys<T[K], HandledCaseKeys<Cases>>>>
-	) => R
+		NoUnknownCases<Cases, ObjectCaseKey<T, K>>,
+	DefaultCase extends (value: UnhandledObjects<T, K, Cases>) => R
 >(
 	value: T,
 	key: K,
@@ -251,7 +288,7 @@ export function typedSwitch<
 
 // Plain value input - all cases required (no default)
 export function typedSwitch<
-	T extends Discriminant,
+	T extends PlainValue,
 	Cases extends { [V in T as `${V}`]: (value: V) => unknown } & NoUnknownCases<
 		Cases,
 		`${T}`
@@ -260,38 +297,37 @@ export function typedSwitch<
 
 // Object input with key - all cases required (no default)
 export function typedSwitch<
-	T extends object,
-	K extends keyof T,
+	T extends object | Nullish,
+	K extends keyof NonNullable<T>,
 	Cases extends ObjectCases<T, K, unknown> &
-		NoUnknownCases<Cases, `${Extract<T[K], Discriminant>}`>
+		NoUnknownCases<Cases, ObjectCaseKey<T, K>>
 >(value: T, key: K, cases: Cases): RawCasesReturnType<Cases>
 
 // Plain value input - partial cases allowed (with default)
 // The default handler only receives the cases not covered by `cases`.
 export function typedSwitch<
-	T extends Discriminant,
+	T extends PlainValue | object,
 	Cases extends {
-		[V in T as `${V}`]?: (value: V) => unknown
-	} & NoUnknownCases<Cases, `${T}`>,
+		[V in Extract<T, PlainValue> as `${V}`]?: (value: V) => unknown
+	} & NoUnknownCases<Cases, `${Extract<T, PlainValue>}`>,
 	DefaultCase extends (
 		value: Exclude<T, ValuesForKeys<T, HandledCaseKeys<Cases>>>
 	) => unknown
 >(
 	value: T,
 	cases: Cases,
-	defaultCase: DefaultCase
+	defaultCase: DefaultCase,
+	...objectInput: SkipForObjects<T>
 ): RawCasesReturnType<Cases> | RawHandlerReturnType<DefaultCase>
 
 // Object input with key - partial cases allowed (with default)
 // The default handler only receives the union members not covered by `cases`.
 export function typedSwitch<
-	T extends object,
-	K extends keyof T,
+	T extends object | Nullish,
+	K extends keyof NonNullable<T>,
 	Cases extends PartialObjectCases<T, K, unknown> &
-		NoUnknownCases<Cases, `${Extract<T[K], Discriminant>}`>,
-	DefaultCase extends (
-		value: Exclude<T, Record<K, ValuesForKeys<T[K], HandledCaseKeys<Cases>>>>
-	) => unknown
+		NoUnknownCases<Cases, ObjectCaseKey<T, K>>,
+	DefaultCase extends (value: UnhandledObjects<T, K, Cases>) => unknown
 >(
 	value: T,
 	key: K,
@@ -301,7 +337,7 @@ export function typedSwitch<
 
 // Implementation
 export function typedSwitch(
-	value: Discriminant | object,
+	value: PlainValue | object,
 	keyOrCases: string | CasesRecord,
 	casesOrDefault?: CasesRecord | Handler,
 	defaultCase?: Handler
@@ -311,7 +347,13 @@ export function typedSwitch(
 	let defaultHandler: Handler | undefined
 	let discriminantKey: string | undefined
 
-	if (typeof value !== 'object') {
+	// A null or undefined object still comes with its key: typedSwitch(obj, key, cases)
+	const isNullish = value === null || value === undefined
+	const isObjectInput = isNullish
+		? typeof keyOrCases === 'string'
+		: typeof value === 'object'
+
+	if (!isObjectInput) {
 		// Plain value input: typedSwitch(value, cases, default?)
 		key = String(value)
 		cases = keyOrCases as CasesRecord
@@ -325,10 +367,11 @@ export function typedSwitch(
 		}
 
 		discriminantKey = keyOrCases
-		const discriminantValue = (value as Record<string, unknown>)[
-			discriminantKey
-		]
+		const discriminantValue = isNullish
+			? value
+			: (value as Record<string, unknown>)[discriminantKey]
 		if (
+			!isNullish &&
 			typeof discriminantValue !== 'string' &&
 			typeof discriminantValue !== 'number' &&
 			typeof discriminantValue !== 'boolean'
@@ -383,7 +426,7 @@ export function typedSwitch(
  * })
  */
 export function typedSwitchGroup<
-	T extends Discriminant,
+	T extends PlainValue,
 	const Keys extends readonly T[],
 	R
 >(
