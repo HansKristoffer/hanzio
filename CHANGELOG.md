@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.0](https://github.com/HansKristoffer/hanzio/compare/v3.3.0...v3.4.0) (2026-10-22)
+
+
+### Features
+
+* **typedswitch:** null and undefined cases ([#32](https://github.com/HansKristoffer/hanzio/issues/32)) ([d4565e1](https://github.com/HansKristoffer/hanzio/commit/d4565e14e42f0d886bae11bb01991172591d0952))
+
 ## [3.3.0](https://github.com/HansKristoffer/hanzio/compare/v3.2.0...v3.3.0) (2026-10-21)
 
 
