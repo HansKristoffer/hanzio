@@ -7,8 +7,8 @@ import {
 	infisicalLoader,
 	processEnvLoader,
 	viteSecretSetPlugin
-} from '.'
-import type { SecretSetLoader } from '.'
+} from './index.js'
+import type { SecretSetLoader } from './index.js'
 
 const ENV_KEYS = [
 	'APP_SECRET',

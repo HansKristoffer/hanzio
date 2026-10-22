@@ -1,5 +1,5 @@
-import { lerp, normalize } from '../math/scale'
-import { colorFunctionArgs, parseColor } from './contrast'
+import { lerp, normalize } from '../math/scale.js'
+import { colorFunctionArgs, parseColor } from './contrast.js'
 
 /**
  * Stable series color assignment: the same hash + collision strategy maps a

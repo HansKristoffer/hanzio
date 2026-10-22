@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { RedisClient } from 'bun'
-import { createRedisConcurrencyLimit } from './concurrency-limit'
+import { createRedisConcurrencyLimit } from './concurrency-limit.js'
 
 describe.skipIf(
 	!process.env.REDIS_URL || process.env.RUN_INTEGRATION_TESTS !== '1'

@@ -1,11 +1,14 @@
-import { DEFAULT_INFISICAL_SITE_URL, fetchInfisicalSecrets } from './infisical'
+import {
+	DEFAULT_INFISICAL_SITE_URL,
+	fetchInfisicalSecrets
+} from './infisical.js'
 import {
 	validateInfisicalOrganizationId,
 	type InfisicalProjectOptions
-} from './infisical-config'
-import type { SecretSetLoader, SecretSetLoaderContext } from './core'
+} from './infisical-config.js'
+import type { SecretSetLoader, SecretSetLoaderContext } from './core.js'
 
-export { cloudflareWorkerEnvLoader } from './worker-loader'
+export { cloudflareWorkerEnvLoader } from './worker-loader.js'
 
 export function infisicalLoader<SecretKey extends string>(
 	config: InfisicalProjectOptions & {

@@ -3,7 +3,7 @@ import {
 	createSseKeepAliveTransform,
 	SSE_KEEPALIVE_COMMENT,
 	withSseKeepAlive
-} from '.'
+} from './index.js'
 
 type Scheduled = { at: number; fn: () => void; id: number }
 

@@ -13,8 +13,8 @@ import {
 	zJsonObject,
 	zJsonValue,
 	zSingleOrArray
-} from '.'
-import type { JsonValue } from '../string'
+} from './index.js'
+import type { JsonValue } from '../string/index.js'
 
 describe('zod utilities', () => {
 	test('createZId creates a branded non-empty string schema', () => {

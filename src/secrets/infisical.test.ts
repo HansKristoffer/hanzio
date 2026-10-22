@@ -19,7 +19,7 @@ import {
 	infisicalLoader,
 	loadInfisicalSecrets,
 	processEnvLoader
-} from '.'
+} from './index.js'
 
 const envKeys = [
 	'INFISICAL_CLIENT_ID',

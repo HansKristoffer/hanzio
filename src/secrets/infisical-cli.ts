@@ -1,6 +1,6 @@
-import type { SecretRequestOptions } from './deadline'
-import { getProcessEnvironment } from './environment'
-import { SecretLoadError } from './errors'
+import type { SecretRequestOptions } from './deadline.js'
+import { getProcessEnvironment } from './environment.js'
+import { SecretLoadError } from './errors.js'
 
 /** Read the active CLI session without a shell or credential-bearing errors. */
 export async function readInfisicalCliToken(

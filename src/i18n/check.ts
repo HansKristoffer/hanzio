@@ -11,19 +11,19 @@ import {
 	writeFileSync
 } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
-import { extractPlaceholders, type Messages } from '.'
+import { extractPlaceholders, type Messages } from './index.js'
 import {
 	type CatalogConfig,
 	type CatalogIssue,
 	flattenCatalog,
 	generateCatalogTypes,
 	parseMessages
-} from './catalog'
-import { type ContentRulesConfig, createContentRules } from './content-rules'
+} from './catalog.js'
+import { type ContentRulesConfig, createContentRules } from './content-rules.js'
 
-export type { CatalogConfig, CatalogIssue, CatalogRuntime } from './catalog'
-export { generateCatalogTypes, parseMessages } from './catalog'
-export type { ContentRulesConfig } from './content-rules'
+export type { CatalogConfig, CatalogIssue, CatalogRuntime } from './catalog.js'
+export { generateCatalogTypes, parseMessages } from './catalog.js'
+export type { ContentRulesConfig } from './content-rules.js'
 
 export type I18nConfig<
 	Locale extends string = string,

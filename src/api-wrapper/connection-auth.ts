@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto'
-import { raceAbort } from '../promise'
+import { raceAbort } from '../promise/index.js'
 
 export type ConnectionAuthToken = { token: string; expiresAt: number }
 

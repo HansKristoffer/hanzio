@@ -3,7 +3,7 @@ import {
 	SimpleStateMachine,
 	type StateMachineConfig,
 	createStateMachine
-} from '.'
+} from './index.js'
 
 type S = 'A' | 'B' | 'C'
 type Act = 'toB' | 'toC' | 'toCAlt'
@@ -127,7 +127,7 @@ describe('SimpleStateMachine action-aware validation', () => {
 				B: [],
 				C: []
 			}
-		} satisfies import('.').StateMachineConfig<
+		} satisfies import('./index.js').StateMachineConfig<
 			S,
 			Act,
 			{ status: S; label: string },

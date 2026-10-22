@@ -11,7 +11,7 @@ import {
 	defineLocales,
 	type LocaleOf,
 	typedTranslate
-} from '.'
+} from './index.js'
 
 describe('PlaceholderNames', () => {
 	test('extracts names from literal templates', () => {

@@ -1,4 +1,4 @@
-import { SecretLoadError } from './errors'
+import { SecretLoadError } from './errors.js'
 
 export type SecretEnvironment = 'dev' | 'staging' | 'prod'
 

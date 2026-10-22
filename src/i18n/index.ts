@@ -156,4 +156,4 @@ export function typedTranslate<Params extends TranslationParamsMap>(
 	return t as unknown as TypedTranslate<Params>
 }
 
-export * from './locales'
+export * from './locales.js'

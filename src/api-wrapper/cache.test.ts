@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { createApiClient, defineAction, ActionError } from '.'
-import { originalFetch } from './test-helpers'
+import { createApiClient, defineAction, ActionError } from './index.js'
+import { originalFetch } from './test-helpers.js'
 
 describe('createApiClient — action cache', () => {
 	afterEach(() => {

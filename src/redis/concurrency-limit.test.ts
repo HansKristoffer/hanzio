@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, test } from 'bun:test'
-import { createRedisConcurrencyLimit } from './concurrency-limit'
+import { createRedisConcurrencyLimit } from './concurrency-limit.js'
 
 const quiet = { warn: () => {} }
 

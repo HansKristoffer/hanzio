@@ -3,10 +3,10 @@ import {
 	encodeBase64Url,
 	utf8Decode,
 	utf8Encode
-} from '../crypto/encoding'
-import { getSubtleCrypto } from '../crypto/hash'
-import type { Result } from '../promise'
-import { isRecord } from '../guard'
+} from '../crypto/encoding.js'
+import { getSubtleCrypto } from '../crypto/hash.js'
+import type { Result } from '../promise/index.js'
+import { isRecord } from '../guard/index.js'
 
 export type JWTPayload = Record<string, unknown>
 

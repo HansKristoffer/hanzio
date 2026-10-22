@@ -9,7 +9,7 @@ import {
 	ModuleMocker,
 	mockCallArg,
 	noopLogger
-} from '.'
+} from './index.js'
 
 const fixtureDir = mkdtempSync(path.join(tmpdir(), 'hanzio-module-mocker-'))
 const fixture = path.join(fixtureDir, 'greeting.ts')

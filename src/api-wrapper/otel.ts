@@ -1,6 +1,6 @@
-import { ApiError, HttpResponseError } from './errors'
-import { redactUrl } from './redaction'
-import type { ApiMiddleware, ApiMiddlewareContext } from './types'
+import { ApiError, HttpResponseError } from './errors.js'
+import { redactUrl } from './redaction.js'
+import type { ApiMiddleware, ApiMiddlewareContext } from './types.js'
 
 // Structural subsets of @opentelemetry/api, so hanzio never imports it. The
 // app passes its own tracer (`trace.getTracer('app')`); a type test keeps

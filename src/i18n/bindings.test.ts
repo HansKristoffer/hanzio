@@ -1,10 +1,10 @@
 import { describe, expect, expectTypeOf, test } from 'bun:test'
 import i18next from 'i18next'
-import { createMemoryStorage } from '../storage'
-import { defineLocales } from '.'
-import { initI18next } from './i18next'
-import { localeCatalogReloadPlugin } from './vite'
-import { createVueI18n } from './vue'
+import { createMemoryStorage } from '../storage/index.js'
+import { defineLocales } from './index.js'
+import { initI18next } from './i18next.js'
+import { localeCatalogReloadPlugin } from './vite.js'
+import { createVueI18n } from './vue.js'
 
 const locales = defineLocales({
 	locales: {

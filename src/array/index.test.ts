@@ -14,7 +14,7 @@ import {
 	sortBy,
 	sumBy,
 	toArray
-} from '.'
+} from './index.js'
 
 describe('array utilities', () => {
 	test('chunkArray splits arrays into fixed-size chunks', () => {

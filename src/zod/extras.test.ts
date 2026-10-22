@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
-import { jsonToZodSchemaMapper } from './jsonToZodSchemaMapper'
+import { jsonToZodSchemaMapper } from './jsonToZodSchemaMapper.js'
 import {
 	createMinMaxFilter,
 	toGteLteFilter,
 	toGtLtFilter
-} from './zodMinMaxFilter'
-import { zodToExample, zodToTypeString } from './zodToTypeString'
+} from './zodMinMaxFilter.js'
+import { zodToExample, zodToTypeString } from './zodToTypeString.js'
 
 describe('toGteLteFilter', () => {
 	test('maps min/max to gte/lte', () => {

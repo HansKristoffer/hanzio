@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import type { RedisClient } from 'bun'
-import { createManagedRedis, type RedisMessageHandler } from './client'
+import { createManagedRedis, type RedisMessageHandler } from './client.js'
 
 /** A connection whose `unsubscribe` stays pending until settled or `close()` rejects it. */
 function fakeConnection() {

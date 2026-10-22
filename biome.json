@@ -32,7 +32,12 @@
 				"noUnusedVariables": "warn",
 				"useParseIntRadix": "off",
 				"useExhaustiveDependencies": "warn",
-				"useHookAtTopLevel": "off"
+				"useHookAtTopLevel": "off",
+				"useImportExtensions": {
+					"level": "error",
+					"fix": "safe",
+					"options": { "forceJsExtensions": true }
+				}
 			},
 			"performance": {
 				"noDelete": "off",

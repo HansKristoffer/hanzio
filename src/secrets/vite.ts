@@ -1,5 +1,5 @@
-import type { SecretSet } from './core'
-import { SecretLoadError } from './errors'
+import type { SecretSet } from './core.js'
+import { SecretLoadError } from './errors.js'
 
 export type ViteSecretSetPlugin = {
 	name: string
@@ -58,4 +58,4 @@ export function viteSecretSetPlugin<K extends string>(
 	}
 }
 
-export { readPublicConfig } from './public-config'
+export { readPublicConfig } from './public-config.js'

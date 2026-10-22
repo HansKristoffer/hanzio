@@ -1,4 +1,4 @@
-import { stableStringify } from '../string'
+import { stableStringify } from '../string/index.js'
 
 export interface ArrayDifference<TCurrent, TNext> {
 	new: TNext[]

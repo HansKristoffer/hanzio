@@ -12,11 +12,11 @@ import {
 	type InferResponse,
 	type PathParamNames,
 	RequestValidationError
-} from '.'
-import { createMockFetch, jsonResponse } from './testing'
+} from './index.js'
+import { createMockFetch, jsonResponse } from './testing.js'
 
 // Typed meta via module augmentation. Optional so other tests stay unaffected.
-declare module '.' {
+declare module './index.js' {
 	interface ApiRequestMeta {
 		traceId?: string
 	}

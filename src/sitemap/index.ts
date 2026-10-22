@@ -1,6 +1,6 @@
-import PQueue from '../p-queue'
-import { escapeRegExp } from '../string'
-import { normalizeDomain } from '../url'
+import PQueue from '../p-queue/index.js'
+import { escapeRegExp } from '../string/index.js'
+import { normalizeDomain } from '../url/index.js'
 
 /** Substring, RegExp, or predicate. */
 export type SitemapUrlFilter = string | RegExp | ((url: string) => boolean)

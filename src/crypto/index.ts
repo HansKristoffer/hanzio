@@ -8,7 +8,7 @@ export {
 	hexToBytes,
 	utf8Decode,
 	utf8Encode
-} from './encoding'
+} from './encoding.js'
 export {
 	type HmacAlgorithm,
 	type HmacSignOptions,
@@ -21,6 +21,6 @@ export {
 	sha256,
 	sha256Hex,
 	verifyHmacSignature
-} from './hash'
-export * from './sealer'
-export * from './webhook'
+} from './hash.js'
+export * from './sealer.js'
+export * from './webhook.js'

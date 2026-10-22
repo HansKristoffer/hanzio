@@ -8,7 +8,7 @@ import {
 	hexToBytes,
 	toBytes,
 	utf8Encode
-} from './encoding'
+} from './encoding.js'
 
 export type HmacAlgorithm = 'SHA-256' | 'SHA-384' | 'SHA-512'
 export type SignatureEncoding = 'hex' | 'base64' | 'base64url'

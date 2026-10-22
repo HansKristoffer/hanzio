@@ -5,8 +5,8 @@ import {
 	toBytes,
 	utf8Decode,
 	utf8Encode
-} from './encoding'
-import { getSubtleCrypto, randomBytes } from './hash'
+} from './encoding.js'
+import { getSubtleCrypto, randomBytes } from './hash.js'
 
 export type SealerOptions = {
 	/** High-entropy secret (e.g. `APP_SECRET`). The AES key is derived from it with HKDF-SHA-256. */

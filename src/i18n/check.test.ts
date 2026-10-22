@@ -8,15 +8,15 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { generateCatalogTypes } from './catalog'
+import { generateCatalogTypes } from './catalog.js'
 import {
 	type CatalogConfig,
 	type ContentRulesConfig,
 	defineI18nConfig,
 	validateCatalogs,
 	writeCatalogTypes
-} from './check'
-import { createContentRules } from './content-rules'
+} from './check.js'
+import { createContentRules } from './content-rules.js'
 
 // A cut-down version of a real app's rules: Danish markers, banned loanwords.
 const rulesConfig = {

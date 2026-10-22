@@ -1,12 +1,15 @@
 import { z } from 'zod'
-import { createApiClient, HttpResponseError } from '../api-wrapper'
-import { withSecretDeadline } from './deadline'
-import { getProcessEnvironment } from './environment'
-import { SecretLoadError } from './errors'
-import { readInfisicalCliToken } from './infisical-cli'
-import { validateInfisicalScope, type InfisicalScope } from './infisical-config'
-import { readInfisicalIdentityFile } from './infisical-identity-file'
-import { parseInfisicalSessionToken } from './infisical-session'
+import { createApiClient, HttpResponseError } from '../api-wrapper/index.js'
+import { withSecretDeadline } from './deadline.js'
+import { getProcessEnvironment } from './environment.js'
+import { SecretLoadError } from './errors.js'
+import { readInfisicalCliToken } from './infisical-cli.js'
+import {
+	validateInfisicalScope,
+	type InfisicalScope
+} from './infisical-config.js'
+import { readInfisicalIdentityFile } from './infisical-identity-file.js'
+import { parseInfisicalSessionToken } from './infisical-session.js'
 
 export const DEFAULT_INFISICAL_SITE_URL = 'https://eu.infisical.com'
 

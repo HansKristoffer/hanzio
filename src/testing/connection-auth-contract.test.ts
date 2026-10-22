@@ -1,5 +1,5 @@
-import { ConnectionAuthCache } from '../api-wrapper/connection-auth'
-import { connectionAuthContract } from './connection-auth-contract'
+import { ConnectionAuthCache } from '../api-wrapper/connection-auth.js'
+import { connectionAuthContract } from './connection-auth-contract.js'
 
 // The smallest client the contract accepts: login on demand, one retry on 401.
 const cache = new ConnectionAuthCache()

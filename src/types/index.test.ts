@@ -6,7 +6,7 @@ import type {
 	Nullable,
 	Simplify,
 	ValueOf
-} from '.'
+} from './index.js'
 
 type Equal<A, B> =
 	(<X>() => X extends A ? 1 : 2) extends <X>() => X extends B ? 1 : 2

@@ -1,14 +1,14 @@
 import { ZodError, type z } from 'zod'
-import { anySignal, promiseTimeout } from '../promise'
-import { parseRetryAfter } from '../url'
+import { anySignal, promiseTimeout } from '../promise/index.js'
+import { parseRetryAfter } from '../url/index.js'
 import type {
 	ApiEndpoint,
 	FetchLike,
 	OnResponseContext,
 	OnRetryContext,
 	RetryContext
-} from './types'
-import type { ApiErrorContext, HttpMethod, RequestMeta } from './shared'
+} from './types.js'
+import type { ApiErrorContext, HttpMethod, RequestMeta } from './shared.js'
 import {
 	ApiResponseError,
 	ConfigError,
@@ -18,14 +18,14 @@ import {
 	RequestAbortedError,
 	RequestTimeoutError,
 	ResponseValidationError
-} from './errors'
+} from './errors.js'
 import {
 	buildFetchBody,
 	getHeadersAsObject,
 	hasJsonContentType
-} from './headers'
-import { redactUrl } from './redaction'
-import { makeJsonParseZodError } from './zod-issues'
+} from './headers.js'
+import { redactUrl } from './redaction.js'
+import { makeJsonParseZodError } from './zod-issues.js'
 
 export type RequestConfig = {
 	method: HttpMethod

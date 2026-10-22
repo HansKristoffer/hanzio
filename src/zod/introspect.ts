@@ -1,5 +1,5 @@
 import type { z } from 'zod'
-import { type Def, defOf, type Schema, walk } from './zodToTypeString'
+import { type Def, defOf, type Schema, walk } from './zodToTypeString.js'
 
 // Pipes are read from their input side, except preprocess (`in` is a transform)
 function pipeInput(def: z.core.$ZodPipeDef): Schema {

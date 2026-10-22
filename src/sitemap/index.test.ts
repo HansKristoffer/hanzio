@@ -4,7 +4,7 @@ import {
 	getDomainSitemapEntries,
 	isAllowedByRobots,
 	parseRobotsTxt
-} from '.'
+} from './index.js'
 
 const originalFetch = globalThis.fetch
 const originalWarn = console.warn

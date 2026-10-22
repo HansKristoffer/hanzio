@@ -6,7 +6,7 @@ import {
 	METRICS_SERIES_PALETTE_SIZE,
 	resolveSeriesColorMap,
 	withAlpha
-} from '.'
+} from './index.js'
 
 describe('metricsSeriesColors', () => {
 	describe('hashStringToColorIndex', () => {

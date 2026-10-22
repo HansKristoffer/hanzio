@@ -3,8 +3,11 @@
 // `.use(initReactI18next)` where you need React.
 
 import type { i18n as I18next, InitOptions, ResourceLanguage } from 'i18next'
-import { type AsyncStorageLike, createAsyncStorageItem } from '../storage'
-import type { LocaleRegistry } from '.'
+import {
+	type AsyncStorageLike,
+	createAsyncStorageItem
+} from '../storage/index.js'
+import type { LocaleRegistry } from './index.js'
 
 /**
  * Starts `i18n` in the persisted locale, then the first supported device

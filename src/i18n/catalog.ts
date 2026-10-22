@@ -1,5 +1,5 @@
-import { isPlainObject } from '../guard'
-import { extractPlaceholders, flattenMessages, type Messages } from '.'
+import { isPlainObject } from '../guard/index.js'
+import { extractPlaceholders, flattenMessages, type Messages } from './index.js'
 
 /** How a catalog's runtime reads its messages: plural syntax and escaping. */
 export type CatalogRuntime = 'vue-i18n' | 'i18next' | 'plain'

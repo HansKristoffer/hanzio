@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { InvariantError, getErrorMessage, invariant, must, toError } from '.'
+import {
+	InvariantError,
+	getErrorMessage,
+	invariant,
+	must,
+	toError
+} from './index.js'
 
 describe('getErrorMessage', () => {
 	test('reads messages from errors, strings and message-shaped objects', () => {

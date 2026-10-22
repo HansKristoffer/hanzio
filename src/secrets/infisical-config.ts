@@ -1,5 +1,5 @@
-import type { SecretRequestOptions } from './deadline'
-import { SecretLoadError } from './errors'
+import type { SecretRequestOptions } from './deadline.js'
+import { SecretLoadError } from './errors.js'
 
 /** Project scope shared by the public Infisical loaders. */
 export type InfisicalProjectOptions = {

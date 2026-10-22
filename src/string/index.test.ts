@@ -16,7 +16,7 @@ import {
 	stripEmoji,
 	toJsonValue,
 	truncate
-} from '.'
+} from './index.js'
 
 describe('string utilities', () => {
 	test('extractNumber parses numbers from strings', () => {

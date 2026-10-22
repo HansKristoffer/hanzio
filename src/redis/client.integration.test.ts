@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { createManagedRedis } from './client'
+import { createManagedRedis } from './client.js'
 
 describe.skipIf(
 	!process.env.REDIS_URL || process.env.RUN_INTEGRATION_TESTS !== '1'

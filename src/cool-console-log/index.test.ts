@@ -7,7 +7,7 @@ import {
 	logOperationSummary,
 	startOperation,
 	supportsColor
-} from '.'
+} from './index.js'
 
 const ENV_KEYS = ['NODE_ENV', 'NO_COLOR', 'FORCE_COLOR'] as const
 const ESC = '\x1b['

@@ -1,13 +1,16 @@
-import { withSecretDeadline, type SecretRequestOptions } from './deadline'
+import { withSecretDeadline, type SecretRequestOptions } from './deadline.js'
 import {
 	resolveSecretEnvironment,
 	type EnvironmentVariables,
 	type SecretEnvironmentOption
-} from './environment'
-import { SecretLoadError } from './errors'
+} from './environment.js'
+import { SecretLoadError } from './errors.js'
 
-export type { SecretEnvironment, SecretEnvironmentOption } from './environment'
-export { SecretLoadError } from './errors'
+export type {
+	SecretEnvironment,
+	SecretEnvironmentOption
+} from './environment.js'
+export { SecretLoadError } from './errors.js'
 
 export type SecretLogAttributes = {
 	readonly environment: string

@@ -1,4 +1,4 @@
-import { clamp } from '../math/scale'
+import { clamp } from '../math/scale.js'
 
 /** An sRGB color: `r`/`g`/`b` in 0..255, `a` in 0..1. */
 export type Rgba = { r: number; g: number; b: number; a: number }

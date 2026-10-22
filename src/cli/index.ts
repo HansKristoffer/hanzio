@@ -9,7 +9,7 @@ import {
 	optionName,
 	readFields,
 	UsageError
-} from './fields'
+} from './fields.js'
 
 declare module 'zod' {
 	interface GlobalMeta {

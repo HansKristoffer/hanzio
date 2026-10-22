@@ -7,7 +7,7 @@ import {
 	type CommandNode,
 	defineCli,
 	defineCommand
-} from '.'
+} from './index.js'
 
 async function run(cli: Cli, argv: string[], env = {}) {
 	const out = { stdout: '', stderr: '' }

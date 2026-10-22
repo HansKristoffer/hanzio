@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { clamp, lerp, normalize } from './scale'
+import { clamp, lerp, normalize } from './scale.js'
 
 test('clamp, lerp and normalize', () => {
 	expect(clamp(5, 0, 3)).toBe(3)

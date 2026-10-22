@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { readPublicConfig } from './public-config'
-import { getViteDefine, viteSecretSetPlugin } from './vite'
+import { readPublicConfig } from './public-config.js'
+import { getViteDefine, viteSecretSetPlugin } from './vite.js'
 
 test('selects public keys without reading unrelated credentials or mutating inputs', () => {
 	const values = {

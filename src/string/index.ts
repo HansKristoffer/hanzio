@@ -1,4 +1,4 @@
-import type { Result } from '../promise'
+import type { Result } from '../promise/index.js'
 
 export type JsonValue =
 	| string

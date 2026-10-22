@@ -8,7 +8,7 @@ export {
 	shade,
 	toHex,
 	toRgbString
-} from './contrast'
+} from './contrast.js'
 export {
 	createResolveColorsByKeys,
 	getHeatmapCellStyle,
@@ -19,4 +19,4 @@ export {
 	resolveSeriesColorMap,
 	seriesColorKey,
 	withAlpha
-} from './metricsSeriesColors'
+} from './metricsSeriesColors.js'

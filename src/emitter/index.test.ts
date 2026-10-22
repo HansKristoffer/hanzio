@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { createEmitter } from '.'
+import { createEmitter } from './index.js'
 
 type Events = { message: string; ready: void; count: number | undefined }
 

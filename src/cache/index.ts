@@ -1,4 +1,4 @@
-import { stableStringify } from '../string'
+import { stableStringify } from '../string/index.js'
 
 type AnyFunction = (...args: never[]) => unknown
 type CachedFunction<
@@ -303,4 +303,4 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 		typeof value.then === 'function'
 	)
 }
-export * from './createCache'
+export * from './createCache.js'

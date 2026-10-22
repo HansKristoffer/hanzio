@@ -1,16 +1,16 @@
 import { z } from 'zod'
-import { toArray } from '../array'
-import { err, ok, type Result } from '../promise'
-import type { JsonObject, JsonValue } from '../string'
+import { toArray } from '../array/index.js'
+import { err, ok, type Result } from '../promise/index.js'
+import type { JsonObject, JsonValue } from '../string/index.js'
 
 export {
 	getEnumValues,
 	getObjectShape,
 	unwrapSchema,
 	zodDefaults
-} from './introspect'
+} from './introspect.js'
 
-export { jsonToZodSchemaMapper } from './jsonToZodSchemaMapper'
+export { jsonToZodSchemaMapper } from './jsonToZodSchemaMapper.js'
 export {
 	createMinMaxFilter,
 	type MinMaxFilter,
@@ -18,8 +18,8 @@ export {
 	toGtLtFilter,
 	type ZodMinMaxFilter,
 	zodMinMaxFilter
-} from './zodMinMaxFilter'
-export { zodToExample, zodToTypeString } from './zodToTypeString'
+} from './zodMinMaxFilter.js'
+export { zodToExample, zodToTypeString } from './zodToTypeString.js'
 
 export type GenericId<TypeName extends string> = string & z.$brand<TypeName>
 

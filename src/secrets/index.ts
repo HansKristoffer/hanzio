@@ -5,27 +5,27 @@ import {
 	type CustomLoaderDefineSecretSetOptions,
 	type SecretSet,
 	type SecretSetLoader
-} from './core'
+} from './core.js'
 import {
 	getProcessEnvironment,
 	resolveSecretEnvironment,
 	type SecretEnvironment
-} from './environment'
+} from './environment.js'
 import {
 	DEFAULT_INFISICAL_SITE_URL,
 	loadInfisicalSecrets,
 	type InfisicalAuthMode
-} from './infisical'
+} from './infisical.js'
 import {
 	validateInfisicalOrganizationId,
 	type InfisicalProjectOptions
-} from './infisical-config'
+} from './infisical-config.js'
 
-export * from './core'
-export * from './infisical'
-export * from './loaders'
-export * from './vite'
-export type { SecretRequestOptions } from './deadline'
+export * from './core.js'
+export * from './infisical.js'
+export * from './loaders.js'
+export * from './vite.js'
+export type { SecretRequestOptions } from './deadline.js'
 
 export type InfisicalDefineSecretSetOptions<
 	K extends string = string,

@@ -4,7 +4,7 @@ import {
 	formatPeriodLabel,
 	getPeriod,
 	getPreviousReportPeriod
-} from '.'
+} from './index.js'
 
 describe('getPreviousReportPeriod', () => {
 	test('MONTHLY returns previous calendar month', () => {
