@@ -1183,6 +1183,165 @@ describe('typedSwitch plain number and boolean values', () => {
 	})
 })
 
+describe('typedSwitch values that can be null or undefined', () => {
+	test('plain value: undefined is handled by an undefined case', () => {
+		const status = asType<'success' | 'error' | undefined>(undefined)
+
+		const result = typedSwitch(status, {
+			success: () => 'done',
+			error: () => 'failed',
+			undefined: (s) => {
+				expectTypeOf(s).toEqualTypeOf<undefined>()
+				return 'not started'
+			}
+		})
+
+		expectTypeOf(result).toEqualTypeOf<string>()
+		expect(result).toBe('not started')
+	})
+
+	test('plain value: an unhandled undefined goes to the default handler', () => {
+		const status = asType<'success' | 'error' | undefined>(undefined)
+
+		const result = typedSwitch(status, { success: () => 'done' }, (s) => {
+			expectTypeOf(s).toEqualTypeOf<'error' | undefined>()
+			return `other ${s}`
+		})
+
+		expect(result).toBe('other undefined')
+	})
+
+	test('object: undefined is handled by an undefined case', () => {
+		const event = asType<Event | undefined>(undefined)
+
+		const result = typedSwitch(event, 'type', {
+			click: (e) => e.x,
+			scroll: (e) => e.offset,
+			key: (e) => e.key.length,
+			undefined: (e) => {
+				expectTypeOf(e).toEqualTypeOf<undefined>()
+				return -1
+			}
+		})
+
+		expectTypeOf(result).toEqualTypeOf<number>()
+		expect(result).toBe(-1)
+	})
+
+	test('object: an unhandled undefined goes to the default handler', () => {
+		const event = asType<Event | undefined>(undefined)
+
+		const result = typedSwitch(event, 'type', { click: () => 'click' }, (e) => {
+			expectTypeOf(e).toEqualTypeOf<ScrollEvent | KeyEvent | undefined>()
+			return e?.type ?? 'none'
+		})
+
+		expect(result).toBe('none')
+	})
+
+	test('an annotated result keeps its literals', () => {
+		const level: 'info' | 'warn' = typedSwitch(
+			asType<'a' | undefined>(undefined),
+			{ a: () => 'info', undefined: () => 'warn' }
+		)
+
+		expect(level).toBe('warn')
+	})
+
+	test('plain value: null is handled by a null case', () => {
+		const status = asType<'success' | 'error' | null>(null)
+
+		const result = typedSwitch(status, {
+			success: () => 'done',
+			error: () => 'failed',
+			null: (s) => {
+				expectTypeOf(s).toEqualTypeOf<null>()
+				return 'missing'
+			}
+		})
+
+		expect(result).toBe('missing')
+	})
+
+	test('plain value: null and undefined are separate cases', () => {
+		const run = (v: 'a' | null | undefined) =>
+			typedSwitch(v, {
+				a: () => 'a',
+				null: () => 'null',
+				undefined: () => 'undefined'
+			})
+
+		expect([run('a'), run(null), run(undefined)]).toEqual([
+			'a',
+			'null',
+			'undefined'
+		])
+	})
+
+	test('object: null is handled by a null case', () => {
+		const event = asType<Event | null>(null)
+
+		const result = typedSwitch(event, 'type', { click: () => 1 }, (e) => {
+			expectTypeOf(e).toEqualTypeOf<ScrollEvent | KeyEvent | null>()
+			return e === null ? -1 : 0
+		})
+		const handled = typedSwitch(event, 'type', {
+			click: () => 1,
+			scroll: () => 2,
+			key: () => 3,
+			null: (e) => {
+				expectTypeOf(e).toEqualTypeOf<null>()
+				return -1
+			}
+		})
+
+		expect([result, handled]).toEqual([-1, -1])
+	})
+
+	test('undefined can be grouped with other values', () => {
+		const status = asType<'success' | 'pending' | undefined>(undefined)
+
+		const result = typedSwitch(status, {
+			...typedSwitchGroup(status, ['pending', undefined], (s) => {
+				expectTypeOf(s).toEqualTypeOf<'pending' | undefined>()
+				return 'waiting'
+			}),
+			success: () => 'done'
+		})
+
+		expect(result).toBe('waiting')
+	})
+
+	test('requires an undefined case when the value can be undefined', () => {
+		const assertTypeErrors = () => {
+			typedSwitch(
+				asType<'success' | 'error' | undefined>('success'),
+				// @ts-expect-error missing the undefined case without a default handler
+				{ success: () => 1, error: () => 2 }
+			)
+			const maybeEvent = asType<Event | undefined>(undefined)
+			const eventCases = { click: () => 1, scroll: () => 2, key: () => 3 }
+			// @ts-expect-error missing the undefined case without a default handler
+			typedSwitch(maybeEvent, 'type', eventCases)
+			typedSwitch(
+				getStatus('success'),
+				// @ts-expect-error status cannot be undefined
+				{ success: () => 1, error: () => 2, undefined: () => 3 }
+			)
+			typedSwitch(
+				asType<'success' | null>(null),
+				// @ts-expect-error missing the null case without a default handler
+				{ success: () => 1 }
+			)
+			const event = getEvent({ type: 'key', key: 'a' })
+			// @ts-expect-error event cannot be undefined
+			typedSwitch(event, 'type', { ...eventCases, undefined: () => 4 })
+		}
+
+		expect(assertTypeErrors).toBeDefined()
+	})
+})
+
 describe('typedSwitch grouped cases', () => {
 	test('object mode: shared handler receives the union of grouped members', () => {
 		const event = getEvent({ type: 'scroll', offset: 5 })
