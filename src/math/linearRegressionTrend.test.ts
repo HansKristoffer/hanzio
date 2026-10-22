@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
 	linearRegression,
 	linearRegressionTrend
-} from './linearRegressionTrend'
+} from './linearRegressionTrend.js'
 
 describe('linearRegressionTrend', () => {
 	test('returns [] when fewer than 2 points', () => {

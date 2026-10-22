@@ -20,7 +20,7 @@ import {
 	startTimer,
 	timed,
 	timeoutSignal
-} from '.'
+} from './index.js'
 
 describe('promise utilities', () => {
 	test('tryCatch returns data for resolved promises', async () => {

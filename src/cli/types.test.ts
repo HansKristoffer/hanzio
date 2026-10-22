@@ -1,6 +1,6 @@
 import { expect, expectTypeOf, test } from 'bun:test'
 import { z } from 'zod'
-import { type CommandContext, defineCli, defineCommand } from '.'
+import { type CommandContext, defineCli, defineCommand } from './index.js'
 
 test('run and output infer from the input schema and the return value', () => {
 	const _typeCheck = () => {

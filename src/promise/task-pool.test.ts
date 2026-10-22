@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { createTaskPool } from '.'
+import { createTaskPool } from './index.js'
 
 describe('createTaskPool', () => {
 	test('starts newly queued work in spare slots and reuses each slot immediately', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
-import { zOptionalE164 } from '.'
+import { zOptionalE164 } from './index.js'
 
 describe('zOptionalE164', () => {
 	test('accepts E.164, maps empty and null to null, rejects malformed', () => {

@@ -1,4 +1,4 @@
-import type { LanguageCode } from './languages'
+import type { LanguageCode } from './languages.js'
 
 /**
  * Country calling code (digits, no `+`) → the language a support conversation

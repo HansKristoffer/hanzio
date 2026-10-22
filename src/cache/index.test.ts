@@ -1,5 +1,9 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { type CacheStore, type CacheStoreEntry, cacheFunction } from '.'
+import {
+	type CacheStore,
+	type CacheStoreEntry,
+	cacheFunction
+} from './index.js'
 
 describe('cacheFunction', () => {
 	describe('basic caching', () => {

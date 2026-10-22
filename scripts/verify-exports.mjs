@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { access, mkdir, mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
+import {
+	access,
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -135,6 +143,72 @@ try {
 			assert.ok(keys.includes(name), `${specifier} is missing ${name}`)
 		}
 	}
+
+	// The declarations must resolve under NodeNext, the strictest resolution
+	// mode. skipLibCheck stays off, or a broken import between our .d.ts files
+	// would quietly become `any` instead of an error.
+	await writeFile(join(temporary, 'package.json'), '{ "type": "module" }\n')
+	// Packages our declarations name besides the peers: runtime types for the
+	// Node and Bun subpaths, and what vue-i18n brings along in a real install.
+	const typePackages = [
+		'@types/node',
+		'@types/bun',
+		'bun-types',
+		'vue',
+		'@intlify/core-base'
+	]
+	for (const name of typePackages) {
+		await mkdir(dirname(join(modules, name)), { recursive: true })
+		await symlink(join(root, 'node_modules', name), join(modules, name), 'dir')
+	}
+	await writeFile(
+		join(temporary, 'tsconfig.json'),
+		JSON.stringify({
+			compilerOptions: {
+				module: 'NodeNext',
+				moduleResolution: 'NodeNext',
+				target: 'ES2022',
+				lib: ['ES2022', 'DOM'],
+				types: ['node', 'bun'],
+				strict: true,
+				skipLibCheck: false,
+				noEmit: true
+			},
+			files: ['consumer.ts']
+		})
+	)
+	await writeFile(
+		join(temporary, 'consumer.ts'),
+		Object.entries(expectedExports)
+			.map(([specifier, names], index) => {
+				const members = names.map((name) => `typeof m${index}.${name}`)
+				return (
+					`import type * as m${index} from ${JSON.stringify(specifier)}\n` +
+					`export type T${index} = [${members.join(', ')}]\n`
+				)
+			})
+			.join('')
+	)
+	// Only our files count: the dev copies of vue and vue-i18n may disagree.
+	const tsc = join(root, 'node_modules/typescript/bin/tsc')
+	let output = ''
+	try {
+		execFileSync(
+			process.execPath,
+			[tsc, '-p', temporary, '--pretty', 'false'],
+			{ cwd: temporary, encoding: 'utf8' }
+		)
+	} catch (error) {
+		output = error.stdout
+	}
+	const errors = output
+		.split('\n')
+		.filter((line) => /^(consumer\.ts|package\/|error TS)/.test(line))
+	assert.equal(
+		errors.length,
+		0,
+		`Declarations fail under NodeNext:\n${errors.join('\n')}`
+	)
 
 	console.log(`Verified ${documented.length} package exports`)
 } finally {

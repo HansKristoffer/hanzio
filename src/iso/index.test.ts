@@ -12,7 +12,7 @@ import {
 	languageFromE164PhoneNumber,
 	languageNames,
 	matchLanguageCode
-} from '.'
+} from './index.js'
 
 describe('countries', () => {
 	test('lists every ISO 3166-1 alpha-2 code once, sorted', () => {

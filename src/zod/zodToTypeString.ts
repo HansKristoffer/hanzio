@@ -1,5 +1,5 @@
 import type { z } from 'zod'
-import { isRecord } from '../guard'
+import { isRecord } from '../guard/index.js'
 
 export type Schema = z.core.$ZodType
 export type Def = z.core.$ZodTypes['_zod']['def']

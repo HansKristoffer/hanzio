@@ -10,8 +10,8 @@ import {
 	isApiResponseError,
 	isResponseValidationError,
 	type ResponseValidationError
-} from '.'
-import { createMockFetch, jsonResponse } from './testing'
+} from './index.js'
+import { createMockFetch, jsonResponse } from './testing.js'
 
 const getUser = {
 	method: 'GET',

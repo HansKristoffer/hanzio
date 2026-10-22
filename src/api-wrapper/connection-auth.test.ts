@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { ConnectionAuthCache } from './connection-auth'
+import { ConnectionAuthCache } from './connection-auth.js'
 
 function bind(
 	cache: ConnectionAuthCache,

@@ -7,7 +7,7 @@ import {
 	type PartialStringSwitchCases,
 	type ObjectSwitchCases,
 	type PartialObjectSwitchCases
-} from '.'
+} from './index.js'
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Test helper types and values

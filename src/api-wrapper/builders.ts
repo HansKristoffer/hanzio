@@ -1,14 +1,14 @@
 import { ZodError } from 'zod'
-import { buildQueryString } from '../url'
-import { type ConfigError, RequestValidationError } from './errors'
-import { normalizeHeaders } from './headers'
+import { buildQueryString } from '../url/index.js'
+import { type ConfigError, RequestValidationError } from './errors.js'
+import { normalizeHeaders } from './headers.js'
 import type {
 	ApiErrorContext,
 	BaseApiUrl,
 	PathParams,
 	QueryParams
-} from './shared'
-import type { ApiEndpoint } from './types'
+} from './shared.js'
+import type { ApiEndpoint } from './types.js'
 
 export type BuildUrlOptions = {
 	endpoint: ApiEndpoint

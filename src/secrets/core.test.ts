@@ -1,10 +1,14 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { z } from 'zod'
-import { createSecretSet, defineSecretSet, type SecretSetLoader } from './core'
-import { resolveSecretEnvironment } from './environment'
-import { processEnvLoader } from './loaders'
-import { getViteDefine } from './vite'
-import { cloudflareWorkerEnvLoader } from './worker-loader'
+import {
+	createSecretSet,
+	defineSecretSet,
+	type SecretSetLoader
+} from './core.js'
+import { resolveSecretEnvironment } from './environment.js'
+import { processEnvLoader } from './loaders.js'
+import { getViteDefine } from './vite.js'
+import { cloudflareWorkerEnvLoader } from './worker-loader.js'
 
 const quiet = { logger: false as const }
 

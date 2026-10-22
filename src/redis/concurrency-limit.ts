@@ -1,4 +1,4 @@
-import { createLuaScript, type RedisSend } from './lua-script'
+import { createLuaScript, type RedisSend } from './lua-script.js'
 
 const POLL_MS = 100
 const FAILURE_LOG_THROTTLE_MS = 10_000

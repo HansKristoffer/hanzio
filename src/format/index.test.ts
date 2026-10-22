@@ -21,7 +21,7 @@ import {
 	getNumberFormat,
 	pluralize,
 	splitDuration
-} from '.'
+} from './index.js'
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND

@@ -1,4 +1,4 @@
-import type { UrlQueryParams } from '../url'
+import type { UrlQueryParams } from '../url/index.js'
 
 export type HttpMethod =
 	| 'GET'

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { z } from 'zod'
-import type { ActionsFactoryHelpers, ApiAction, ApiEndpoint } from '.'
+import type { ActionsFactoryHelpers, ApiAction, ApiEndpoint } from './index.js'
 import {
 	ActionError,
 	ConfigError,
@@ -8,8 +8,8 @@ import {
 	defineAction,
 	HttpResponseError,
 	RequestAbortedError
-} from '.'
-import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
+} from './index.js'
+import { createMockResponse, mockFetch, originalFetch } from './test-helpers.js'
 
 describe('createApiClient — actions', () => {
 	afterEach(() => {

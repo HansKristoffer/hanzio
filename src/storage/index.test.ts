@@ -6,7 +6,7 @@ import {
 	createMemoryStorage,
 	createStorageItem,
 	type SyncStorageLike
-} from '.'
+} from './index.js'
 
 const Prefs = z.object({ open: z.boolean(), width: z.number() })
 const fallback = { open: false, width: 320 }

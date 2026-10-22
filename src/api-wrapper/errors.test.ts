@@ -6,8 +6,8 @@ import {
 	isHttpResponseError,
 	RequestValidationError,
 	ResponseValidationError
-} from '.'
-import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
+} from './index.js'
+import { createMockResponse, mockFetch, originalFetch } from './test-helpers.js'
 
 describe('createApiClient — validation & HTTP errors', () => {
 	afterEach(() => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { paginate } from '.'
+import { paginate } from './index.js'
 
 const pages: Record<string, { items: number[]; next: string | null }> = {
 	start: { items: [1, 2], next: 'b' },

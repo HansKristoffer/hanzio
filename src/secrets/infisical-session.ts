@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { SecretLoadError } from './errors'
+import { SecretLoadError } from './errors.js'
 
 const sessionClaimsSchema = z.object({
 	organizationId: z.string().optional(),

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatPhone } from './phone'
+import { formatPhone } from './phone.js'
 
 describe('formatPhone', () => {
 	test('prints a local number the way a local writes it', () => {

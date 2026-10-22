@@ -1,4 +1,4 @@
-import type { ConfigError } from './errors'
+import type { ConfigError } from './errors.js'
 
 const CANONICAL_HEADER_NAMES: Record<string, string> = {
 	'content-type': 'Content-Type',

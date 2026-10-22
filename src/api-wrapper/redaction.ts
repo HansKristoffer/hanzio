@@ -1,4 +1,4 @@
-import type { ApiErrorContext } from './shared'
+import type { ApiErrorContext } from './shared.js'
 
 const SENSITIVE_HEADER_KEYS = new Set([
 	'authorization',

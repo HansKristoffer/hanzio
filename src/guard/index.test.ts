@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { InvariantError } from '../error'
+import { InvariantError } from '../error/index.js'
 import {
 	hasKey,
 	isBoolean,
@@ -13,7 +13,7 @@ import {
 	isString,
 	isTruthy,
 	nonEmpty
-} from '.'
+} from './index.js'
 
 describe('object guards', () => {
 	test('isRecord accepts non-null non-array objects', () => {

@@ -3,13 +3,13 @@
 
 import type { WritableComputedRef } from 'vue'
 import { createI18n, type I18nOptions, useI18n } from 'vue-i18n'
-import { createStorageItem, type SyncStorageLike } from '../storage'
+import { createStorageItem, type SyncStorageLike } from '../storage/index.js'
 import {
 	type LocaleRegistry,
 	type Messages,
 	type TranslationParamsMap,
 	typedTranslate
-} from '.'
+} from './index.js'
 
 type BrowserGlobals = {
 	navigator?: { language?: string }

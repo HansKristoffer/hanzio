@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import type { EnvironmentVariables } from './environment'
-import { SecretLoadError } from './errors'
+import type { EnvironmentVariables } from './environment.js'
+import { SecretLoadError } from './errors.js'
 
 const identityFileSchema = z.object({
 	clientId: z.string().min(1),

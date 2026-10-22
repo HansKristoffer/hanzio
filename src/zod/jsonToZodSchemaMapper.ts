@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { isRecord } from '../guard'
+import { isRecord } from '../guard/index.js'
 
 type ObjectConfig<V> =
 	V extends Record<string, unknown>

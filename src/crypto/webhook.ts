@@ -1,5 +1,5 @@
-import { decodeBase64 } from './encoding'
-import { hmacSign, safeEqual } from './hash'
+import { decodeBase64 } from './encoding.js'
+import { hmacSign, safeEqual } from './hash.js'
 
 export type VerifySvixSignatureOptions = {
 	/** Signing secret, `whsec_<base64>` (the prefix is optional). */

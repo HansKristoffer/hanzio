@@ -1,7 +1,7 @@
 // Locale-aware formatting on top of `Intl`. Every function takes the locale
 // (a BCP-47 tag) explicitly, and everything that reads the clock takes `now`.
 
-import { stableStringify } from '../string'
+import { stableStringify } from '../string/index.js'
 
 type DateInput = Date | string | number
 

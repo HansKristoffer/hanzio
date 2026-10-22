@@ -1,4 +1,4 @@
-import type { SecretSetLoader } from './core'
+import type { SecretSetLoader } from './core.js'
 
 /**
  * Reads secrets from a Cloudflare Worker `env` bindings object (or any similar

@@ -9,7 +9,7 @@ import {
 	shade,
 	toHex,
 	toRgbString
-} from '.'
+} from './index.js'
 
 describe('color contrast', () => {
 	test('parseColor handles hex, rgb() and hsl()', () => {

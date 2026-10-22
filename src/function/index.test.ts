@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test'
-import { createHeartbeat, debounce, keyedDebounce, once, throttle } from '.'
+import {
+	createHeartbeat,
+	debounce,
+	keyedDebounce,
+	once,
+	throttle
+} from './index.js'
 
 beforeEach(() => jest.useFakeTimers())
 afterEach(() => jest.useRealTimers())

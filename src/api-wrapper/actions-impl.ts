@@ -1,5 +1,5 @@
-import { createCache } from '../cache/createCache'
-import type { ActionCache, DefineAction } from './types'
+import { createCache } from '../cache/createCache.js'
+import type { ActionCache, DefineAction } from './types.js'
 
 export function createActionCache(): ActionCache {
 	const store = createCache()

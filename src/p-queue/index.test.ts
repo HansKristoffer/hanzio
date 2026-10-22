@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import PQueue, { TimeoutError } from '.'
-import { promiseTimeout } from '../promise'
+import PQueue, { TimeoutError } from './index.js'
+import { promiseTimeout } from '../promise/index.js'
 
 describe('PQueue', () => {
 	test('limits concurrency and resolves task results', async () => {

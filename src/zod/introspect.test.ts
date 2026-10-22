@@ -1,6 +1,11 @@
 import { describe, expect, expectTypeOf, test } from 'bun:test'
 import { z } from 'zod'
-import { getEnumValues, getObjectShape, unwrapSchema, zodDefaults } from '.'
+import {
+	getEnumValues,
+	getObjectShape,
+	unwrapSchema,
+	zodDefaults
+} from './index.js'
 
 describe('unwrapSchema', () => {
 	test('strips wrappers down to the base schema', () => {

@@ -1,5 +1,5 @@
 import type { z } from 'zod'
-import type { ApiEndpoint, CheckResponseContext } from './types'
+import type { ApiEndpoint, CheckResponseContext } from './types.js'
 
 /**
  * Defines an endpoint with full inference, as an alternative to

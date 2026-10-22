@@ -9,7 +9,7 @@ import {
 	typedEntries,
 	typedFromEntries,
 	typedKeys
-} from '.'
+} from './index.js'
 
 describe('typed object helpers', () => {
 	const user = { id: 1, name: 'Ada' }

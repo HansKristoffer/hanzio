@@ -6,9 +6,9 @@ import {
 	RequestAbortedError,
 	RequestTimeoutError,
 	ResponseValidationError
-} from '.'
-import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
-import { getRetryDelay } from './transport'
+} from './index.js'
+import { createMockResponse, mockFetch, originalFetch } from './test-helpers.js'
+import { getRetryDelay } from './transport.js'
 
 describe('createApiClient — retries & transport', () => {
 	afterEach(() => {

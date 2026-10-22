@@ -26,7 +26,7 @@ import {
 	utf8Encode,
 	verifyHmacSignature,
 	verifySvixSignature
-} from '.'
+} from './index.js'
 
 describe('encoding', () => {
 	test('base64 / base64url / hex round-trip all byte values', () => {

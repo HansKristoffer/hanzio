@@ -16,9 +16,13 @@ import {
 	type SealerOptions,
 	SealerError,
 	sealerKeyInputs
-} from './sealer'
+} from './sealer.js'
 
-export { SealerError, type SealerErrorCode, type SealerOptions } from './sealer'
+export {
+	SealerError,
+	type SealerErrorCode,
+	type SealerOptions
+} from './sealer.js'
 
 export type SealerSync = {
 	seal(plaintext: string): string

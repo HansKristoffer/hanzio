@@ -1,6 +1,6 @@
 import type { z } from 'zod'
-import type { Result } from '../promise'
-import type { ApiError } from './errors'
+import type { Result } from '../promise/index.js'
+import type { ApiError } from './errors.js'
 import type {
 	ApiErrorContext,
 	BaseApiUrl,
@@ -9,7 +9,7 @@ import type {
 	QueryParams,
 	RequestBodyFormat,
 	RequestMeta
-} from './shared'
+} from './shared.js'
 
 export interface ApiEndpoint<
 	TReqBody extends z.ZodType | undefined = z.ZodType | undefined,
@@ -436,4 +436,4 @@ export type {
 	QueryParams,
 	RequestBodyFormat,
 	ApiErrorContext
-} from './shared'
+} from './shared.js'

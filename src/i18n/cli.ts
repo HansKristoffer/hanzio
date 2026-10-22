@@ -9,13 +9,18 @@ import * as nodeModule from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
-import { CliError, type CommandContext, defineCli, defineCommand } from '../cli'
+import {
+	CliError,
+	type CommandContext,
+	defineCli,
+	defineCommand
+} from '../cli/index.js'
 import {
 	type CatalogIssue,
 	type I18nConfig,
 	validateCatalogs,
 	writeCatalogTypes
-} from './check'
+} from './check.js'
 
 const CONFIG_NAMES = [
 	'i18n.config.ts',

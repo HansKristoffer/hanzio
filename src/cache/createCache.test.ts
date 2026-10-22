@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { createCache } from './createCache'
+import { createCache } from './createCache.js'
 
 describe('createCache', () => {
 	test('getOrSet dedupes concurrent calls and caches the value', async () => {

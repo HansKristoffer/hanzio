@@ -1,5 +1,5 @@
-import { InvariantError } from '../error'
-import type { NonEmptyArray } from '../types'
+import { InvariantError } from '../error/index.js'
+import type { NonEmptyArray } from '../types/index.js'
 
 /** Non-null object that is not an array. */
 export function isRecord(value: unknown): value is Record<string, unknown> {

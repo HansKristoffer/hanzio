@@ -1,4 +1,4 @@
-import type { FetchLike } from './types'
+import type { FetchLike } from './types.js'
 
 export type MockFetch = FetchLike & {
 	/** Every request received, in order. Bodies are still readable. */

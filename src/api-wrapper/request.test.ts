@@ -6,8 +6,8 @@ import {
 	type ApiError,
 	ConfigError,
 	isApiError
-} from '.'
-import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
+} from './index.js'
+import { createMockResponse, mockFetch, originalFetch } from './test-helpers.js'
 
 describe('createApiClient — request & hooks', () => {
 	afterEach(() => {

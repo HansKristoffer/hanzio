@@ -1,13 +1,13 @@
 import type { ZodError } from 'zod'
-import { getHeader } from './headers'
-import type { ApiErrorContext } from './shared'
+import { getHeader } from './headers.js'
+import type { ApiErrorContext } from './shared.js'
 import {
 	formatZodIssues,
 	previewValue,
 	renderIssueSummary,
 	tryParseJson,
 	type FormattedZodIssue
-} from './zod-issues'
+} from './zod-issues.js'
 
 const MAX_BODY_PREVIEW = 500
 

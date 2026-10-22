@@ -1,12 +1,12 @@
 export {
 	type ConnectionAuthContractInput,
 	connectionAuthContract
-} from './connection-auth-contract'
-export { mockCallArg, type NoopLogger, noopLogger } from './helpers'
-export { ModuleMocker } from './module-mocker'
+} from './connection-auth-contract.js'
+export { mockCallArg, type NoopLogger, noopLogger } from './helpers.js'
+export { ModuleMocker } from './module-mocker.js'
 export {
 	createPrismaMock,
 	type DeepMockedPrisma,
 	type PrismaMethodMock
-} from './prisma'
-export { createTestStorage, installWindowShim } from './window'
+} from './prisma.js'
+export { createTestStorage, installWindowShim } from './window.js'

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { jwtDecode, jwtSign, jwtVerify, jwtVerifyResult } from '.'
+import { jwtDecode, jwtSign, jwtVerify, jwtVerifyResult } from './index.js'
 
 const secret = 'test-secret-at-least-32-chars-long!!'
 const now = () => Math.floor(Date.now() / 1000)

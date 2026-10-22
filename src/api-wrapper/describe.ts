@@ -7,8 +7,8 @@ import {
 	RequestTimeoutError,
 	RequestValidationError,
 	ResponseValidationError
-} from './errors'
-import { previewValue, renderIssueSummary } from './zod-issues'
+} from './errors.js'
+import { previewValue, renderIssueSummary } from './zod-issues.js'
 
 const BODY_PREVIEW = 500
 

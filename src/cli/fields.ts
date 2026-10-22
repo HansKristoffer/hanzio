@@ -1,6 +1,6 @@
 import type { z } from 'zod'
-import { unwrapOnce } from '../zod/introspect'
-import { type Def, defOf, type Schema } from '../zod/zodToTypeString'
+import { unwrapOnce } from '../zod/introspect.js'
+import { type Def, defOf, type Schema } from '../zod/zodToTypeString.js'
 
 // No runtime `zod` import: a CLI made only of raw commands loads without it.
 

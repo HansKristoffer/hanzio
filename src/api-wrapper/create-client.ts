@@ -11,33 +11,33 @@ import type {
 	ApiMiddlewareContext,
 	ApiWrapperResponse,
 	RequestInput
-} from './types'
-import type { PathParams, QueryParams } from './shared'
-import type { ApiErrorContext } from './shared'
+} from './types.js'
+import type { PathParams, QueryParams } from './shared.js'
+import type { ApiErrorContext } from './shared.js'
 import {
 	buildHeaders,
 	buildPathParams,
 	buildQueryParams,
 	buildRequestBody,
 	buildUrl
-} from './builders'
-import { err, exponentialBackoff, ok } from '../promise'
-import { createActionCache, makeDefineAction } from './actions-impl'
-import { reportApiError } from './error-reporting'
+} from './builders.js'
+import { err, exponentialBackoff, ok } from '../promise/index.js'
+import { createActionCache, makeDefineAction } from './actions-impl.js'
+import { reportApiError } from './error-reporting.js'
 import {
 	ActionError,
 	ApiError,
 	ApiResponseError,
 	ConfigError,
 	RequestValidationError
-} from './errors'
-import { calculateSizeInMb } from './size'
+} from './errors.js'
+import { calculateSizeInMb } from './size.js'
 import {
 	defaultShouldRetry,
 	makeRequestWithRetry,
 	type RequestConfig,
 	validateAndTransformResponse
-} from './transport'
+} from './transport.js'
 
 type AnyApiAction = ApiAction<unknown, unknown>
 

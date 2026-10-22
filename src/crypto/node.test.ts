@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { createSealer, SealerError } from '.'
-import { createSealerSync } from './node'
+import { createSealer, SealerError } from './index.js'
+import { createSealerSync } from './node.js'
 
 const secret = 'app-secret-with-enough-entropy-0123456789'
 

@@ -9,7 +9,7 @@ import {
 	parseRetryAfter,
 	replacePathParams,
 	trimTrailingSlash
-} from '.'
+} from './index.js'
 
 describe('getDomainFaviconUrl', () => {
 	test('builds Google favicon URL with encoded domain', () => {

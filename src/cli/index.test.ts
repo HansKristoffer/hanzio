@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
-import { type CliIO, CliError, defineCli, defineCommand } from '.'
+import { type CliIO, CliError, defineCli, defineCommand } from './index.js'
 
 function io(env: Record<string, string | undefined> = {}) {
 	const out = { stdout: '', stderr: '' }

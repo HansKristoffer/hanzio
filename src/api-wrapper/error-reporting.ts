@@ -1,8 +1,8 @@
-import type { ApiError } from './errors'
-import type { ApiClientConfig } from './types'
-import type { ApiErrorContext } from './shared'
-import { apiErrorLogAttributes, describeApiError } from './describe'
-import { defaultRedactContext } from './redaction'
+import type { ApiError } from './errors.js'
+import type { ApiClientConfig } from './types.js'
+import type { ApiErrorContext } from './shared.js'
+import { apiErrorLogAttributes, describeApiError } from './describe.js'
+import { defaultRedactContext } from './redaction.js'
 
 type ErrorHookConfig = Pick<
 	ApiClientConfig<never, never>,

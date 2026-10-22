@@ -124,3 +124,6 @@ section. Add it to `README.md` only if it belongs to the root entry.
 - Comments say how a function is used and why. They do not narrate each line.
 - Formatting follows Biome: tabs, single quotes, no semicolons, no trailing
   commas.
+- Relative imports name the file with a `.js` extension (`./cache.js`,
+  `../array/index.js`), so the emitted declarations resolve for NodeNext
+  consumers. `bunx biome check --write` adds them.
