@@ -1,4 +1,7 @@
-import type { SecretRequestOptions } from './deadline'
+import {
+	DEFAULT_SECRET_TIMEOUT_MS,
+	type SecretRequestOptions
+} from './deadline'
 import { getProcessEnvironment } from './environment'
 import { SecretLoadError } from './errors'
 
@@ -43,7 +46,7 @@ export async function readInfisicalCliToken(
 					env,
 					encoding: 'utf8',
 					shell: false,
-					timeout: options.timeoutMs ?? 30_000,
+					timeout: options.timeoutMs ?? DEFAULT_SECRET_TIMEOUT_MS,
 					signal: options.signal,
 					killSignal: 'SIGKILL',
 					maxBuffer: 10 * 1024 * 1024,
@@ -87,7 +90,7 @@ export async function readInfisicalCliToken(
 		if (failure?.killed) {
 			throw new SecretLoadError(
 				'TIMEOUT',
-				`Infisical CLI timed out after ${(options.timeoutMs ?? 30_000) / 1000} seconds or was terminated.`
+				`Infisical CLI timed out after ${(options.timeoutMs ?? DEFAULT_SECRET_TIMEOUT_MS) / 1000} seconds or was terminated.`
 			)
 		}
 

@@ -1,5 +1,13 @@
 import { z } from 'zod'
-import { createApiClient, HttpResponseError } from '../api-wrapper'
+import {
+	createApiClient,
+	HttpResponseError,
+	NetworkError,
+	type OnRetryContext,
+	RequestTimeoutError
+} from '../api-wrapper'
+import { exponentialBackoff } from '../promise'
+import type { SecretRetry } from './core'
 import { withSecretDeadline } from './deadline'
 import { getProcessEnvironment } from './environment'
 import { SecretLoadError } from './errors'
@@ -11,6 +19,8 @@ import { parseInfisicalSessionToken } from './infisical-session'
 export const DEFAULT_INFISICAL_SITE_URL = 'https://eu.infisical.com'
 
 export type InfisicalAuthMode = 'auto' | 'http' | 'cli'
+
+type ReportRetry = { readonly reportRetry?: (retry: SecretRetry) => void }
 
 const defaultFetch = globalThis.fetch
 
@@ -26,10 +36,11 @@ const infisicalSecretsResponseSchema = z.object({
 })
 
 export async function fetchInfisicalSecrets<K extends string>(
-	options: InfisicalScope<K> & {
-		readonly clientId: string
-		readonly clientSecret: string
-	}
+	options: InfisicalScope<K> &
+		ReportRetry & {
+			readonly clientId: string
+			readonly clientSecret: string
+		}
 ): Promise<Partial<Record<K, string>>> {
 	validateInfisicalScope(options)
 
@@ -37,7 +48,10 @@ export async function fetchInfisicalSecrets<K extends string>(
 		let operation = 'login'
 
 		try {
-			const infisical = createInfisicalApiClient(options.siteUrl)
+			const infisical = createInfisicalApiClient(
+				options.siteUrl,
+				options.reportRetry
+			)
 			const { data: auth } = await infisical.request('login', {
 				signal,
 				reqBody: {
@@ -62,12 +76,13 @@ export async function fetchInfisicalSecrets<K extends string>(
 }
 
 export type LoadInfisicalSecretsFromEnvOptions<K extends string> =
-	InfisicalScope<K> & {
-		readonly clientIdEnvKey: string
-		readonly clientSecretEnvKey: string
-		readonly auth?: InfisicalAuthMode
-		readonly reportSource?: (source: string) => void
-	}
+	InfisicalScope<K> &
+		ReportRetry & {
+			readonly clientIdEnvKey: string
+			readonly clientSecretEnvKey: string
+			readonly auth?: InfisicalAuthMode
+			readonly reportSource?: (source: string) => void
+		}
 
 export async function loadInfisicalSecrets<K extends string>(
 	options: LoadInfisicalSecretsFromEnvOptions<K>
@@ -125,15 +140,19 @@ export async function loadInfisicalSecrets<K extends string>(
 }
 
 async function fetchInfisicalSessionSecrets<K extends string>(
-	options: InfisicalScope<K> & { signal: AbortSignal }
+	options: InfisicalScope<K> & ReportRetry & { signal: AbortSignal }
 ): Promise<Partial<Record<K, string>>> {
 	const { signal } = options
+	// The CLI reads its local session, so only the HTTP calls below retry.
 	let token = await readInfisicalCliToken(options)
 
 	signal.throwIfAborted()
 
 	const session = parseInfisicalSessionToken(token)
-	const infisical = createInfisicalApiClient(options.siteUrl)
+	const infisical = createInfisicalApiClient(
+		options.siteUrl,
+		options.reportRetry
+	)
 	let operation = 'selectOrganization'
 
 	try {
@@ -239,7 +258,14 @@ function throwInfisicalHttpError(
 	)
 }
 
-function createInfisicalApiClient(siteUrl: string) {
+// A process that boots during a short network outage should wait it out, not
+// crash. Network errors, per-attempt timeouts, 429 and 5xx retry with capped,
+// jittered backoff until the caller's deadline aborts the signal. Other 4xx
+// responses, such as a wrong client secret, fail on the first answer.
+function createInfisicalApiClient(
+	siteUrl: string,
+	reportRetry?: (retry: SecretRetry) => void
+) {
 	return createApiClient({
 		name: 'infisical',
 		baseApiUrls: {
@@ -247,7 +273,20 @@ function createInfisicalApiClient(siteUrl: string) {
 		},
 		defaultBaseApiUrl: 'infisical',
 		fetch: getFetch(),
-		retries: 1,
+		retries: Number.POSITIVE_INFINITY,
+		// A blackholed connection must not use up the whole deadline in one attempt.
+		timeoutMs: 10_000,
+		retryDelayMs: (attempt) =>
+			exponentialBackoff(attempt + 1, { baseMs: 500, maxMs: 5_000 }),
+		// Also caps a Retry-After header.
+		maxRetryDelayMs: 5_000,
+		onRetry: (context) =>
+			reportRetry?.({
+				operation: context.endpoint?.replace(/^infisical\./, '') ?? 'request',
+				attempt: context.nextAttempt,
+				delayMs: context.delayMs,
+				reason: describeRetryReason(context)
+			}),
 		endpoints: {
 			// Internal endpoint also used by Infisical CLI init. Keep its contract
 			// isolated here so upstream authentication changes have one integration point.
@@ -293,6 +332,32 @@ function createInfisicalApiClient(siteUrl: string) {
 			}
 		}
 	})
+}
+
+// Raw errors can carry URLs, headers or bodies; keep a status, or a short code
+// such as ECONNREFUSED (Node puts it on the cause, Bun on the error itself).
+function describeRetryReason({ response, error }: OnRetryContext): string {
+	if (response) {
+		return `status ${response.status}`
+	}
+
+	if (error instanceof RequestTimeoutError) {
+		return 'timeout'
+	}
+
+	const cause = error instanceof NetworkError ? error.cause : undefined
+	const code =
+		readErrorCode(cause) ?? readErrorCode((cause as { cause?: unknown })?.cause)
+
+	return code ?? 'network error'
+}
+
+function readErrorCode(error: unknown): string | undefined {
+	const code = (error as { code?: unknown } | null | undefined)?.code
+
+	return typeof code === 'string' && /^[A-Za-z0-9_]{1,40}$/.test(code)
+		? code
+		: undefined
 }
 
 function getFetch(): typeof fetch {
