@@ -27,7 +27,8 @@ export function infisicalLoader<SecretKey extends string>(
 			clientSecret: config.clientSecret,
 			secretPath: config.secretPath,
 			timeoutMs: config.timeoutMs ?? ctx.timeoutMs,
-			signal: ctx.signal
+			signal: ctx.signal,
+			reportRetry: ctx.reportRetry
 		})
 
 	return Object.assign(loader, { source: 'Infisical HTTP' })

@@ -97,7 +97,8 @@ beforeEach(() => {
 			return Response.json({ secrets: remoteSecrets })
 		}
 
-		throw new Error('Unexpected HTTP request')
+		// A 404 is not retried, so a test that reaches it fails fast.
+		return new Response('Unexpected HTTP request', { status: 404 })
 	}) as unknown as typeof fetch
 })
 
@@ -229,7 +230,7 @@ describe('Infisical CLI fallback', () => {
 		expect(settings).toMatchObject({
 			shell: false,
 			encoding: 'utf8',
-			timeout: 30_000,
+			timeout: 60_000,
 			killSignal: 'SIGKILL',
 			maxBuffer: 10 * 1024 * 1024
 		})
@@ -412,7 +413,7 @@ describe('Infisical CLI fallback', () => {
 	test.each([
 		[{ code: 'ENOENT' }, 'Infisical CLI not found'],
 		[{ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, '10 MiB limit'],
-		[{ killed: true }, 'timed out after 30 seconds'],
+		[{ killed: true }, 'timed out after 60 seconds'],
 		[{ code: 1 }, 'infisical login --domain=https://eu.infisical.com'],
 		[{ code: 'EACCES' }, 'Infisical CLI session token failed']
 	])('sanitizes subprocess errors (%j)', async (details, message) => {
@@ -1059,5 +1060,137 @@ describe('required Infisical organization configuration', () => {
 
 		expect(execute).not.toHaveBeenCalled()
 		expect(globalThis.fetch).not.toHaveBeenCalled()
+	})
+})
+
+describe('Infisical retries during a network outage', () => {
+	const credentials = { clientId: 'id', clientSecret: 'secret' }
+	let randomSpy: ReturnType<typeof spyOn<Math, 'random'>>
+
+	// Full jitter with random() = 0 makes every backoff wait 0 ms.
+	beforeEach(() => {
+		randomSpy = spyOn(Math, 'random').mockReturnValue(0)
+	})
+
+	afterEach(() => {
+		randomSpy.mockRestore()
+	})
+
+	function connectionRefused() {
+		// Node's fetch shape: the platform code sits on the cause.
+		return Object.assign(new TypeError('fetch failed'), {
+			cause: Object.assign(new Error('connect ECONNREFUSED private-host'), {
+				code: 'ECONNREFUSED'
+			})
+		})
+	}
+
+	test('keeps retrying transient failures until Infisical answers', async () => {
+		let logins = 0
+		let lists = 0
+
+		globalThis.fetch = mock(async (url: string | URL | Request) => {
+			if (new URL(String(url)).pathname.endsWith('/login')) {
+				if (++logins <= 3) {
+					throw connectionRefused()
+				}
+
+				return Response.json({ accessToken: 'private-token' })
+			}
+
+			if (++lists === 1) {
+				return Response.json({ message: 'private-body' }, { status: 503 })
+			}
+
+			return Response.json({ secrets: remoteSecrets })
+		}) as unknown as typeof fetch
+		const warn = mock((_message: string, _attributes: unknown) => {})
+
+		const set = await defineSecretSet(options.keys, {
+			loader: infisicalLoader({
+				organizationId: 'org-a',
+				projectId: 'project-id',
+				...credentials
+			}),
+			environment: 'staging',
+			writeToProcessEnv: false,
+			logger: { info: () => {}, error: () => {}, warn }
+		})
+
+		expect(set.secret('TEST_CLI_SECRET')).toBe('remote-value')
+		expect(warn.mock.calls).toEqual(
+			(
+				[
+					['login', 1, 'ECONNREFUSED'],
+					['login', 2, 'ECONNREFUSED'],
+					['login', 3, 'ECONNREFUSED'],
+					['listSecrets', 1, 'status 503']
+				] as const
+			).map(([operation, attempt, reason]) => [
+				'Retrying secret load',
+				{ environment: 'staging', operation, attempt, delayMs: 0, reason }
+			])
+		)
+		expect(JSON.stringify(warn.mock.calls)).not.toContain('private')
+	})
+
+	test.each([401, 403])('does not retry a %d login', async (status) => {
+		globalThis.fetch = mock(async () =>
+			Response.json({ message: 'denied' }, { status })
+		) as unknown as typeof fetch
+		const reportRetry = mock(() => {})
+
+		await expect(
+			fetchInfisicalSecrets({ ...options, ...credentials, reportRetry })
+		).rejects.toMatchObject({ code: 'HTTP', operation: 'login', status })
+
+		expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+		expect(reportRetry).not.toHaveBeenCalled()
+	})
+
+	test('stops retrying at the deadline with a TIMEOUT error', async () => {
+		const failingFetch = mock(async () => {
+			throw connectionRefused()
+		})
+
+		globalThis.fetch = failingFetch as unknown as typeof fetch
+		await expect(
+			fetchInfisicalSecrets({ ...options, ...credentials, timeoutMs: 50 })
+		).rejects.toMatchObject({ code: 'TIMEOUT' })
+
+		const attempts = failingFetch.mock.calls.length
+
+		expect(attempts).toBeGreaterThan(1)
+		await new Promise((resolve) => setTimeout(resolve, 30))
+		expect(failingFetch).toHaveBeenCalledTimes(attempts)
+	})
+
+	test('caps Retry-After and never waits past the deadline', async () => {
+		globalThis.fetch = mock(
+			async () =>
+				new Response('busy', {
+					status: 429,
+					headers: { 'retry-after': '3600' }
+				})
+		) as unknown as typeof fetch
+		const reportRetry = mock(() => {})
+		const startedAt = Date.now()
+
+		await expect(
+			fetchInfisicalSecrets({
+				...options,
+				...credentials,
+				timeoutMs: 100,
+				reportRetry
+			})
+		).rejects.toMatchObject({ code: 'TIMEOUT' })
+
+		expect(Date.now() - startedAt).toBeLessThan(1000)
+		expect(reportRetry).toHaveBeenCalledWith({
+			operation: 'login',
+			attempt: 1,
+			delayMs: 5000,
+			reason: 'status 429'
+		})
 	})
 })

@@ -5,12 +5,18 @@ export type SecretRequestOptions = {
 	readonly signal?: AbortSignal
 }
 
+/**
+ * Long enough for a startup load to ride out a short network outage, short
+ * enough that a broken deployment still fails and restarts within a minute.
+ */
+export const DEFAULT_SECRET_TIMEOUT_MS = 60_000
+
 /** One deadline includes authentication, retries, body reads, and validation. */
 export async function withSecretDeadline<T>(
 	options: SecretRequestOptions,
 	operation: (signal: AbortSignal) => Promise<T>
 ): Promise<T> {
-	const timeoutMs = options.timeoutMs ?? 30_000
+	const timeoutMs = options.timeoutMs ?? DEFAULT_SECRET_TIMEOUT_MS
 
 	if (
 		!Number.isFinite(timeoutMs) ||

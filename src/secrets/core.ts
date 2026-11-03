@@ -1,4 +1,8 @@
-import { withSecretDeadline, type SecretRequestOptions } from './deadline'
+import {
+	DEFAULT_SECRET_TIMEOUT_MS,
+	withSecretDeadline,
+	type SecretRequestOptions
+} from './deadline'
 import {
 	resolveSecretEnvironment,
 	type EnvironmentVariables,
@@ -18,9 +22,25 @@ export type SecretLogAttributes = {
 	readonly code?: string
 }
 
+/** A transient failure a loader is about to retry. Holds no values, tokens or responses. */
+export type SecretRetry = {
+	readonly operation: string
+	/** 1-based number of the retry about to start. */
+	readonly attempt: number
+	readonly delayMs: number
+	/** `status 503`, `timeout`, or a network error code such as `ECONNREFUSED`. */
+	readonly reason: string
+}
+
+export type SecretRetryLogAttributes = SecretRetry & {
+	readonly environment: string
+}
+
 export type SecretLogger = {
 	info: (message: string, attributes: SecretLogAttributes) => void
 	error: (message: string, attributes: SecretLogAttributes) => void
+	/** Called before each retry, so a slow startup shows why it is waiting. */
+	warn?: (message: string, attributes: SecretRetryLogAttributes) => void
 }
 
 export type SecretSchema<K extends string, Parsed> = {
@@ -52,6 +72,9 @@ export type SecretSetLoaderContext<K extends string> = {
 
 	/** Report the source actually selected by a dynamic loader. */
 	readonly reportSource?: (source: string) => void
+
+	/** Report a transient failure before retrying it; logged as `Retrying secret load`. */
+	readonly reportRetry?: (retry: SecretRetry) => void
 }
 
 export type SecretSetLoader<K extends string> = ((
@@ -95,7 +118,11 @@ const defaultLogger: SecretLogger = {
 			`${message} environment=${attrs.environment} count=${attrs.count} source=${attrs.source} durationMs=${attrs.durationMs}`,
 			{ sources: attrs.sources }
 		),
-	error: (message, attrs) => console.error(message, attrs)
+	error: (message, attrs) => console.error(message, attrs),
+	warn: (message, attrs) =>
+		console.warn(
+			`${message} environment=${attrs.environment} operation=${attrs.operation} attempt=${attrs.attempt} delayMs=${attrs.delayMs} reason=${attrs.reason}`
+		)
 }
 
 function readOverrides<K extends string>(
@@ -179,9 +206,17 @@ export function createSecretSet<
 					keys: missing,
 					environment,
 					signal,
-					timeoutMs: request.timeoutMs ?? options.timeoutMs ?? 30_000,
+					timeoutMs:
+						request.timeoutMs ?? options.timeoutMs ?? DEFAULT_SECRET_TIMEOUT_MS,
 					reportSource: (source) => {
 						loaderSource = source
+					},
+					reportRetry: (retry) => {
+						try {
+							logger?.warn?.('Retrying secret load', { environment, ...retry })
+						} catch {
+							/* Logging cannot change a load result. */
+						}
 					}
 				})
 			} catch (error) {

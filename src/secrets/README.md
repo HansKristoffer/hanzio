@@ -230,9 +230,19 @@ and `parsed()` return copies.
 
 ## Deadlines and cancellation
 
-`timeoutMs` defaults to 30,000. The overall deadline covers authentication,
+`timeoutMs` defaults to 60,000. The overall deadline covers authentication,
 fetching, retries, response body reads, and schema validation. `signal` accepts
 an `AbortSignal`; subprocesses and HTTP requests receive cancellation.
+
+Infisical HTTP requests keep retrying until the deadline when the failure is
+transient: a network error such as `ECONNREFUSED`, no response within 10
+seconds, or a 429 or 5xx status. Waits grow exponentially from 0.5 seconds with
+full jitter, capped at 5 seconds (`Retry-After` included), and the deadline
+cuts a wait short. An app that boots during a short network outage therefore
+starts once the network returns, and fails with `TIMEOUT` if the outage
+outlasts `timeoutMs`. Any other 4xx response, such as a wrong client secret,
+fails on the first answer. The Infisical CLI subprocess only reads its local
+session and is not retried; the HTTP requests that follow it are.
 
 ```ts
 const controller = new AbortController()
@@ -299,10 +309,22 @@ A custom loader defaults to `custom loader`; set its `source` property or call
 `context.reportSource('provider name')` for a dynamic source. Source labels are
 caller-controlled metadata: never put secret values in them.
 
+Each retry logs a warning first, so a slow startup shows what it waits for:
+
+```text
+Retrying secret load environment=prod operation=login attempt=3 delayMs=1840 reason=ECONNREFUSED
+```
+
+`reason` is `status <code>`, `timeout`, or the network error code. It never
+contains URLs, responses or tokens.
+
 Set `logger: false` to disable logs, or pass an object with `info(message,
-attributes)` and `error(message, attributes)` methods. The `sources` attribute
-is a source-to-count object. Failures log only environment, count, duration,
-and an error code. Logger exceptions do not change the load result.
+attributes)` and `error(message, attributes)` methods, plus an optional
+`warn(message, attributes)` for retries. The `sources` attribute is a
+source-to-count object. Failures log only environment, count, duration, and an
+error code. Logger exceptions do not change the load result. A custom loader
+can report its own retries with `context.reportRetry({ operation, attempt,
+delayMs, reason })`.
 
 `SecretLoadError` exposes a stable `code`, and optionally HTTP `operation` and
 `status`. Codes include `CONFIGURATION`, `AUTHENTICATION`, `HTTP`, `CLI`,
@@ -404,7 +426,7 @@ when building a staging configuration.
 ## Validation
 
 `bun test` covers ownership, reload races, validation, source reports, safe
-errors, authentication selection, paths, deadlines, and cancellation.
+errors, authentication selection, paths, deadlines, retries, and cancellation.
 Organization tests cover concurrent sets, rereading the session on reload, MFA,
 expired tokens, denied access, and sanitized errors.
 `bun run test:secrets:runtime` builds and packs the package, exercises a fake
