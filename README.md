@@ -80,6 +80,10 @@ in CI, so this table and `package.json#exports` can't drift apart.
   `hanzio/secrets/vite`.
 - The default secrets logger writes `Loaded secrets …` to stderr instead of
   stdout.
+- An Infisical secret set without a `projectId` fails when it is declared,
+  like a missing `organizationId`. It used to pass when environment overrides
+  supplied every key. Use a custom loader, such as `processEnvLoader`, for sets
+  that never reach Infisical.
 - An Infisical CLI session that is expired, or that does not answer within 5
   seconds, fails with `AUTHENTICATION` and says to run `infisical login`,
   instead of `TIMEOUT` after the whole load deadline.
