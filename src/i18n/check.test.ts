@@ -7,7 +7,7 @@ import {
 	writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { generateCatalogTypes } from './catalog'
 import {
 	type CatalogConfig,
@@ -309,6 +309,148 @@ describe('validateCatalogs', () => {
 	})
 })
 
+/** A temp root holding `files`, keyed by path; objects are written as JSON. */
+function tree(files: Record<string, unknown>) {
+	const root = mkdtempSync(join(tmpdir(), 'hanzio-i18n-'))
+	roots.push(root)
+	for (const [path, contents] of Object.entries(files)) {
+		mkdirSync(dirname(join(root, path)), { recursive: true })
+		writeFileSync(
+			join(root, path),
+			typeof contents === 'string' ? contents : JSON.stringify(contents)
+		)
+	}
+	return root
+}
+
+describe('area folders', () => {
+	const config = {
+		baseLocale: 'en',
+		locales: ['en', 'da'],
+		catalogs: [
+			{
+				name: 'platform',
+				dir: 'src/locales',
+				runtime: 'plain',
+				generatedTypes: 'src/locales/i18n.generated.ts',
+				sourceRoots: ['src']
+			}
+		]
+	} as const
+
+	test('merges each area file under its camelCased name', async () => {
+		const root = tree({
+			'src/locales/en/vault-io.json': { title: 'Import {name}' },
+			'src/locales/en/settings.json': { save: 'Save', dead: 'Dead' },
+			'src/locales/en/index.ts': "import settings from './settings.json'",
+			'src/locales/da/vault-io.json': { title: 'Importer {name}' },
+			'src/locales/da/settings.json': { save: 'Gem', dead: 'Død' },
+			// The catalog folder names every key; it must not count as a use.
+			'src/locales/keys.ts': "t('settings.dead')",
+			'src/app.ts': "t('vaultIo.title')\nt('settings.save')"
+		})
+		const { written, issues } = writeCatalogTypes(config, { root })
+		expect(issues).toEqual([])
+		expect(readFileSync(written[0]!, 'utf8')).toContain(
+			"\t'vaultIo.title': 'name'"
+		)
+		expect(await validateCatalogs(config, { root })).toEqual([
+			{
+				catalog: 'platform',
+				message:
+					'1 unused key(s) under "settings" - nothing in src references them: settings.dead'
+			}
+		])
+	})
+
+	test('counts locale folders as locale files', async () => {
+		const root = tree({
+			'src/locales/en/settings.json': { save: 'Save' },
+			'src/locales/fr/settings.json': { save: 'Enregistrer' }
+		})
+		expect(
+			await messagesOf(
+				validateCatalogs(config, { root, checkGeneratedTypes: false })
+			)
+		).toEqual([
+			'missing locale file(s): da',
+			'unregistered locale file(s): fr',
+			'1 unused key(s) under "settings" - nothing in src references them: settings.save'
+		])
+	})
+
+	test('reports a missing area file, invalid JSON and clashing names', async () => {
+		const root = tree({
+			'src/locales/en/settings.json': { save: 'Save' },
+			'src/locales/en/vault-io.json': { title: 'Import' },
+			'src/locales/en/vault_io.json': { other: 'Other' },
+			'src/locales/da/vault-io.json': '{ "title": ',
+			'src/app.ts': "t('settings.save')\nt('vaultIo.title')"
+		})
+		const issues = await validateCatalogs(config, {
+			root,
+			checkGeneratedTypes: false
+		})
+		expect(
+			issues.map(({ locale, message }) => `${locale}: ${message}`)
+		).toEqual([
+			'en: area files en/vault-io.json and en/vault_io.json both map to namespace "vaultIo"',
+			expect.stringMatching(/^da: invalid JSON in da\/vault-io\.json - /),
+			'da: missing area file(s): da/settings.json, da/vault_io.json',
+			'da: missing translation key(s): settings.save, vaultIo.title'
+		])
+	})
+})
+
+describe('sameValues', () => {
+	// Every locale reuses the same copy, so keep only this rule's issues.
+	async function check(platform: unknown, expo: unknown) {
+		const root = tree({
+			'platform/en.json': platform,
+			'platform/da.json': platform,
+			'expo/en.json': expo,
+			'expo/da.json': expo
+		})
+		return await validateCatalogs(
+			{
+				baseLocale: 'en',
+				locales: ['en', 'da'],
+				catalogs: [
+					{ name: 'platform', dir: 'platform', runtime: 'vue-i18n' },
+					{ name: 'expo', dir: 'expo', runtime: 'i18next' }
+				],
+				sameValues: [['platform', 'expo']]
+			},
+			{ root, checkGeneratedTypes: false }
+		).then((issues) =>
+			issues.filter((issue) => issue.catalog === 'platform/expo')
+		)
+	}
+
+	test('reports a shared key whose text differs, per locale', async () => {
+		const issues = await check(
+			{ support: { defaultAgent: 'The default assistant', own: 'Platform' } },
+			{ support: { defaultAgent: 'The default agent', other: 'Expo' } }
+		)
+		expect(issues).toEqual(
+			['da', 'en'].map((locale) => ({
+				catalog: 'platform/expo',
+				locale,
+				message: `"support.defaultAgent" differs between platform and expo in ${locale}: "The default assistant" vs "The default agent"`
+			}))
+		)
+	})
+
+	test("reads i18next's {{name}} as {name} and compares plural keys as they are", async () => {
+		expect(
+			await check(
+				{ greeting: 'Hi {name}', cars_one: 'One car' },
+				{ greeting: 'Hi {{ name }}', cars_one: 'One car', cars_other: 'Cars' }
+			)
+		).toEqual([])
+	})
+})
+
 describe('generated types', () => {
 	test('include placeholders and runtime plural counts', () => {
 		expect(
@@ -456,6 +598,7 @@ test('defineI18nConfig only accepts declared locales and catalogs', () => {
 			{ name: 'widget', dir: 'b', runtime: 'vue-i18n' }
 		],
 		disjointNamespaces: [['platform', 'widget']],
+		sameValues: [['platform', 'widget']],
 		rules: { identical: { allowKeys: { 'common.send': ['da'] } } }
 	})
 	expectTypeOf(config.locales).toEqualTypeOf<readonly ('en' | 'da')[]>()
@@ -473,6 +616,13 @@ test('defineI18nConfig only accepts declared locales and catalogs', () => {
 			catalogs: [{ name: 'platform', dir: 'a', runtime: 'plain' }],
 			// @ts-expect-error not a declared catalog
 			disjointNamespaces: [['platform', 'widgte']]
+		})
+		defineI18nConfig({
+			baseLocale: 'en',
+			locales: ['en'],
+			catalogs: [{ name: 'platform', dir: 'a', runtime: 'plain' }],
+			// @ts-expect-error not a declared catalog
+			sameValues: [['platform', 'expo']]
 		})
 		defineI18nConfig({
 			baseLocale: 'en',

@@ -113,7 +113,7 @@ uiLocales.tag('da') // 'da-DK', for Intl
 uiLocales.name('nb') // 'Norsk bokmål', for pickers
 ```
 
-Ids name the catalog files (`da.json`). A server enum such as `da_DK` matches
+Ids name the catalog files (`da.json`, or a `da/` folder). A server enum such as `da_DK` matches
 too, and `tag(locale).replace('-', '_')` goes the other way.
 
 `createLocaleSelector` switches the locale at once and rolls back when saving
@@ -150,13 +150,43 @@ export const { i18n, setLocale, useI18n } = createVueI18n({
 export const useAppI18n = () => useI18n<AppTranslationParams>()
 ```
 
+To keep that wrapper the only caller of vue-i18n's own `useI18n`, ban the
+import in `biome.json`:
+
+```json
+{
+	"linter": {
+		"rules": {
+			"style": {
+				"noRestrictedImports": {
+					"level": "error",
+					"options": {
+						"paths": {
+							"vue-i18n": {
+								"importNames": ["useI18n"],
+								"message": "Use the app's useI18n from createVueI18n."
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+```
+
+The file that calls `createVueI18n` passes the import through, so allow it
+there with an `overrides` entry that turns the rule off for that file, or a
+`// biome-ignore lint/style/noRestrictedImports: <reason>` on the import.
+
 The stored value is the raw locale id. After sign-in, call `setLocale` with the
 user's saved locale so pre-auth screens match on the next visit.
 
 `hanzio/i18n/vite` has `localeCatalogReloadPlugin()`, a dev-server plugin for
-`@intlify/unplugin-vue-i18n`: an edited `locales/*.json` reloads the page with
-fresh catalogs instead of serving the old ones until a restart. Pass
-`{ match }` if your catalogs are not in `locales` folders.
+`@intlify/unplugin-vue-i18n`: an edited `.json` file below a `locales` folder
+(`locales/en.json`, `locales/en/settings.json`) reloads the page with fresh
+catalogs instead of serving the old ones until a restart. Pass `{ match }` if
+your catalogs are not in `locales` folders.
 
 ## i18next
 
@@ -191,8 +221,11 @@ Other options go to `i18n.init`. Type `useTranslation()`'s `t` with
 
 ## Catalog checks
 
-The `hanzio-i18n` bin checks catalogs stored as one JSON file per locale
-(`<dir>/<locale>.json`), with the base locale as the source of truth:
+The `hanzio-i18n` bin checks JSON catalogs with the base locale as the source
+of truth. Each locale is one file, `<dir>/<locale>.json`, or a folder of area
+files, `<dir>/<locale>/*.json`. An area file's content sits under its
+camelCased file name: `en/vault-io.json` holds the `vaultIo.*` keys. Other
+files in the folder, such as an `index.ts` barrel, are ignored.
 
 ```bash
 hanzio-i18n check     # fails with one line per problem
@@ -201,8 +234,9 @@ hanzio-i18n generate  # writes each catalog's generatedTypes
 
 Both read `i18n.config.ts` (or `.mts`, `.js`, `.mjs`, or `--config <file>`)
 from the current directory; paths in it are relative to the config file.
-`defineI18nConfig` rejects a `baseLocale`, `disjointNamespaces` catalog or
-`identical.allowKeys` locale the config does not declare. A
+`defineI18nConfig` rejects a `baseLocale`, `disjointNamespaces` or
+`sameValues` catalog, or `identical.allowKeys` locale the config does not
+declare. A
 `.ts` config needs Bun or Node 22.18+. Its relative imports may leave out the
 extension or `/index`, as TypeScript's bundler resolution allows, so
 `npx hanzio-i18n check` works without `bun --bun`. The bin is built
@@ -229,6 +263,7 @@ export default defineI18nConfig({
 		{ name: 'expo', dir: 'apps/expo/src/locales', runtime: 'i18next' }
 	],
 	disjointNamespaces: [['platform', 'widget']],
+	sameValues: [['platform', 'expo']],
 	rules: {
 		exemptKeyPrefixes: ['admin.'],
 		bannedWords: { translations: ['workflow', 'payload'] },
@@ -240,7 +275,10 @@ export default defineI18nConfig({
 
 What `check` reports:
 
-- Locale files missing from `locales`, or not in it.
+- Locale files or folders missing from `locales`, or not in it, and area files
+  the base locale has that a translation lacks.
+- Area files whose names camelCase to the same namespace (`vault-io.json`,
+  `vault_io.json`).
 - Leaves that are not strings, empty or dotted key segments, text that is not
   NFC-normalized, likely mojibake (`Ã¦`).
 - Keys missing from or stale in a translation, and placeholder sets that
@@ -263,6 +301,9 @@ What `check` reports:
 - `generatedTypes` files that do not match the base catalog.
 - `disjointNamespaces`: catalogs merged into one runtime that share a
   top-level key.
+- `sameValues`: a key two catalogs of a group both have, with different text
+  in a locale. i18next's `{{name}}` counts as `{name}`; plural keys
+  (`key_one`) compare as written.
 
 `runtime` also decides plural keys in the generated map: vue-i18n's `a | b`
 messages and i18next's `key_one`/`key_other` (merged into `key`) take a
