@@ -127,8 +127,33 @@ await sealer.open(sealed)
 - `sealJson` stores `JSON.stringify(value)`. It throws for `undefined` and for
   functions.
 
-- `fallbacks: [{ salt, info }]`: older contexts `open` also tries, so values
-  sealed before a rename stay readable. `seal` always uses `salt` and `info`.
+- `fallbacks: [{ secret?, salt, info }]`: older contexts `open` also tries, so
+  values sealed before a rename or a secret rotation stay readable. `seal`
+  always uses the primary `secret`, `salt` and `info`. A fallback without a
+  `secret` property uses the primary secret. One whose `secret` is `undefined`
+  or empty is skipped, so it can read an optional env key:
+
+  ```ts
+  const sealer = createSealer({
+  	secret: process.env.APP_SECRET,
+  	info: 'app.credentials.v1',
+  	fallbacks: [{ secret: process.env.APP_SECRET_PREVIOUS, info: 'app.credentials.v1' }]
+  })
+  ```
+
+- `needsReseal(sealed)` is `true` when only a fallback opens the value, so a
+  background job can seal it again under the primary context and the fallback
+  can be dropped later. It is also `true` for an unsealed value that
+  `passthroughUnsealed` lets through, and it throws like `open` for anything
+  `open` cannot read. The async sealer returns a promise, the sync one a
+  boolean.
+
+  ```ts
+  if (await sealer.needsReseal(row.credentials)) {
+  	await save(row.id, await sealer.sealJson(await sealer.openJson(row.credentials)))
+  }
+  ```
+
 - `passthroughUnsealed: true`: `open` and `openJson` return a value that was
   never sealed (`{}`, a legacy plaintext) unchanged instead of throwing.
   Malformed `enc:v1:` values and other envelope versions still throw.
@@ -155,4 +180,5 @@ const credentials = secrets.openJson<Credentials>(row.credentials)
 ```
 
 The envelope and key derivation match lullu/hellu's `secret-json.ts`, so values
-already stored keep opening without re-encryption.
+already stored keep opening without re-encryption, as long as three inputs
+match: the secret as UTF-8 bytes, `salt`, and `info`.

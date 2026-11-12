@@ -25,6 +25,8 @@ export type SealerSync = {
 	open(sealed: string): string
 	sealJson(value: unknown): string
 	openJson<T = unknown>(sealed: unknown): T
+	/** See `Sealer.needsReseal`. */
+	needsReseal(sealed: unknown): boolean
 }
 
 const ALGORITHM = 'aes-256-gcm'
@@ -38,13 +40,15 @@ const ALGORITHM = 'aes-256-gcm'
  * const { accessToken } = secrets.openJson<{ accessToken: string }>(stored)
  */
 export function createSealerSync(options: SealerOptions): SealerSync {
-	const { secret, contexts } = sealerKeyInputs(options)
+	const { contexts } = sealerKeyInputs(options)
 
 	const keys: Buffer[] = []
 	const getKey = (index: number) => {
 		let key = keys[index]
 		if (!key) {
-			const { salt, info } = contexts[index] as (typeof contexts)[number]
+			const { secret, salt, info } = contexts[
+				index
+			] as (typeof contexts)[number]
 			key = Buffer.from(hkdfSync('sha256', secret, salt, info, 32))
 			keys[index] = key
 		}
@@ -61,15 +65,21 @@ export function createSealerSync(options: SealerOptions): SealerSync {
 		return formatEnvelope(iv, cipher.getAuthTag(), ciphertext)
 	}
 
-	const openEnvelope = ({ iv, tag, ciphertext }: Envelope) => {
+	/** The plaintext and the index of the context that opened it. */
+	const openEnvelope = ({
+		iv,
+		tag,
+		ciphertext
+	}: Envelope): [string, number] => {
 		for (let index = 0; index < contexts.length; index++) {
 			try {
 				const decipher = createDecipheriv(ALGORITHM, getKey(index), iv)
 				decipher.setAuthTag(tag)
-				return Buffer.concat([
+				const plaintext = Buffer.concat([
 					decipher.update(ciphertext),
 					decipher.final()
-				]).toString('utf8')
+				])
+				return [plaintext.toString('utf8'), index]
 			} catch (_error) {}
 		}
 		throw new SealerError('decrypt_failed')
@@ -79,12 +89,16 @@ export function createSealerSync(options: SealerOptions): SealerSync {
 		seal,
 		open(sealed) {
 			const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
-			return envelope ? openEnvelope(envelope) : sealed
+			return envelope ? openEnvelope(envelope)[0] : sealed
 		},
 		sealJson: (value) => seal(jsonToSeal(value)),
 		openJson<T = unknown>(sealed: unknown) {
 			const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
-			return (envelope ? JSON.parse(openEnvelope(envelope)) : sealed) as T
+			return (envelope ? JSON.parse(openEnvelope(envelope)[0]) : sealed) as T
+		},
+		needsReseal(sealed) {
+			const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
+			return envelope ? openEnvelope(envelope)[1] > 0 : true
 		}
 	}
 }

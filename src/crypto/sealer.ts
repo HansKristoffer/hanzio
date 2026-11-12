@@ -16,10 +16,17 @@ export type SealerOptions = {
 	/** HKDF info; use a distinct value per purpose. Default: `'hanzio.sealer.aes-256-gcm.v1'` */
 	info?: string
 	/**
-	 * Older `{ salt, info }` pairs that `open` also tries, so values sealed before
-	 * a rename stay readable. `seal` always uses `salt` and `info`.
+	 * Older contexts that `open` also tries, so values sealed before a rename or
+	 * a secret rotation stay readable. `seal` always uses the primary options.
+	 * A fallback without a `secret` property uses the primary secret; one whose
+	 * `secret` is `undefined` or empty is skipped, so it can read an optional
+	 * env key: `{ secret: process.env.APP_SECRET_PREVIOUS, info }`.
 	 */
-	fallbacks?: readonly { salt?: string; info?: string }[]
+	fallbacks?: readonly {
+		secret?: string | BytesLike | undefined
+		salt?: string
+		info?: string
+	}[]
 	/**
 	 * `open` and `openJson` return a value that was never sealed unchanged
 	 * (`{}`, a legacy plaintext) instead of throwing. Malformed envelopes and
@@ -33,6 +40,12 @@ export type Sealer = {
 	open(sealed: string): Promise<string>
 	sealJson(value: unknown): Promise<string>
 	openJson<T = unknown>(sealed: unknown): Promise<T>
+	/**
+	 * `true` when only a fallback opens `sealed` (or it is an unsealed value
+	 * `passthroughUnsealed` lets through), so it should be sealed again. Throws
+	 * like `open` for anything `open` cannot read.
+	 */
+	needsReseal(sealed: unknown): Promise<boolean>
 }
 
 export type SealerErrorCode =
@@ -63,14 +76,20 @@ const DEFAULT_INFO = 'hanzio.sealer.aes-256-gcm.v1'
 
 // The helpers below are shared with the `node:crypto` sealer in `./node`.
 
-/** The secret's bytes and every HKDF context `open` tries, primary first. */
+/** Every key context `open` tries, primary first. */
 export function sealerKeyInputs(options: SealerOptions) {
 	const secret = toBytes(options.secret)
 	if (secret.length === 0) {
 		throw new TypeError('Sealer secret must not be empty')
 	}
-	const contexts = [options, ...(options.fallbacks ?? [])].map(
-		({ salt = '', info = DEFAULT_INFO }) => ({ salt, info })
+	const contexts = [options, ...(options.fallbacks ?? [])].flatMap(
+		(context) => {
+			const own = 'secret' in context ? context.secret : secret
+			const bytes = own === undefined ? undefined : toBytes(own)
+			if (!bytes?.length) return []
+			const { salt = '', info = DEFAULT_INFO } = context
+			return [{ secret: bytes, salt, info }]
+		}
 	)
 	return { secret, contexts }
 }
@@ -133,14 +152,14 @@ export function jsonToSeal(value: unknown): string {
  * Crypto; `hanzio/crypto/node` has a synchronous twin with the same envelope.
  */
 export function createSealer(options: SealerOptions): Sealer {
-	const { secret, contexts } = sealerKeyInputs(options)
+	const { contexts } = sealerKeyInputs(options)
 
 	const keys: (Promise<CryptoKey> | undefined)[] = []
 	const getKey = (index: number) => {
 		let key = keys[index]
 		if (!key) {
 			const context = contexts[index] as (typeof contexts)[number]
-			key = deriveKey(secret, context.salt, context.info)
+			key = deriveKey(context.secret, context.salt, context.info)
 			keys[index] = key
 			key.catch(() => {
 				keys[index] = undefined
@@ -166,7 +185,12 @@ export function createSealer(options: SealerOptions): Sealer {
 		)
 	}
 
-	const openEnvelope = async ({ iv, tag, ciphertext }: Envelope) => {
+	/** The plaintext and the index of the context that opened it. */
+	const openEnvelope = async ({
+		iv,
+		tag,
+		ciphertext
+	}: Envelope): Promise<[string, number]> => {
 		const encrypted = new Uint8Array(ciphertext.length + TAG_BYTES)
 		encrypted.set(ciphertext)
 		encrypted.set(tag, ciphertext.length)
@@ -174,13 +198,12 @@ export function createSealer(options: SealerOptions): Sealer {
 		for (let index = 0; index < contexts.length; index++) {
 			const key = await getKey(index)
 			try {
-				return utf8Decode(
-					await getSubtleCrypto().decrypt(
-						{ name: 'AES-GCM', iv },
-						key,
-						encrypted
-					)
+				const plaintext = await getSubtleCrypto().decrypt(
+					{ name: 'AES-GCM', iv },
+					key,
+					encrypted
 				)
+				return [utf8Decode(plaintext), index]
 			} catch (_error) {}
 		}
 		throw new SealerError('decrypt_failed')
@@ -188,7 +211,7 @@ export function createSealer(options: SealerOptions): Sealer {
 
 	const open = async (sealed: string): Promise<string> => {
 		const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
-		return envelope ? openEnvelope(envelope) : sealed
+		return envelope ? (await openEnvelope(envelope))[0] : sealed
 	}
 
 	return {
@@ -197,7 +220,13 @@ export function createSealer(options: SealerOptions): Sealer {
 		sealJson: async (value) => seal(jsonToSeal(value)),
 		async openJson<T = unknown>(sealed: unknown) {
 			const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
-			return (envelope ? JSON.parse(await openEnvelope(envelope)) : sealed) as T
+			return (
+				envelope ? JSON.parse((await openEnvelope(envelope))[0]) : sealed
+			) as T
+		},
+		async needsReseal(sealed: unknown) {
+			const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
+			return envelope ? (await openEnvelope(envelope))[1] > 0 : true
 		}
 	}
 }
