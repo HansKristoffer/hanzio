@@ -50,10 +50,10 @@ const expectedExports = {
 	'hanzio/i18n/vite': ['localeCatalogReloadPlugin'],
 	'hanzio/i18n/check': ['defineI18nConfig', 'validateCatalogs', 'writeCatalogTypes'],
 	'hanzio/iso': ['countryNames', 'currencyNames', 'languageNames', 'countryFlag'],
-	'hanzio/secrets': ['defineSecretSet', 'createSecretSet', 'readPublicConfig'],
+	'hanzio/secrets': ['defineSecretSet', 'createSecretSet', 'processEnvLoader'],
 	'hanzio/secrets/vite': ['viteSecretSetPlugin', 'readPublicConfig'],
 	'hanzio/secrets/worker': ['defineSecretSet', 'createSecretSet', 'readPublicConfig', 'cloudflareWorkerEnvLoader'],
-	'hanzio/redis': ['createManagedRedis', 'createRedisConcurrencyLimit', 'createLuaScript'],
+	'hanzio/redis': ['createManagedRedis', 'createRedisConcurrencyLimit', 'createLuaScript', 'RedisUnavailableError'],
 	'hanzio/http': ['withSseKeepAlive', 'createSseKeepAliveTransform'],
 	'hanzio/cli': ['defineCli', 'defineCommand', 'CliError', 'CliUsageError'],
 	'hanzio/testing': ['ModuleMocker', 'createPrismaMock', 'connectionAuthContract', 'installWindowShim', 'noopLogger']

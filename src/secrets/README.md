@@ -11,14 +11,48 @@ values fail startup.
 ```ts
 import { defineSecretSet } from 'hanzio/secrets'
 
-const secrets = await defineSecretSet(['DATABASE_URL', 'APP_SECRET'], {
+const infisical = {
 	organizationId: 'infisical-organization-id',
 	projectId: 'infisical-project-id',
 	siteUrl: 'https://eu.infisical.com',
 	secretPath: '/backend'
+}
+
+const secrets = await defineSecretSet(['DATABASE_URL', 'APP_SECRET'], {
+	...infisical,
+	optional: ['RESEND_API_KEY', 'EXA_API_KEY']
 })
 
-const databaseUrl = secrets.secret('DATABASE_URL')
+secrets.secret('DATABASE_URL')     // string
+secrets.optional('RESEND_API_KEY') // string | undefined
+```
+
+### Optional keys
+
+Keys listed in `optional` may be missing or empty without failing the load.
+List a key there only, not in the required keys as well; a key in both fails
+with `CONFIGURATION` when the set is declared. Optional keys are fetched in the
+same loader call as required keys (`context.keys` includes them), local
+environment overrides apply to them, and values they have are mirrored to
+`process.env`. `reload()` reads them again, so a key added in Infisical later
+appears after a reload. Read them with `optional(key)`; `secret()` accepts
+required keys only, and `secrets()` and `parsed()` without a schema return the
+required keys. `sources()` lists optional keys that have a value.
+
+### Tests and offline runs
+
+A `loader` next to Infisical options replaces Infisical, whose options are then
+neither validated nor used. Keep one options object and swap in
+`processEnvLoader`, which reads only `process.env` and fails with
+`MISSING_SECRETS` naming the missing keys:
+
+```ts
+import { defineSecretSet, processEnvLoader } from 'hanzio/secrets'
+
+const secrets = await defineSecretSet(['DATABASE_URL', 'APP_SECRET'], {
+	...infisical,
+	loader: process.env.NODE_ENV === 'test' ? processEnvLoader : undefined
+})
 ```
 
 ## Import-safe declarations and public build configuration
@@ -63,10 +97,12 @@ const publicConfig = readPublicConfig(
 export default { define: getViteDefine(publicConfig) }
 ```
 
-`readPublicConfig(keys, values)` is synchronous and runtime-neutral. The caller
-supplies the values explicitly: production build inputs or deterministic CI
-fixtures. It copies only the listed keys, never reads unrelated values, and
-fails with their names if required values are missing, empty, or not strings.
+`readPublicConfig(keys, values, { optional })` is synchronous and
+runtime-neutral. The caller supplies the values explicitly: production build
+inputs or deterministic CI fixtures. It copies only the listed keys, never reads
+unrelated values, and fails with their names if required values are missing,
+empty, or not strings. Keys in `optional` may be missing; read them with
+`optional(key)`.
 It never fetches secrets, invents defaults, or writes `.env` / `process.env`.
 Apply your own schema to `publicConfig.secrets()` to validate URLs and other
 formats. The Vite allowlist policy still applies: non-`VITE_` keys require
@@ -92,8 +128,9 @@ is set, `auto` and `http` read a machine identity from
 `~/.infisical/universal-auth.json` (`INFISICAL_UNIVERSAL_AUTH_FILE` overrides the
 path): `{ "clientId", "clientSecret", "siteUrl" }`, used only for that `siteUrl`'s
 instance. agentgate writes this file on every machine of a user. HTTP
-failures never switch to another authentication mode. If all required keys
-are already supplied by genuine environment overrides, authentication is skipped.
+failures never switch to another authentication mode. If every key, optional
+ones included, is already supplied by genuine environment overrides,
+authentication is skipped.
 
 For local development, install the [Infisical CLI](https://infisical.com/docs/cli/overview),
 ensure `infisical` is on your application's `PATH`, and sign in:
@@ -111,15 +148,33 @@ expanded secret references.
 The child environment omits `INFISICAL_TOKEN`,
 `INFISICAL_UNIVERSAL_AUTH_ACCESS_TOKEN`, and legacy `TOKEN` so they do not
 replace the signed-in user session. The parent environment is unchanged by
-this filtering. CLI output stays in memory and is limited to 10 MiB per stream.
-The helper closes stdin and never executes a shell command or launches login
-itself. Some CLI versions may attempt browser login while reading the token
-if the session expires. Sign in before starting the app.
+this filtering. CLI output stays in memory, is limited to 10 MiB per stream,
+and never appears in errors. The helper closes stdin and never executes a shell
+command or launches login itself.
+
+Parallel `infisical user get token` runs can hang, so the CLI runs one at a
+time. Within a process, concurrent sets on the same `siteUrl` share one read.
+Across processes, a lock file at `~/.infisical/hanzio-cli.lock` queues them;
+a lock older than 30 seconds, or left by a process that has exited, is taken
+over. Waiting for the lock counts against the load's deadline and signal.
+
+A logged-in CLI prints its token at once, so the subprocess gets 5 seconds of
+its own. When the session has expired, the CLI starts an interactive login
+instead: the helper stops it as soon as it prints a login prompt, or when the 5
+seconds run out, and fails with `AUTHENTICATION`:
+
+```text
+The Infisical CLI session for https://eu.infisical.com has expired or needs a login. Run infisical login --domain=https://eu.infisical.com.
+```
+
+After a timeout the message adds that a logged-in CLI that was only slow can be
+retried.
 
 ### Multiple organizations and projects
 
 Set `organizationId` alongside `projectId` to use the same signed-in user across
-organizations on the configured Infisical instance:
+organizations on the configured Infisical instance. Concurrent sets share one
+CLI read, so loading them with `Promise.all` is safe:
 
 ```ts
 const [first, second] = await Promise.all([
@@ -151,8 +206,7 @@ The adapter may need updating if that contract changes. It honors organization
 access restrictions; MFA challenges, expired sessions, and denied access fail
 with sanitized errors. Complete login for the target organization and domain
 when additional MFA or SSO is required. The helper cannot satisfy interactive
-authentication challenges. The CLI itself may attempt login when its session
-is missing or expired, including during `user get token`.
+authentication challenges.
 
 Sign in to the same instance as `siteUrl`: reading a token uses the CLI's active
 profile, and does not automatically choose a different account or instance.
@@ -174,6 +228,13 @@ process. Genuine environment overrides still apply to all sets using that key.
 
 For deployments, use `auth: 'http'` and provide machine identity credentials.
 The CLI requires Node.js/Bun subprocess support; it is not available in Workers.
+
+### Monorepos
+
+When several processes start together, such as `turbo dev`, the lock queues
+their CLI reads. It is faster to let one parent process load the secrets and
+pass the values to its children through the environment: genuine environment
+overrides skip the fetch once every key, optional ones included, has a value.
 
 ## Environments
 
@@ -228,6 +289,11 @@ cancelled, or invalid refreshes preserve the previous cache. Validation and
 cancellation checks happen before values are committed. `secrets()`, `sources()`,
 and `parsed()` return copies.
 
+Trigger `reload()` only from an authenticated caller, such as a webhook whose
+signature you check with `verifyHmacSignature` from `hanzio/crypto`. An
+unauthenticated endpoint lets anyone make the app fetch from Infisical
+repeatedly.
+
 ## Deadlines and cancellation
 
 `timeoutMs` defaults to 60,000. The overall deadline covers authentication,
@@ -242,7 +308,8 @@ cuts a wait short. An app that boots during a short network outage therefore
 starts once the network returns, and fails with `TIMEOUT` if the outage
 outlasts `timeoutMs`. Any other 4xx response, such as a wrong client secret,
 fails on the first answer. The Infisical CLI subprocess only reads its local
-session and is not retried; the HTTP requests that follow it are.
+session: it has its own 5-second limit and is not retried; the HTTP requests
+that follow it are.
 
 ```ts
 const controller = new AbortController()
@@ -263,8 +330,10 @@ but its late result cannot update the secret set.
 ## Schema validation and typed values
 
 Use an optional Zod schema (or an object implementing `parseAsync`) to validate
-the complete merged record. Raw secret methods and environment mirroring retain
-strings. `parsed()` returns the inferred schema output, including transforms.
+the complete merged record: required keys as strings, plus optional keys that
+have a value (mark them `.optional()` in the schema). Raw secret methods and
+environment mirroring retain strings. `parsed()` returns the inferred schema
+output, including transforms.
 
 ```ts
 import { z } from 'zod'
@@ -285,15 +354,17 @@ const port: number = secrets.parsed().PORT
 const rawPort: string = secrets.secret('PORT')
 ```
 
-All configured keys must have nonempty strings before schema validation.
+All required keys must have nonempty strings before schema validation.
 Schema output must be structured-cloneable. Validation errors omit input
 values and schema error messages, which may themselves contain secrets.
 
 ## Sources, logs, and errors
 
-Successful loads emit `Loaded secrets` with environment, count, duration, and
-counts for the sources that actually supplied the final values. Nothing is
-reported as successfully loaded before fetching and validation finish.
+Successful loads emit `Loaded secrets` with environment, the number of keys
+that have a value, duration, and counts for the sources that actually supplied
+the final values. Nothing is reported as successfully loaded before fetching
+and validation finish. The default logger writes every line to stderr, so a
+CLI that prints JSON on stdout stays parseable.
 
 ```text
 Loaded secrets environment=dev count=3 source=process.env + Infisical HTTP durationMs=120
@@ -331,6 +402,12 @@ delayMs, reason })`.
 `VALIDATION`, `MISSING_SECRETS`, `TIMEOUT`, `ABORTED`, and `LOADER`. HTTP and CLI
 boundaries omit raw requests, responses, subprocess output, and underlying
 causes. Custom-loader exceptions are replaced with a generic safe error.
+
+Infisical errors say what to fix, naming keys, IDs and paths but never values.
+Configuration errors name the bad field (`projectId`, `environment`,
+`secretPath`). A rejected login says which credential variables to check, such
+as `INFISICAL_CLIENT_ID and INFISICAL_CLIENT_SECRET`. A denied or missing
+secret list names the project, environment and path the identity cannot read.
 
 ## Explicit loaders
 
@@ -374,10 +451,12 @@ them in a module-level singleton.
 
 ## Vite: public values only
 
-The default Vite helpers accept only sets consisting of `VITE_` keys. A set
-containing any other key is rejected unless you explicitly supply `publicKeys`.
-An explicit list exports only those keys; it may intentionally include a
-non-prefixed public key. Vite built-in constants cannot be overridden.
+Import the Vite helpers from `hanzio/secrets/vite`. The default helpers accept
+only sets consisting of `VITE_` keys. A set containing any other key is
+rejected unless you explicitly supply `publicKeys`. An explicit list exports
+only those keys; it may intentionally include a non-prefixed public key. Vite
+built-in constants cannot be overridden. Optional keys without a value are left
+out, including ones named in `publicKeys`.
 
 ```ts
 import { defineConfig } from 'vite'
@@ -404,6 +483,13 @@ when building a staging configuration.
 
 ## Migration notes
 
+- The default logger writes `Loaded secrets` to stderr instead of stdout. Pass
+  your own `logger` if something parsed it from stdout.
+- `getViteDefine`, `viteSecretSetPlugin` and `readPublicConfig` are no longer
+  exported from `hanzio/secrets`. Import them from `hanzio/secrets/vite`
+  (`readPublicConfig` is also on `hanzio/secrets/worker`).
+- An expired Infisical CLI session now fails within seconds with
+  `AUTHENTICATION` instead of waiting out the load deadline with `TIMEOUT`.
 - Add `organizationId` to every Infisical configuration, including explicit HTTP
   loaders. CLI authentication now always uses the organization-scoped session
   flow; the unscoped CLI export fallback has been removed.

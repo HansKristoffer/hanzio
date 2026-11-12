@@ -35,12 +35,21 @@ const infisicalSecretsResponseSchema = z.object({
 	secrets: z.array(infisicalSecretSchema)
 })
 
+type ClientCredentials = {
+	readonly clientId: string
+	readonly clientSecret: string
+}
+
 export async function fetchInfisicalSecrets<K extends string>(
-	options: InfisicalScope<K> &
-		ReportRetry & {
-			readonly clientId: string
-			readonly clientSecret: string
-		}
+	options: InfisicalScope<K> & ReportRetry & ClientCredentials
+): Promise<Partial<Record<K, string>>> {
+	return fetchWithClientCredentials(options, 'the client id and secret')
+}
+
+/** `credentials` names where they came from, for a failed login's message. */
+async function fetchWithClientCredentials<K extends string>(
+	options: InfisicalScope<K> & ReportRetry & ClientCredentials,
+	credentials: string
 ): Promise<Partial<Record<K, string>>> {
 	validateInfisicalScope(options)
 
@@ -70,7 +79,7 @@ export async function fetchInfisicalSecrets<K extends string>(
 				signal
 			})
 		} catch (error) {
-			throwInfisicalHttpError(error, operation, signal)
+			throwInfisicalHttpError(error, operation, signal, options, credentials)
 		}
 	})
 }
@@ -127,7 +136,12 @@ export async function loadInfisicalSecrets<K extends string>(
 			file ? 'Infisical HTTP (identity file)' : 'Infisical HTTP'
 		)
 
-		return fetchInfisicalSecrets({ ...options, clientId, clientSecret })
+		return fetchWithClientCredentials(
+			{ ...options, clientId, clientSecret },
+			file
+				? 'the clientId and clientSecret in the Infisical identity file'
+				: `${options.clientIdEnvKey} and ${options.clientSecretEnvKey}`
+		)
 	}
 
 	options.reportSource?.(
@@ -198,7 +212,7 @@ async function fetchInfisicalSessionSecrets<K extends string>(
 
 		return await listInfisicalSecrets(infisical, token, options)
 	} catch (error) {
-		throwInfisicalHttpError(error, operation, signal)
+		throwInfisicalHttpError(error, operation, signal, options)
 	}
 }
 
@@ -233,7 +247,9 @@ async function listInfisicalSecrets<K extends string>(
 function throwInfisicalHttpError(
 	error: unknown,
 	operation: string,
-	signal: AbortSignal
+	signal: AbortSignal,
+	scope: InfisicalScope<string>,
+	credentials?: string
 ): never {
 	if (signal.aborted) {
 		throw signal.reason
@@ -246,16 +262,37 @@ function throwInfisicalHttpError(
 	// API-wrapper errors can retain request bodies and raw responses.
 	// Copy safe metadata only; never preserve the original error as a cause.
 	const status = error instanceof HttpResponseError ? error.status : undefined
-	const guidance =
-		operation === 'selectOrganization' && (status === 401 || status === 403)
-			? ' Run infisical login for the target organization and configured domain, then verify your access.'
-			: ''
+	const guidance = describeFix(operation, status, scope, credentials)
 
 	throw new SecretLoadError(
 		'HTTP',
 		`Infisical HTTP ${operation} failed${status ? ` (status ${status})` : ''}.${guidance}`,
 		{ operation, status }
 	)
+}
+
+// Say what to fix. Names keys, IDs and paths only, never secret values.
+function describeFix(
+	operation: string,
+	status: number | undefined,
+	scope: InfisicalScope<string>,
+	credentials?: string
+): string {
+	const denied = status === 401 || status === 403
+
+	if (operation === 'login' && credentials && (denied || status === 400)) {
+		return ` Check ${credentials}.`
+	}
+
+	if (operation === 'listSecrets' && (status === 403 || status === 404)) {
+		return ` The identity cannot read project ${scope.projectId}, environment ${scope.environment}, path ${scope.secretPath ?? '/'}.`
+	}
+
+	if (operation === 'selectOrganization' && denied) {
+		return ' Run infisical login for the target organization and configured domain, then verify your access.'
+	}
+
+	return ''
 }
 
 // A process that boots during a short network outage should wait it out, not
@@ -302,7 +339,9 @@ function createInfisicalApiClient(
 					token: z.string().min(1),
 					isMfaEnabled: z.boolean().optional()
 				}),
-				reqBodyFormat: 'json'
+				reqBodyFormat: 'json',
+				// Selecting an organization and logging in change nothing on retry.
+				idempotent: true
 			},
 			login: {
 				method: 'POST',
@@ -312,7 +351,8 @@ function createInfisicalApiClient(
 					clientSecret: z.string()
 				}),
 				resSchema: infisicalAuthResponseSchema,
-				reqBodyFormat: 'json'
+				reqBodyFormat: 'json',
+				idempotent: true
 			},
 			listSecrets: {
 				method: 'GET',

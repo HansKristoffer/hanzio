@@ -18,32 +18,35 @@ import {
 } from './infisical'
 import {
 	validateInfisicalOrganizationId,
+	validateInfisicalProjectId,
 	type InfisicalProjectOptions
 } from './infisical-config'
 
 export * from './core'
 export * from './infisical'
 export * from './loaders'
-export * from './vite'
 export type { SecretRequestOptions } from './deadline'
 
 export type InfisicalDefineSecretSetOptions<
 	K extends string = string,
-	Parsed = Record<K, string>
-> = CommonSecretSetOptions<K, Parsed> &
+	Parsed = Record<K, string>,
+	O extends string = never
+> = CommonSecretSetOptions<K, Parsed, O> &
 	InfisicalProjectOptions & {
 		readonly auth?: InfisicalAuthMode
 		readonly clientIdEnvKey?: string
 		readonly clientSecretEnvKey?: string
-		readonly loader?: undefined
+		/** Replaces Infisical, for example `processEnvLoader` in tests. */
+		readonly loader?: SecretSetLoader<NoInfer<K | O>>
 	}
 
 export type DefineSecretSetOptions<
 	K extends string,
-	Parsed = Record<K, string>
+	Parsed = Record<K, string>,
+	O extends string = never
 > =
-	| InfisicalDefineSecretSetOptions<K, Parsed>
-	| CustomLoaderDefineSecretSetOptions<K, Parsed>
+	| InfisicalDefineSecretSetOptions<K, Parsed, O>
+	| CustomLoaderDefineSecretSetOptions<K, Parsed, O>
 
 export function getSecretEnvironment(): SecretEnvironment {
 	return resolveSecretEnvironment(
@@ -54,19 +57,26 @@ export function getSecretEnvironment(): SecretEnvironment {
 
 export function createSecretSet<
 	const Keys extends readonly string[],
-	Parsed = Record<Keys[number], string>
+	Parsed = Record<Keys[number], string>,
+	const O extends string = never
 >(
 	keys: Keys,
-	options: DefineSecretSetOptions<Keys[number], Parsed>
-): LazySecretSet<Keys[number], Parsed> {
-	let loader: SecretSetLoader<Keys[number]>
+	options: DefineSecretSetOptions<Keys[number], Parsed, O>
+): LazySecretSet<Keys[number], Parsed, O> {
+	let loader = options.loader
 
-	if (!options.loader) {
-		// Validate even when environment overrides satisfy every key.
-		validateInfisicalOrganizationId(options.organizationId)
-		loader = createDefaultInfisicalLoader(options)
-	} else {
-		loader = options.loader
+	if (!loader) {
+		// Without a loader only the Infisical variant fits. Validate even when
+		// environment overrides satisfy every key.
+		const infisical = options as InfisicalDefineSecretSetOptions<
+			Keys[number],
+			Parsed,
+			O
+		>
+
+		validateInfisicalOrganizationId(infisical.organizationId)
+		validateInfisicalProjectId(infisical.projectId)
+		loader = createDefaultInfisicalLoader(infisical)
 	}
 
 	// Supply process.env only from this Node/Bun entry point, keeping the core portable.
@@ -77,9 +87,13 @@ export function createSecretSet<
 	)
 }
 
-function createDefaultInfisicalLoader<K extends string, Parsed>(
-	options: InfisicalDefineSecretSetOptions<K, Parsed>
-): SecretSetLoader<K> {
+function createDefaultInfisicalLoader<
+	K extends string,
+	Parsed,
+	O extends string
+>(
+	options: InfisicalDefineSecretSetOptions<K, Parsed, O>
+): SecretSetLoader<K | O> {
 	return (context) =>
 		loadInfisicalSecrets({
 			...context,
@@ -97,10 +111,11 @@ function createDefaultInfisicalLoader<K extends string, Parsed>(
 /** Compatibility API: load immediately and fail before application startup. */
 export async function defineSecretSet<
 	const Keys extends readonly string[],
-	Parsed = Record<Keys[number], string>
+	Parsed = Record<Keys[number], string>,
+	const O extends string = never
 >(
 	keys: Keys,
-	options: DefineSecretSetOptions<Keys[number], Parsed>
-): Promise<SecretSet<Keys[number], Parsed>> {
+	options: DefineSecretSetOptions<Keys[number], Parsed, O>
+): Promise<SecretSet<Keys[number], Parsed, O>> {
 	return createSecretSet(keys, options).load()
 }

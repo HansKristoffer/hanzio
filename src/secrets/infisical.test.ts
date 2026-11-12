@@ -8,7 +8,9 @@ import {
 	test
 } from 'bun:test'
 import * as childProcess from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
+import * as os from 'node:os'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inspect } from 'node:util'
@@ -20,6 +22,7 @@ import {
 	loadInfisicalSecrets,
 	processEnvLoader
 } from '.'
+import { readInfisicalCliToken } from './infisical-cli'
 
 const envKeys = [
 	'INFISICAL_CLIENT_ID',
@@ -52,23 +55,70 @@ const cliSource =
 	'Infisical CLI session (organization=org-a project=project-id environment=staging)'
 
 let remoteSecrets: { secretKey: string; secretValue: string }[]
+// The fake CLI prints `output` and exits with `cli.code`, unless `cli` says otherwise.
 let output: string
-let failure: Error | null
+let cli: {
+	code?: number
+	stderr?: string
+	error?: string
+	hang?: boolean
+	delayMs?: number
+}
+let home: string
 const endInput = mock(() => {})
+const kill = mock((_signal?: string) => {})
 const execute = mock(
 	(
 		_file: string,
 		_args: readonly string[],
-		_options: childProcess.ExecFileOptions,
-		callback: (error: Error | null, stdout: string, stderr: string) => void
+		_options: childProcess.SpawnOptions
 	) => {
-		callback(failure, output, 'private stderr')
+		const stream = () => Object.assign(new EventEmitter(), { setEncoding() {} })
+		const child = Object.assign(new EventEmitter(), {
+			stdout: stream(),
+			stderr: stream(),
+			stdin: { end: endInput },
+			kill(signal?: string) {
+				kill(signal)
+				setTimeout(() => exit(null))
 
-		return { stdin: { end: endInput } } as unknown as childProcess.ChildProcess
+				return true
+			}
+		})
+		let exited = false
+		const exit = (code: number | null) => {
+			if (!exited) {
+				exited = true
+				child.emit('close', code)
+			}
+		}
+
+		setTimeout(() => {
+			if (cli.error) {
+				child.emit(
+					'error',
+					Object.assign(new Error('private error'), { code: cli.error })
+				)
+
+				return
+			}
+
+			if (cli.stderr) {
+				child.stderr.emit('data', cli.stderr)
+			}
+
+			if (!cli.hang && !exited) {
+				child.stdout.emit('data', output)
+				exit(cli.code ?? 0)
+			}
+		}, cli.delayMs ?? 0)
+
+		return child
 	}
 )
-let execSpy: ReturnType<typeof spyOn<typeof childProcess, 'execFile'>>
-let logSpy: ReturnType<typeof spyOn<typeof console, 'log'>>
+let spawnSpy: ReturnType<typeof spyOn<typeof childProcess, 'spawn'>>
+let homeSpy: ReturnType<typeof spyOn<typeof os, 'homedir'>>
+let logSpy: ReturnType<typeof spyOn<typeof console, 'error'>>
 
 beforeEach(() => {
 	for (const key of envKeys) {
@@ -85,13 +135,17 @@ beforeEach(() => {
 		{ secretKey: 'TEST_CLI_SECRET', secretValue: 'remote-value' },
 		{ secretKey: 'TEST_CLI_IGNORED', secretValue: 'ignored-value' }
 	]
-	failure = null
+	cli = {}
 	execute.mockClear()
 	endInput.mockClear()
-	execSpy = spyOn(childProcess, 'execFile').mockImplementation(
-		execute as unknown as typeof childProcess.execFile
+	kill.mockClear()
+	spawnSpy = spyOn(childProcess, 'spawn').mockImplementation(
+		execute as unknown as typeof childProcess.spawn
 	)
-	logSpy = spyOn(console, 'log').mockImplementation(() => {})
+	// The CLI lock lives in a temporary home, never this machine's.
+	home = mkdtempSync(join(tmpdir(), 'hanzio-home-'))
+	homeSpy = spyOn(os, 'homedir').mockReturnValue(home)
+	logSpy = spyOn(console, 'error').mockImplementation(() => {})
 	globalThis.fetch = mock(async (url: string | URL | Request) => {
 		if (new URL(String(url)).pathname === '/api/v4/secrets') {
 			return Response.json({ secrets: remoteSecrets })
@@ -103,7 +157,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-	execSpy.mockRestore()
+	spawnSpy.mockRestore()
+	homeSpy.mockRestore()
 	logSpy.mockRestore()
 	globalThis.fetch = originalFetch
 
@@ -227,13 +282,7 @@ describe('Infisical CLI fallback', () => {
 			'--domain=https://eu.infisical.com',
 			'--silent'
 		])
-		expect(settings).toMatchObject({
-			shell: false,
-			encoding: 'utf8',
-			timeout: 60_000,
-			killSignal: 'SIGKILL',
-			maxBuffer: 10 * 1024 * 1024
-		})
+		expect(settings).toMatchObject({ shell: false, stdio: 'pipe' })
 		expect(settings.env?.PATH).toBe(process.env.PATH)
 		expect(settings.env?.INFISICAL_DISABLE_UPDATE_CHECK).toBe('true')
 
@@ -248,6 +297,7 @@ describe('Infisical CLI fallback', () => {
 
 		expect(endInput).toHaveBeenCalledTimes(1)
 		expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+		expect(existsSync(join(home, '.infisical'))).toBe(true)
 	})
 
 	test.each([
@@ -411,16 +461,20 @@ describe('Infisical CLI fallback', () => {
 	})
 
 	test.each([
-		[{ code: 'ENOENT' }, 'Infisical CLI not found'],
-		[{ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, '10 MiB limit'],
-		[{ killed: true }, 'timed out after 60 seconds'],
-		[{ code: 1 }, 'infisical login --domain=https://eu.infisical.com'],
-		[{ code: 'EACCES' }, 'Infisical CLI session token failed']
-	])('sanitizes subprocess errors (%j)', async (details, message) => {
-		failure = Object.assign(new Error('private error'), details, {
-			stdout: 'private stdout',
-			stderr: 'private stderr'
-		})
+		['missing', { error: 'ENOENT' }, 'Infisical CLI not found'],
+		['huge output', {}, '10 MiB limit'],
+		[
+			'exit 1',
+			{ code: 1, stderr: 'private-stderr' },
+			'infisical login --domain=https://eu.infisical.com'
+		],
+		['EACCES', { error: 'EACCES' }, 'Infisical CLI session token failed']
+	] as const)('sanitizes subprocess errors (%s)', async (name, fake, message) => {
+		cli = fake
+		output =
+			name === 'huge output'
+				? 'private'.repeat(2 * 1024 * 1024)
+				: 'private stdout'
 
 		try {
 			await loadInfisicalSecrets(options)
@@ -465,7 +519,7 @@ describe('Infisical controls and safe HTTP failures', () => {
 		expect(execute).not.toHaveBeenCalled()
 	})
 
-	test('CLI-only mode ignores available client credentials and passes folder and timeout', async () => {
+	test('CLI-only mode ignores available client credentials and passes the folder', async () => {
 		process.env.INFISICAL_CLIENT_ID = 'unused-id'
 		process.env.INFISICAL_CLIENT_SECRET = 'unused-secret'
 
@@ -482,7 +536,6 @@ describe('Infisical controls and safe HTTP failures', () => {
 			expect.stringContaining('secretPath=%2Fbackend'),
 			expect.anything()
 		)
-		expect(execute.mock.calls[0]?.[2]).toMatchObject({ timeout: 5000 })
 		expect(globalThis.fetch).toHaveBeenCalledTimes(1)
 		expect(logger.info.mock.calls[0]).toMatchObject([
 			'Loaded secrets',
@@ -491,7 +544,7 @@ describe('Infisical controls and safe HTTP failures', () => {
 
 		await set.reload({ timeoutMs: 20_000 })
 
-		expect(execute.mock.calls[1]?.[2]).toMatchObject({ timeout: 20_000 })
+		expect(execute).toHaveBeenCalledTimes(2)
 	})
 
 	test('passes folder and custom environment through HTTP', async () => {
@@ -849,7 +902,8 @@ describe('Infisical organization-scoped CLI sessions', () => {
 		expect(first!.secret('TEST_CLI_SECRET')).toBe('project-b')
 		expect(second!.secret('TEST_CLI_SECRET')).toBe('project-c')
 		expect(process.env.TEST_CLI_SECRET).toBeUndefined()
-		expect(execute).toHaveBeenCalledTimes(4)
+		// Concurrent sets share one CLI read: once to load, once to reload.
+		expect(execute).toHaveBeenCalledTimes(2)
 		expect(exchanges).toBe(4)
 	})
 
@@ -980,8 +1034,6 @@ describe('Infisical organization-scoped CLI sessions', () => {
 		for (const signal of signals) {
 			expect(signal?.aborted).toBe(true)
 		}
-
-		expect(execute.mock.calls[0]?.[2].signal?.aborted).toBe(true)
 	})
 
 	test('cancels organization selection without listing secrets or leaking the reason', async () => {
@@ -1192,5 +1244,181 @@ describe('Infisical retries during a network outage', () => {
 			delayMs: 5000,
 			reason: 'status 429'
 		})
+	})
+})
+
+function rejection(promise: Promise<unknown>): Promise<Error> {
+	return promise.then(
+		() => {
+			throw new Error('Expected a rejection')
+		},
+		(error: unknown) => error as Error
+	)
+}
+
+describe('Infisical CLI subprocess', () => {
+	const siteUrl = 'https://eu.infisical.com'
+	const login = 'Run infisical login --domain=https://eu.infisical.com.'
+
+	test('concurrent reads in one process run the CLI once', async () => {
+		cli = { delayMs: 10 }
+
+		const results = await Promise.all([
+			loadInfisicalSecrets(options),
+			loadInfisicalSecrets(options),
+			loadInfisicalSecrets({ ...options, keys: ['TEST_CLI_IGNORED'] })
+		])
+
+		expect(results).toEqual([
+			{ TEST_CLI_SECRET: 'remote-value' },
+			{ TEST_CLI_SECRET: 'remote-value' },
+			{ TEST_CLI_IGNORED: 'ignored-value' }
+		])
+		expect(execute).toHaveBeenCalledTimes(1)
+	})
+
+	test('a login prompt fails at once with AUTHENTICATION', async () => {
+		cli = { stderr: '? Enter your email address: ', hang: true }
+
+		const startedAt = Date.now()
+		const error = await rejection(loadInfisicalSecrets(options))
+
+		expect(error).toMatchObject({ code: 'AUTHENTICATION' })
+		expect(error.message).toBe(
+			`The Infisical CLI session for ${siteUrl} has expired or needs a login. ${login}`
+		)
+		expect(Date.now() - startedAt).toBeLessThan(1000)
+		expect(kill).toHaveBeenCalledWith('SIGKILL')
+	})
+
+	test('a CLI that never answers fails with AUTHENTICATION after its own timeout', async () => {
+		cli = { hang: true }
+
+		const error = await rejection(
+			readInfisicalCliToken(
+				{ siteUrl, signal: new AbortController().signal },
+				20
+			)
+		)
+
+		expect(error).toMatchObject({ code: 'AUTHENTICATION' })
+		expect(error.message).toContain(login)
+		expect(error.message).toContain('retry')
+		expect(kill).toHaveBeenCalledWith('SIGKILL')
+	})
+
+	test('one caller cancelling leaves the shared read to the others', async () => {
+		cli = { delayMs: 20 }
+
+		const controller = new AbortController()
+		const cancelled = readInfisicalCliToken({
+			siteUrl,
+			signal: controller.signal
+		})
+		const kept = readInfisicalCliToken({
+			siteUrl,
+			signal: new AbortController().signal
+		})
+		const reason = new Error('caller reason')
+
+		controller.abort(reason)
+
+		await expect(cancelled).rejects.toBe(reason)
+		expect(await kept).toBe(output)
+		expect(execute).toHaveBeenCalledTimes(1)
+		expect(kill).not.toHaveBeenCalled()
+	})
+
+	test('the last caller cancelling kills the CLI', async () => {
+		cli = { hang: true }
+
+		const controller = new AbortController()
+		const read = readInfisicalCliToken({ siteUrl, signal: controller.signal })
+
+		await new Promise((resolve) => setTimeout(resolve, 20))
+		controller.abort(new Error('caller reason'))
+
+		await expect(read).rejects.toThrow('caller reason')
+		expect(kill).toHaveBeenCalledWith('SIGKILL')
+	})
+})
+
+describe('Infisical errors say what to fix', () => {
+	test.each([
+		400, 401, 403
+	])('a %d login names the credential variables', async (status) => {
+		process.env.TEST_INFISICAL_ID = 'private-id'
+		process.env.TEST_INFISICAL_SECRET = 'private-secret'
+		globalThis.fetch = mock(async () =>
+			Response.json({ message: 'private-response' }, { status })
+		) as unknown as typeof fetch
+
+		const error = await rejection(
+			loadInfisicalSecrets({
+				...options,
+				clientIdEnvKey: 'TEST_INFISICAL_ID',
+				clientSecretEnvKey: 'TEST_INFISICAL_SECRET'
+			})
+		)
+
+		expect(error.message).toBe(
+			`Infisical HTTP login failed (status ${status}). Check TEST_INFISICAL_ID and TEST_INFISICAL_SECRET.`
+		)
+	})
+
+	test('an explicit loader login points at the client id and secret', async () => {
+		globalThis.fetch = mock(async () =>
+			Response.json({}, { status: 401 })
+		) as unknown as typeof fetch
+
+		await expect(
+			fetchInfisicalSecrets({ ...options, clientId: 'id', clientSecret: 'x' })
+		).rejects.toThrow('Check the client id and secret.')
+	})
+
+	test.each([403, 404])('a %d secret list names the scope', async (status) => {
+		globalThis.fetch = mock(async () =>
+			Response.json({ message: 'private-response' }, { status })
+		) as unknown as typeof fetch
+
+		const error = await rejection(
+			loadInfisicalSecrets({
+				...options,
+				secretPath: '/backend'
+			})
+		)
+
+		expect(error).toMatchObject({ code: 'HTTP', operation: 'listSecrets' })
+		expect(error.message).toContain(
+			'The identity cannot read project project-id, environment staging, path /backend.'
+		)
+		expect(inspect(error)).not.toContain('private')
+	})
+
+	test.each([
+		[{ projectId: '' }, 'Infisical projectId is required'],
+		[{ environment: ' ' }, 'Infisical environment is required'],
+		[{ secretPath: 'backend' }, 'Infisical secretPath must start with /']
+	])('names the bad scope field (%j)', async (bad, message) => {
+		await expect(loadInfisicalSecrets({ ...options, ...bad })).rejects.toThrow(
+			message
+		)
+		expect(execute).not.toHaveBeenCalled()
+	})
+
+	test('a missing projectId fails at declaration', async () => {
+		process.env.TEST_CLI_SECRET = 'local-value'
+
+		await expect(
+			defineSecretSet(options.keys, { ...options, projectId: '' })
+		).rejects.toMatchObject({ code: 'CONFIGURATION' })
+		expect(() =>
+			infisicalLoader({
+				organizationId: 'org-a',
+				projectId: '',
+				clientId: 'id',
+				clientSecret: 'secret'
+			})
+		).toThrow('Infisical projectId is required')
 	})
 })

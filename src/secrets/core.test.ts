@@ -436,3 +436,65 @@ describe('explicit initialization', () => {
 		expect(set.parsed()).toEqual({ KEY: 'valid' })
 	})
 })
+
+describe('optional keys', () => {
+	test('schema sees optional keys as possibly missing; count counts values', async () => {
+		const logger = { info: mock(() => {}), error: mock(() => {}) }
+		const set = await defineSecretSet(
+			['PORT'],
+			{
+				logger,
+				optional: ['SENTRY_DSN', 'RESEND_API_KEY'],
+				loader: async () => ({ PORT: '8080', RESEND_API_KEY: 're_1' }),
+				schema: z.object({
+					PORT: z.coerce.number(),
+					SENTRY_DSN: z.string().optional(),
+					RESEND_API_KEY: z.string().optional()
+				})
+			},
+			{}
+		)
+		const parsed: {
+			PORT: number
+			SENTRY_DSN?: string
+			RESEND_API_KEY?: string
+		} = set.parsed()
+
+		expect(parsed).toEqual({ PORT: 8080, RESEND_API_KEY: 're_1' })
+		expect(logger.info.mock.calls[0]).toMatchObject([
+			'Loaded secrets',
+			{ count: 2, sources: { 'custom loader': 2 } }
+		])
+	})
+
+	test('reading an undeclared optional key throws', async () => {
+		const set = await defineSecretSet(['A'], {
+			...quiet,
+			optional: ['B'],
+			loader: async () => ({ A: 'a' })
+		})
+
+		expect(() => (set.optional as (key: string) => unknown)('A')).toThrow(
+			'not declared in optional'
+		)
+	})
+
+	test('getViteDefine skips optional keys without a value', async () => {
+		const set = await defineSecretSet(['VITE_A'], {
+			...quiet,
+			optional: ['VITE_B', 'VITE_C'],
+			loader: async () => ({ VITE_A: 'a', VITE_B: 'b' })
+		})
+
+		expect(getViteDefine(set)).toEqual({
+			'import.meta.env.VITE_A': '"a"',
+			'import.meta.env.VITE_B': '"b"'
+		})
+		expect(getViteDefine(set, { publicKeys: ['VITE_B', 'VITE_C'] })).toEqual({
+			'import.meta.env.VITE_B': '"b"'
+		})
+		expect(() =>
+			getViteDefine(set, { publicKeys: ['VITE_D' as 'VITE_C'] })
+		).toThrow('configured keys')
+	})
+})
