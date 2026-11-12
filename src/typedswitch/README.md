@@ -113,6 +113,20 @@ const info = typedSwitch(order, 'status', {
 })
 ```
 
+A single object type works too, when the property is a union of literals, such
+as a database row with a `status` column. Each handler receives the object
+narrowed to its case:
+
+```typescript
+type Invoice = { id: string; status: 'draft' | 'sent' | 'paid' }
+
+typedSwitch(invoice, 'status', {
+  draft: (i) => `Draft ${i.id}`, // i.status: 'draft'
+  sent: (i) => `Sent ${i.id}`,   // i.status: 'sent'
+  paid: (i) => `Paid ${i.id}`,   // i.status: 'paid'
+})
+```
+
 Number and boolean discriminants work too. Cases are keyed by `String(value)`:
 
 ```typescript

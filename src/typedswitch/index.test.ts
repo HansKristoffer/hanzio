@@ -546,6 +546,46 @@ describe('typedSwitch object mode type inference', () => {
 		})
 	})
 
+	test('a member whose discriminant is a union is narrowed to the case', () => {
+		type Row = { id: string; status: 'pending' | 'done' }
+		type Shape =
+			| { kind: 'circle' | 'ellipse'; radius: number }
+			| { kind: 'square'; side: number }
+
+		const row = asType<Row>({ id: 'r1', status: 'done' })
+		const shape = asType<Shape>({ kind: 'ellipse', radius: 3 })
+
+		const fromRow = typedSwitch(row, 'status', {
+			pending: (r) => {
+				expectTypeOf(r.status).toEqualTypeOf<'pending'>()
+				return r.id
+			},
+			done: (r) => {
+				expectTypeOf(r.status).toEqualTypeOf<'done'>()
+				return r.id.length
+			}
+		})
+
+		const fromShape = typedSwitch(shape, 'kind', {
+			circle: (s) => {
+				expectTypeOf(s.kind).toEqualTypeOf<'circle'>()
+				return s.radius
+			},
+			ellipse: (s) => {
+				expectTypeOf(s.kind).toEqualTypeOf<'ellipse'>()
+				return s.radius * 2
+			},
+			square: (s) => {
+				expectTypeOf(s).toEqualTypeOf<{ kind: 'square'; side: number }>()
+				return s.side
+			}
+		})
+
+		expectTypeOf(fromRow).toEqualTypeOf<string | number>()
+		expect(fromRow).toBe(2)
+		expect(fromShape).toBe(6)
+	})
+
 	test('return type is inferred from handler return types', async () => {
 		const result = await typedSwitch(
 			getEvent({ type: 'click', x: 10, y: 20 }),
@@ -1171,6 +1211,15 @@ describe('typedSwitch plain number and boolean values', () => {
 		).toThrow('Unhandled case: 500. Available cases: 200, 404')
 	})
 
+	test('number-like strings accept numeric case keys', () => {
+		const code = asType<'200' | '404'>('404')
+
+		const result = typedSwitch(code, { 200: () => 'ok', 404: (c) => c })
+
+		expectTypeOf(result).toEqualTypeOf<string>()
+		expect(result).toBe('404')
+	})
+
 	test('rejects missing number and boolean cases', () => {
 		const assertTypeErrors = () => {
 			// @ts-expect-error missing the 404 case without a default handler
@@ -1359,6 +1408,21 @@ describe('typedSwitch grouped cases', () => {
 
 		expectTypeOf(result).toEqualTypeOf<'click' | 'scroll' | number>()
 		expect(result).toBe('scroll')
+	})
+
+	test('object mode: a member whose discriminant is a union is narrowed to the group', () => {
+		type Row = { id: string; status: 'pending' | 'done' | 'cancelled' }
+		const row = asType<Row>({ id: 'r1', status: 'done' })
+
+		const result = typedSwitch(row, 'status', {
+			...typedSwitchGroup(row, 'status', ['pending', 'done'], (r) => {
+				expectTypeOf(r.status).toEqualTypeOf<'pending' | 'done'>()
+				return r.id
+			}),
+			cancelled: () => 'cancelled'
+		})
+
+		expect(result).toBe('r1')
 	})
 
 	test('string mode: shared handler receives the union of grouped values', () => {

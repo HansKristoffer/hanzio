@@ -87,9 +87,7 @@
 type RawHandlerReturnType<T> = T extends (...args: any[]) => infer R ? R : never
 
 /** Get union of all raw return types from a cases object's values */
-type RawCasesReturnType<Cases> = {
-	[K in keyof Cases]: RawHandlerReturnType<Cases[K]>
-}[keyof Cases]
+type RawCasesReturnType<Cases> = RawHandlerReturnType<Cases[keyof Cases]>
 
 /**
  * `R` is only inferred from the call's contextual type. Without one it stays
@@ -108,15 +106,18 @@ type ObjectCasesContext<R> = { [key: string]: (value: never) => R } & {
 	default: never
 }
 
-/** Only required, defined handlers guarantee that a case is handled. */
-type HandledCaseKeys<Cases> = {
-	// biome-ignore lint/complexity/noBannedTypes: Empty-object assignability detects optional keys and index signatures.
-	[K in keyof Cases]-?: {} extends Pick<Cases, K>
+/**
+ * Only required, defined handlers guarantee that a case is handled. `K`
+ * distributes over the keys, which TypeScript checks faster than a mapped type.
+ */
+type HandledCaseKeys<Cases, K = keyof Cases> = K extends keyof Cases
+	? undefined extends Cases[K]
 		? never
-		: undefined extends Cases[K]
+		: // biome-ignore lint/complexity/noBannedTypes: Empty-object assignability detects index signature keys.
+			{} extends Record<K, 1>
 			? never
 			: K
-}[keyof Cases]
+	: never
 
 // ═══════════════════════════════════════════════════════════════════════════
 // String input mode types
@@ -160,10 +161,23 @@ type ObjectCaseValue<T, K extends keyof NonNullable<T>> =
 	| Extract<NonNullable<T>[K], Discriminant>
 	| Extract<T, Nullish>
 
+/**
+ * The members of `T` whose discriminant can be one of `V`. A member whose
+ * discriminant is itself a union, such as a row with a `status` column, is
+ * narrowed to those values.
+ */
+type MembersWith<T, K extends keyof T, V> = T extends unknown
+	? T[K] extends V
+		? T
+		: [Extract<T[K], V>] extends [never]
+			? never
+			: T & Record<K, Extract<T[K], V>>
+	: never
+
 /** A `null` or `undefined` case receives the value itself. */
-type ObjectCaseInput<T, K extends PropertyKey, V> = V extends Nullish
+type ObjectCaseInput<T, K extends keyof NonNullable<T>, V> = V extends Nullish
 	? V
-	: Extract<T, Record<K, V>>
+	: MembersWith<NonNullable<T>, K, V>
 
 type ObjectCases<T, K extends keyof NonNullable<T>, R> = {
 	[V in ObjectCaseValue<T, K> as `${V}`]: (value: ObjectCaseInput<T, K, V>) => R
@@ -206,9 +220,7 @@ export type PartialObjectSwitchCases<
  * fails to compile instead of silently falling through to the default.
  */
 type NoUnknownCases<Cases, Allowed extends string> = {
-	[P in keyof Cases as `${P & (string | number)}` extends Allowed
-		? never
-		: P]: never
+	[P in Exclude<`${keyof Cases & (string | number)}`, Allowed>]: never
 }
 
 /**
@@ -443,8 +455,8 @@ export function typedSwitchGroup<
 	value: T,
 	key: K,
 	keys: Keys,
-	handler: (value: Extract<T, Record<K, Keys[number]>>) => R
-): { [V in Keys[number] as `${V}`]: (value: Extract<T, Record<K, V>>) => R }
+	handler: (value: MembersWith<T, K, Keys[number]>) => R
+): { [V in Keys[number] as `${V}`]: (value: MembersWith<T, K, V>) => R }
 export function typedSwitchGroup(
 	_value: unknown,
 	keyOrKeys: unknown,
@@ -453,7 +465,9 @@ export function typedSwitchGroup(
 ): CasesRecord {
 	const keys = (handler ? keysOrHandler : keyOrKeys) as Discriminant[]
 	const shared = handler ?? (keysOrHandler as Handler)
-	return Object.fromEntries(keys.map((key) => [String(key), shared]))
+	const cases: CasesRecord = {}
+	for (const key of keys) cases[String(key)] = shared
+	return cases
 }
 
 /**
