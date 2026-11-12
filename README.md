@@ -69,6 +69,25 @@ subpath export:
 `scripts/verify-exports.mjs` imports every entry above from the packed tarball
 in CI, so this table and `package.json#exports` can't drift apart.
 
+## Migrating to 4.0
+
+- API wrapper: POST and PATCH requests are retried only on `429` by default.
+  A network error, timeout or `5xx` after the server may have done the work no
+  longer sends the request again. Mark endpoints that are safe to repeat with
+  `idempotent: true` to get the full retry policy back, or pass `shouldRetry`.
+- `hanzio/secrets` no longer re-exports the Vite helpers. Import
+  `getViteDefine`, `viteSecretSetPlugin` and `readPublicConfig` from
+  `hanzio/secrets/vite`.
+- The default secrets logger writes `Loaded secrets …` to stderr instead of
+  stdout.
+- An Infisical CLI session that is expired, or that does not answer within 5
+  seconds, fails with `AUTHENTICATION` and says to run `infisical login`,
+  instead of `TIMEOUT` after the whole load deadline.
+- `ModuleMocker.mock` throws when an override names an export the real module
+  does not have. Fix the name, or use `replace` for a module you swap whole.
+- `mockCallArg` throws when the call or argument does not exist, instead of
+  returning `undefined`.
+
 ## Migrating to 3.0
 
 - `typedSwitch<Constraint>(…)` is removed. The explicit type argument switched
@@ -354,7 +373,8 @@ await pool.drain()
 
 `promiseTimeout` resolves after a delay (and rejects early if its signal
 aborts). `backgroundPromise` runs async work and reports success or failure
-through hooks; `backgroundPromiseSync` schedules it in a microtask.
+through hooks (a synchronous throw from the factory also reaches `onError`);
+`backgroundPromiseSync` schedules it in a microtask.
 
 ```ts
 import { backgroundPromise, promiseTimeout } from 'hanzio'
@@ -520,7 +540,6 @@ const postMachine = createStateMachine<
 >({
 	initialState: 'draft',
 	stateActionMap: { draft: { publish: 'published' }, published: {} },
-	stateTransitions: { draft: ['published'], published: [] },
 	actionValidators: {
 		publish: (post) => post.status === 'draft' || 'Already published'
 	},
@@ -534,9 +553,45 @@ const result = await machine.executeAction('publish', { notify: true })
 machine.getCurrentStatus() // 'published'
 ```
 
+Without `stateTransitions`, each state may move to the targets of its actions
+in `stateActionMap`. Pass `stateTransitions` to allow direct transitions that
+no action takes. Validators run in order: `globalValidator`,
+`validators[toState]`, then `actionValidators[action]`.
 `new SimpleStateMachine(config, item, stateKey)` still works for one-off use.
-Validators run in order: `globalValidator`, `validators[toState]`, then
-`actionValidators[action]`.
+
+`sourcesFor(to)` lists the states that may move to `to`, and
+`sourcesForAction(action)` the states that have `action`, for a guarded write
+outside the machine:
+
+```ts
+await db.order.updateMany({
+	where: { id, status: { in: orderMachine.sourcesFor('SHIPPED') } },
+	data: { status: 'SHIPPED' }
+})
+```
+
+The machine checks the state it was given, not the row. When two requests may
+act on the same row at once, make the write a compare-and-set in
+`onTransition`: update only while the status is still `from`, and throw when
+no row changed. `onTransition` runs after the action handler, and a throw fails
+the action (`success: false`); inside a transaction it also rolls back the
+handler's writes.
+
+```ts
+const orderMachine = createStateMachine<Status, Action, Order>({
+	stateActionMap,
+	onTransition: async (order, from, to) => {
+		const { count } = await db.order.updateMany({
+			where: { id: order.id, status: from },
+			data: { status: to }
+		})
+		if (count === 0) throw new Error(`Order ${order.id} is no longer ${from}`)
+	}
+})
+
+const result = await orderMachine.for(order, 'status').executeAction('ship', {})
+if (!result.success) return conflict(result.error)
+```
 
 ### typedSwitch
 
@@ -1210,6 +1265,10 @@ export const backendSecrets = await defineSecretSet(
 const databaseUrl = backendSecrets.secret('DATABASE_URL')
 ```
 
+Keys an app can run without go in `optional`: they are fetched in the same
+call, never fail the load, and are read with `optional(key)`, which returns
+`string | undefined`.
+
 The required `organizationId` scopes the CLI session per secret set, allowing projects
 in different organizations to run together without switching the active CLI
 organization. This flow reads the CLI user token and fetches secrets over HTTP;
@@ -1247,7 +1306,7 @@ const withLimit = createRedisConcurrencyLimit({
 	key: 'openai',
 	max: 20,
 	slotTtlMs: 30_000,
-	send: (command, args) => redis.getClient().send(command, args)
+	send: redis.send
 })
 await withLimit(() => callOpenAi(request), signal)
 ```
