@@ -425,4 +425,23 @@ describe('createMockFetch', () => {
 		expect(fetch.calls[0]!.method).toBe('POST')
 		expect(await fetch.calls[0]!.json()).toEqual({ x: 1 })
 	})
+
+	test('serves an array of responses in order and rejects extra requests', async () => {
+		const fetch = createMockFetch([
+			jsonResponse({ n: 1 }),
+			() => jsonResponse({ n: 2 })
+		])
+		expect(await (await fetch('https://api.test/a')).json()).toEqual({ n: 1 })
+		expect(await (await fetch('https://api.test/b')).json()).toEqual({ n: 2 })
+		await expect(
+			fetch('https://api.test/c', { method: 'DELETE' })
+		).rejects.toThrow(
+			'createMockFetch: unexpected request DELETE https://api.test/c (call 2; 2 response(s) configured)'
+		)
+	})
+
+	test("is assignable to the runtime's typeof fetch", () => {
+		const fetch: typeof globalThis.fetch = createMockFetch([])
+		expect(typeof fetch.preconnect).toBe('function')
+	})
 })

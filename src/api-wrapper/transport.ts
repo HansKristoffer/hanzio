@@ -1,5 +1,5 @@
 import { ZodError, type z } from 'zod'
-import { anySignal, promiseTimeout } from '../promise'
+import { anySignal, promiseTimeout, raceAbort } from '../promise'
 import { parseRetryAfter } from '../url'
 import type {
 	ApiEndpoint,
@@ -52,18 +52,52 @@ export async function validateResponse<T extends z.ZodType>(
 	}
 }
 
-export async function httpRequest(
-	config: RequestConfig,
-	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
-): Promise<Response> {
+type Attempt = {
+	signal: AbortSignal
+	/** Maps an abort to `RequestTimeoutError` or `RequestAbortedError`; other errors pass through. */
+	abortError: (error: unknown, ctx: () => ApiErrorContext) => unknown
+	/** Clears the timer. Call once the attempt's body is read and validated. */
+	end: () => void
+}
+
+/**
+ * One attempt's deadline: `timeoutMs` and the caller's signal cover the
+ * fetch and the body read that follows it.
+ */
+function startAttempt(config: RequestConfig): Attempt {
 	const timeoutController = new AbortController()
-	const timeout =
+	const timer =
 		config.timeoutMs === undefined
 			? undefined
 			: setTimeout(() => timeoutController.abort(), config.timeoutMs)
-
 	const signal = anySignal(timeoutController.signal, config.userSignal)
+	return {
+		signal,
+		abortError: (error, ctx) => {
+			if (
+				!isDomAbortError(error) &&
+				!(signal.aborted && error === signal.reason)
+			) {
+				return error
+			}
+			if (
+				!config.userSignal?.aborted &&
+				timeoutController.signal.aborted &&
+				config.timeoutMs !== undefined
+			) {
+				return new RequestTimeoutError(config.timeoutMs, ctx())
+			}
+			return new RequestAbortedError(ctx(), error)
+		},
+		end: () => clearTimeout(timer)
+	}
+}
 
+export async function httpRequest(
+	config: RequestConfig,
+	attempt: Attempt,
+	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
+): Promise<Response> {
 	try {
 		return await config.fetchFn(config.fullUrl, {
 			method: config.method,
@@ -73,26 +107,16 @@ export async function httpRequest(
 				config.headers,
 				(msg) => new ConfigError(msg, ctx())
 			),
-			signal
+			signal: attempt.signal
 		})
 	} catch (error) {
-		if (isDomAbortError(error)) {
-			if (config.userSignal?.aborted) {
-				throw new RequestAbortedError(ctx(), error)
-			}
-			if (timeoutController.signal.aborted && config.timeoutMs !== undefined) {
-				throw new RequestTimeoutError(config.timeoutMs, ctx())
-			}
-			throw new RequestAbortedError(ctx(), error)
-		}
+		if (isDomAbortError(error)) throw attempt.abortError(error, ctx)
 		if (error instanceof ConfigError) throw error
 		throw new NetworkError(
 			error instanceof Error ? error.message : String(error),
 			ctx(),
 			error
 		)
-	} finally {
-		if (timeout) clearTimeout(timeout)
 	}
 }
 
@@ -157,6 +181,8 @@ type MakeRequestArgs<TValidated> = {
 	endpointName: string
 	method: HttpMethod
 	fullUrl: string
+	/** The endpoint's `idempotent` flag; defaults by method. */
+	idempotent?: boolean
 	meta?: RequestMeta
 	onResponse?: (context: OnResponseContext) => void | Promise<void>
 	onRetry?: (context: OnRetryContext) => void | Promise<void>
@@ -181,6 +207,7 @@ export async function makeRequestWithRetry<TValidated>(
 		endpointName,
 		method,
 		fullUrl,
+		idempotent,
 		meta,
 		onResponse,
 		onRetry
@@ -188,7 +215,18 @@ export async function makeRequestWithRetry<TValidated>(
 	let retryCount = 0
 
 	while (true) {
-		let response: Response | undefined
+		const attempt = startAttempt(config)
+		const attemptCtx = (over?: Partial<ApiErrorContext>) =>
+			ctx({ attempt: retryCount, ...over })
+		const baseRetryCtx = {
+			retryCount,
+			maxRetries,
+			endpoint: endpointName,
+			method,
+			url: fullUrl,
+			idempotent: idempotent ?? isIdempotentMethod(method)
+		}
+		let retryCtx: RetryContext
 		try {
 			// Headers and body stay out of debug logs; they may carry credentials.
 			logger?.debug?.('API request', {
@@ -197,9 +235,7 @@ export async function makeRequestWithRetry<TValidated>(
 				url: redactUrl(fullUrl),
 				attempt: retryCount
 			})
-			response = await httpRequest(config, (over) =>
-				ctx({ attempt: retryCount, ...over })
-			)
+			const response = await httpRequest(config, attempt, attemptCtx)
 
 			await onResponse?.({
 				endpoint: endpointName,
@@ -210,50 +246,32 @@ export async function makeRequestWithRetry<TValidated>(
 				meta
 			})
 
-			if (response.status >= 400) {
-				const retryCtx: RetryContext = {
-					response,
+			if (response.status < 400) {
+				return {
+					validatedData: await raceAbort(
+						validateFn(response, retryCount),
+						attempt.signal
+					),
 					retryCount,
-					maxRetries,
-					endpoint: endpointName,
-					method,
-					url: fullUrl
+					httpStatus: response.status
 				}
-				if (retryCount < maxRetries && shouldRetry(retryCtx)) {
-					const delayMs = getRetryDelay({
-						retryDelay,
-						attempt: retryCount,
-						response,
-						maxRetryDelayMs
-					})
-					await onRetry?.({
-						...retryCtx,
-						delayMs,
-						nextAttempt: retryCount + 1
-					})
-					await sleepBeforeRetry(delayMs, config.userSignal, () =>
-						ctx({ attempt: retryCount })
-					)
-					retryCount++
-					continue
-				}
+			}
 
-				const { body, headers: responseHeaders } =
-					await readErrorResponse(response)
+			retryCtx = { ...baseRetryCtx, response }
+			if (retryCount >= maxRetries || !shouldRetry(retryCtx)) {
+				const { body, headers: responseHeaders } = await raceAbort(
+					readErrorResponse(response),
+					attempt.signal
+				)
 				throw new HttpResponseError(
 					response.status,
 					body,
 					responseHeaders,
-					ctx({ attempt: retryCount })
+					attemptCtx()
 				)
 			}
-
-			return {
-				validatedData: await validateFn(response, retryCount),
-				retryCount,
-				httpStatus: response.status
-			}
-		} catch (error) {
+		} catch (caught) {
+			const error = attempt.abortError(caught, attemptCtx)
 			// ApiResponseError is not retried by default, but a custom shouldRetry may opt in.
 			if (
 				isNonRetryableApiError(error) &&
@@ -261,35 +279,26 @@ export async function makeRequestWithRetry<TValidated>(
 			) {
 				throw error
 			}
-
-			const retryCtx: RetryContext = {
-				error,
-				retryCount,
-				maxRetries,
-				endpoint: endpointName,
-				method,
-				url: fullUrl
-			}
+			retryCtx = { ...baseRetryCtx, error }
 			if (retryCount >= maxRetries || !shouldRetry(retryCtx)) {
 				throw error
 			}
-
-			const delayMs = getRetryDelay({
-				retryDelay,
-				attempt: retryCount,
-				response: undefined,
-				maxRetryDelayMs
-			})
-			await onRetry?.({
-				...retryCtx,
-				delayMs,
-				nextAttempt: retryCount + 1
-			})
-			await sleepBeforeRetry(delayMs, config.userSignal, () =>
-				ctx({ attempt: retryCount })
-			)
-			retryCount++
+		} finally {
+			attempt.end()
 		}
+
+		const delayMs = getRetryDelay({
+			retryDelay,
+			attempt: retryCount,
+			response: retryCtx.response,
+			maxRetryDelayMs
+		})
+		await onRetry?.({ ...retryCtx, delayMs, nextAttempt: retryCount + 1 })
+		// Release the connection now instead of at GC. Not awaited: a clone handed
+		// to onResponse keeps a tee'd body from finishing its cancel.
+		retryCtx.response?.body?.cancel().catch(() => {})
+		await sleepBeforeRetry(delayMs, config.userSignal, attemptCtx)
+		retryCount++
 	}
 }
 
@@ -334,7 +343,19 @@ export async function validateAndTransformResponse<T extends z.ZodType>(
 	return { data, responseSizeBytes, headers: responseHeaders }
 }
 
+// POST and PATCH may not be safe to send twice; an endpoint opts in with `idempotent: true`.
+const isIdempotentMethod = (method: HttpMethod | undefined) =>
+	method !== 'POST' && method !== 'PATCH'
+
+/**
+ * Retries network errors, timeouts, `5xx` and `429`. A request that is not
+ * idempotent (see `RetryContext.idempotent`) is retried only on `429`, which
+ * means the server did not process it.
+ */
 export function defaultShouldRetry(ctx: RetryContext): boolean {
+	if (!(ctx.idempotent ?? isIdempotentMethod(ctx.method))) {
+		return !ctx.error && ctx.response?.status === 429
+	}
 	if (ctx.error) return shouldAttemptRetryOnError(ctx.error)
 	return shouldAttemptRetryOnHttp(ctx)
 }

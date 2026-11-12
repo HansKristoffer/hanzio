@@ -46,6 +46,9 @@ export const exampleApi = createApiClient({
 params fall back to an optional `Record<string, string | number>`) and leaves
 `resFormatter` unchecked.
 
+`idempotent: true` marks a POST or PATCH endpoint as safe to send twice, so
+the default retry policy retries it like a GET (see `retries` below).
+
 Object and array bodies are sent as JSON unless you set another
 `Content-Type`; `reqBodyFormat: 'form-data'` sends `FormData`.
 
@@ -179,12 +182,12 @@ accepts:
 | `name` | Prefix used in error/log context, e.g. `exampleApi.usersGet`. |
 | `defaultHeaders` | Static headers, or a (sync or async) function resolved on every request, e.g. `() => ({ Authorization: \`Bearer ${getSecret('TOKEN')}\` })`. |
 | `defaultBaseApiUrl` | Key in `baseApiUrls` to use when an endpoint doesn't specify one. |
-| `timeoutMs` | Default per-request timeout (uses `AbortController`). Applied **per attempt** — each retry gets its own timeout window, not a cumulative budget across retries. |
-| `retries` | Default retry count (default `3`). |
+| `timeoutMs` | Default per-request timeout (uses `AbortController`). Applied **per attempt** and covers the response body, so a server that sends headers and then stalls times out too. Each retry gets its own timeout window, not a cumulative budget across retries. |
+| `retries` | Default retry count (default `3`). POST and PATCH are retried only on `429` unless the endpoint sets `idempotent: true`: a POST that timed out after the server did the work would otherwise be sent twice. |
 | `retryDelayMs` | Delay between retries. `number \| (attempt) => number`, where `attempt` is `0` before the first retry. Default: exponential backoff with full jitter, a random delay in `[0, 300 * 2^attempt]` ms, capped at `maxRetryDelayMs`. |
 | `maxRetryDelayMs` | Upper bound on retry delay (default `30000`). Caps the default backoff, `retryDelayMs`, and `Retry-After` headers on `429`/`503` responses. |
-| `shouldRetry` | `(ctx) => boolean` to override the default retry policy. |
-| `fetch` | Custom fetch implementation, typed as `FetchLike` (`(input, init?) => Promise<Response>`), so plain functions and mocks work without Bun's `preconnect`. |
+| `shouldRetry` | `(ctx) => boolean` to override the default retry policy, including the POST/PATCH rule. `ctx.idempotent` is the endpoint's flag, else `false` for POST and PATCH. |
+| `fetch` | Custom fetch implementation, typed as `FetchLike` (`(input, init?) => Promise<Response>`), so plain functions work without Bun's `preconnect`. |
 | `use` | Middleware around each whole request (see [Middleware](#middleware)). |
 | `checkResponse` | `(data, ctx) => void` run after `resSchema` validation on every attempt. Throw to reject a response that is an error in disguise (see [Rejecting 200 responses](#rejecting-200-responses)). Endpoints can replace or skip it. |
 | `logger` | `Pick<Console, 'debug' \| 'error'>`. Each failed request is logged once with a categorized summary (see [Debugging Failed Requests](#debugging-failed-requests)). |
@@ -194,8 +197,11 @@ accepts:
 | `onError` | Hook called when an `ApiError` is about to be thrown. |
 | `redact` | Optional `(context: ApiErrorContext) => ApiErrorContext` applied before `logger` / `onError` and before errors store context. Built-in default redaction strips sensitive headers (`authorization`, `cookie`, `set-cookie`) and common secret-like body keys (`password`, `token`, `accessToken`, `refreshToken`, `secret`). Override wholly or layer on top of the default by copying fields you need from the incoming context. |
 
-The default retry policy retries network errors and `5xx`/`429` responses, and
-**does not retry** validation, abort, config, or `4xx` errors. `Retry-After`
+The default retry policy retries network errors, timeouts and `5xx`/`429`
+responses, and **does not retry** validation, abort, config, or `4xx` errors.
+Requests that are not idempotent (POST and PATCH without `idempotent: true`)
+are retried only on `429`. A retried response's body is cancelled before the
+wait, so its connection is released. `Retry-After`
 headers on `429`/`503` are respected up to `maxRetryDelayMs`. Aborting the
 caller's `signal` while waiting between retries throws `RequestAbortedError`
 immediately.
@@ -342,7 +348,8 @@ which replaces the client's, or `checkResponse: false` to skip it. With
 
 `hanzio/api-wrapper/testing` has a test-runner-agnostic fetch mock to pass as
 the client's `fetch` option, so tests never replace `globalThis.fetch`.
-`calls` records every `Request`, with bodies still readable.
+`calls` records every `Request`, with bodies still readable. It is assignable
+to `typeof fetch` (it has a no-op `preconnect`).
 
 ```ts
 import { createMockFetch, jsonResponse } from 'hanzio/api-wrapper/testing'
@@ -356,6 +363,18 @@ const api = createApiClient({ ...config, fetch })
 
 await api.usersGet({ reqParams: { userId: '1' } })
 expect(fetch.calls[0]?.headers.get('authorization')).toBe('Bearer token')
+```
+
+Or pass the responses in the order they should be served. A `Response` body
+reads once, so a plain `Response` serves one call; pass `() => Response` to
+build a fresh one. A request past the end throws, naming its method, URL and
+call index.
+
+```ts
+const fetch = createMockFetch([
+	jsonResponse({}, { status: 503 }),
+	() => jsonResponse({ id: 1, name: 'Ada' })
+])
 ```
 
 ## Pagination

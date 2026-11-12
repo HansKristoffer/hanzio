@@ -36,6 +36,11 @@ export interface ApiEndpoint<
 	reqDefaultQueryParams?: QueryParams
 	doNotEncodeQueryParams?: boolean
 	/**
+	 * Safe to send twice. POST and PATCH default to `false`, so the default
+	 * retry policy retries them only on `429`; `true` gives them the full policy.
+	 */
+	idempotent?: boolean
+	/**
 	 * Replaces the client's `checkResponse` for this endpoint; `false` skips it.
 	 * `defineEndpoint` types `data` as the parsed `resSchema` output.
 	 */
@@ -67,6 +72,8 @@ export type RetryContext = {
 	endpoint?: string
 	method?: HttpMethod
 	url?: string
+	/** The endpoint's `idempotent`, else `false` for POST and PATCH and `true` otherwise. */
+	idempotent?: boolean
 }
 
 export type OnRetryContext = RetryContext & {
