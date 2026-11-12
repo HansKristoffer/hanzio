@@ -1,4 +1,5 @@
 import type { RedisClient, RedisOptions } from 'bun'
+import { type RedisSend, withCommandTimeout } from './lua-script'
 
 export type RedisRole = 'client' | 'subscriber'
 
@@ -15,13 +16,31 @@ export type ManagedRedisOptions = {
 	onError?: (error: unknown, context: RedisErrorContext) => void
 	/** Builds each connection. Defaults to `new Bun.RedisClient(url, options)`. */
 	createClient?: (url: string, options: RedisOptions) => RedisClient
+	/**
+	 * Bounds `send()`: it rejects with `RedisUnavailableError` after this many
+	 * ms, connecting included. Unbounded when omitted.
+	 */
+	commandTimeoutMs?: number
+	/**
+	 * Queue commands on the command connection while it is offline. Default
+	 * `true`. The subscriber connection always queues.
+	 */
+	offlineQueue?: boolean
 }
 
 export type RedisMessageHandler = (message: string, channel: string) => void
 
 export type ManagedRedis = {
-	/** The shared command connection, created on first use. */
+	/**
+	 * The shared command connection, created on first use. Calls on it are not
+	 * bounded by `commandTimeoutMs`; use `send` for that.
+	 */
 	getClient(): RedisClient
+	/**
+	 * One raw command on the command connection, bounded by `commandTimeoutMs`
+	 * when set. Fits `createLuaScript` and `createRedisConcurrencyLimit` as is.
+	 */
+	send: RedisSend
 	/**
 	 * Subscribes `handler` to `channel` on the shared subscriber connection.
 	 * Channels are ref-counted: Redis sees one `SUBSCRIBE` however many handlers
@@ -78,9 +97,23 @@ function defaultOnError(error: unknown, context: RedisErrorContext) {
  *   onError: (error, context) => captureException(error, 'redis', context)
  * })
  * await redis.getClient().set('key', 'value')
+ * await redis.send('INCR', ['visits'])
  * const unsubscribe = await redis.subscribe('events', (message) => handle(message))
  */
 export function createManagedRedis(options: ManagedRedisOptions): ManagedRedis {
+	const { commandTimeoutMs } = options
+	if (
+		commandTimeoutMs !== undefined &&
+		!(Number.isFinite(commandTimeoutMs) && commandTimeoutMs > 0)
+	) {
+		throw new Error(
+			`commandTimeoutMs must be a positive finite number, got ${commandTimeoutMs}`
+		)
+	}
+	const clientOptions: RedisOptions = {
+		...CONNECTION_OPTIONS,
+		enableOfflineQueue: options.offlineQueue ?? true
+	}
 	const createClient = options.createClient ?? defaultCreateClient
 	const report = options.onError ?? defaultOnError
 	const url = () =>
@@ -132,7 +165,10 @@ export function createManagedRedis(options: ManagedRedisOptions): ManagedRedis {
 			if (subscriber !== connection) return
 			subscriber = null
 			listeners.clear()
-			report(error, { role: 'subscriber', stage: 'close' })
+			report(error ?? new Error('Redis subscriber connection closed'), {
+				role: 'subscriber',
+				stage: 'close'
+			})
 			// A fresh connection resubscribes the remaining channels on connect.
 			if (handlers.size > 0) getSubscriber()
 		}
@@ -142,7 +178,7 @@ export function createManagedRedis(options: ManagedRedisOptions): ManagedRedis {
 
 	function getClient() {
 		if (client) return client
-		const connection = createClient(url(), CONNECTION_OPTIONS)
+		const connection = createClient(url(), clientOptions)
 		connection.onclose = (error) => {
 			if (client !== connection) return
 			// Drop the dead reference so the next call builds a fresh client.
@@ -152,6 +188,13 @@ export function createManagedRedis(options: ManagedRedisOptions): ManagedRedis {
 		client = connection
 		return connection
 	}
+
+	const rawSend: RedisSend = async (command, args) =>
+		getClient().send(command, args)
+	const send =
+		commandTimeoutMs === undefined
+			? rawSend
+			: withCommandTimeout(rawSend, commandTimeoutMs)
 
 	async function subscribe(channel: string, handler: RedisMessageHandler) {
 		const entry = { handler }
@@ -226,6 +269,7 @@ export function createManagedRedis(options: ManagedRedisOptions): ManagedRedis {
 
 	return {
 		getClient,
+		send,
 		subscribe,
 		isConnected: () => client?.connected === true,
 		getStats: () => ({

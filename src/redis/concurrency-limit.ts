@@ -1,4 +1,8 @@
-import { createLuaScript, type RedisSend } from './lua-script'
+import {
+	createLuaScript,
+	type RedisSend,
+	withCommandTimeout
+} from './lua-script'
 
 const POLL_MS = 100
 const FAILURE_LOG_THROTTLE_MS = 10_000
@@ -119,26 +123,6 @@ end
 return 1
 `.trim()
 
-function withCommandTimeout(send: RedisSend, timeoutMs: number): RedisSend {
-	return async (command, args) => {
-		let timer: ReturnType<typeof setTimeout> | undefined
-		try {
-			return await Promise.race([
-				send(command, args),
-				new Promise<never>((_, reject) => {
-					timer = setTimeout(
-						() =>
-							reject(new Error(`Redis command timed out after ${timeoutMs}ms`)),
-						timeoutMs
-					)
-				})
-			])
-		} finally {
-			if (timer) clearTimeout(timer)
-		}
-	}
-}
-
 // The pid tells a human which process holds a slot; it is absent outside Node and Bun.
 function createToken() {
 	const pid = globalThis.process?.pid
@@ -240,7 +224,7 @@ export type RedisConcurrencyLimit = {
  *   key: 'openai',
  *   max: 20,
  *   slotTtlMs: 30_000,
- *   send: (command, args) => redis.getClient().send(command, args)
+ *   send: redis.send
  * })
  * const reply = await withLimit(() => openai.chat(request), signal)
  */
