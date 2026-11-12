@@ -1,5 +1,48 @@
 # Changelog
 
+## [4.0.0](https://github.com/HansKristoffer/hanzio/compare/v3.4.0...v4.0.0) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **secrets:** import getViteDefine, viteSecretSetPlugin and readPublicConfig from hanzio/secrets/vite
+* **secrets:** the default "Loaded secrets" line is written to stderr
+* **secrets:** an Infisical set without a projectId fails when it is declared, even when env overrides supply every key
+* **testing:** ModuleMocker.mock throws for an export the module does not have, and gains replace()
+* **testing:** mockCallArg throws for a missing call or argument
+* **api-wrapper:** POST and PATCH are retried only on 429 unless the endpoint sets `idempotent: true`
+
+### Features
+
+* **api-wrapper:** createMockFetch takes a queue of responses and is assignable to typeof fetch ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **api-wrapper:** POST and PATCH are retried only on 429 unless the endpoint sets `idempotent: true` ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **crypto:** sealer fallbacks may carry their own secret, and needsReseal tells when to re-seal ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **format:** withLocale binds every locale-taking formatter and accepts a string ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **i18n:** check and generate catalogs split into one file per area, and a sameValues rule ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **redis:** bounded send with commandTimeoutMs, and an offlineQueue option ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **secrets:** a custom loader may replace Infisical next to Infisical options ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **secrets:** an Infisical set without a projectId fails when it is declared, even when env overrides supply every key ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **secrets:** import getViteDefine, viteSecretSetPlugin and readPublicConfig from hanzio/secrets/vite ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **secrets:** Infisical errors name the field, env keys or project scope to fix ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **secrets:** optional keys, read with optional(key) ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **secrets:** the default "Loaded secrets" line is written to stderr ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **state:** stateTransitions is optional, and createStateMachine adds sourcesFor and sourcesForAction ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **testing:** mockCallArg throws for a missing call or argument ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **testing:** ModuleMocker.mock throws for an export the module does not have, and gains replace() ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+
+
+### Bug Fixes
+
+* **api-wrapper:** timeoutMs covers the response body, and a retried response's body is cancelled ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **promise:** backgroundPromise routes a synchronous throw to onError ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **secrets:** one Infisical CLI read at a time, with a lock, a 5 s timeout and a login hint ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+* **typedswitch:** rows with a union-valued key get typed handlers, and type checks run faster ([#38](https://github.com/HansKristoffer/hanzio/issues/38)) ([0e179df](https://github.com/HansKristoffer/hanzio/commit/0e179dff6692556c129842601cc1eb04e9ee8cce))
+
+
+### Performance Improvements
+
+* **iso:** countryCodes no longer keeps the country table in bundles that do not use it ([c7e50b0](https://github.com/HansKristoffer/hanzio/commit/c7e50b05501b0b8fe7293ac1f0f48f6455572301))
+
 ## [3.4.0](https://github.com/HansKristoffer/hanzio/compare/v3.3.0...v3.4.0) (2026-11-03)
 
 
