@@ -30,7 +30,10 @@ function resolveFrom(baseDir: string) {
  *
  * Mocks spread the module's real exports first, so exports you don't override
  * keep working, and `clear()` re-registers the originals. Call it in
- * `afterEach` or `afterAll`.
+ * `afterEach` or `afterAll`. A key the real module does not export throws, so
+ * a typo can't leave the real export in place.
+ * `replace` swaps a module without importing it, for modules with
+ * import-time I/O; `clear()` cannot undo it.
  *
  * Without an argument, pass absolute paths. Pass your source root to resolve
  * against it: package names from there (so mocks hit the same copy your code
@@ -58,18 +61,49 @@ export class ModuleMocker {
 				: baseDirOrResolve
 	}
 
-	async mock(
+	/**
+	 * Overrides some exports and keeps the rest. Type the overrides with
+	 * `mock<typeof import('./x')>(...)`.
+	 */
+	async mock<TModule extends object = ModuleExports>(
 		specifier: string,
-		renderMocks: () => ModuleExports
+		renderMocks: () => Partial<TModule>
 	): Promise<void> {
 		const { mock } = await import('bun:test')
 		const resolved = this.resolve(specifier)
 		const original = { ...(await import(resolved)) } as ModuleExports
-		const merged = { ...original, ...renderMocks() }
+		const overrides = renderMocks()
+		const unknown = Object.keys(overrides).filter((key) => !(key in original))
+		if (unknown.length > 0) {
+			throw new Error(
+				`${specifier} has no export ${unknown.map((key) => `"${key}"`).join(', ')} (has: ${Object.keys(original).join(', ')})`
+			)
+		}
+		const merged = { ...original, ...overrides }
 		mock.module(resolved, () => merged)
 		this.restorers.push(() => {
 			mock.module(resolved, () => original)
 		})
+	}
+
+	/**
+	 * Registers `factory` as the whole module without importing the real one.
+	 * There is no original to put back, so `clear()` does not undo it.
+	 */
+	async replace(
+		specifier: string,
+		factory: () => ModuleExports
+	): Promise<void> {
+		const { mock } = await import('bun:test')
+		const resolved = this.resolve(specifier)
+		try {
+			Bun.resolveSync(resolved, import.meta.dir)
+		} catch {
+			throw new Error(
+				`${specifier} does not resolve${resolved === specifier ? '' : ` (as ${resolved})`}`
+			)
+		}
+		mock.module(resolved, factory)
 	}
 
 	clear(): void {
