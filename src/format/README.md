@@ -29,8 +29,12 @@ formatNumber(1234567.891, 'da-DK') // '1.234.567,891'
 formatPercent(0.25, 'en-US') // '25%' (takes a fraction, not 25)
 formatCurrency(12.5, 'USD', 'en-US') // '$12.50' (whole units, not cents)
 formatCurrency(2500, 'DKK', 'da-DK', { maximumFractionDigits: 0 }) // '2.500 kr.'
+formatCurrency(2500, 'DKK', 'da-DK', { currencyDisplay: 'code', maximumFractionDigits: 0 }) // '2.500 DKK'
 formatCompactNumber(1234, 'en-US') // '1.2K'
 ```
+
+`formatCurrency` passes its options to `Intl.NumberFormat`, so
+`currencyDisplay: 'code'` prints the ISO code instead of the local symbol.
 
 ### `formatBytes(bytes, { locale?, decimals?, binary? })`
 
@@ -100,12 +104,17 @@ this year). `formatDayDivider(date, locale, { now? })` labels a chat timeline:
 "today", "yesterday", else weekday and date. Both return `''` for unparseable
 input.
 
-### `withLocale(getLocale)`
+### `withLocale(locale)`
 
-The date, number and price formatters with the locale read on every call, for
-apps that keep the active locale in their i18n runtime:
+Every formatter in this module that takes a locale, with the locale bound.
+Each one has the original's parameters minus `locale`. Pass a tag, or a getter
+that is read on every call for apps that keep the active locale in their i18n
+runtime:
 
 ```ts
+const da = withLocale('da-DK')
+da.formatPrice(2500, 'DKK') // '2.500 kr.'
+
 export const fmt = withLocale(() => uiLocales.tag(appI18n.locale()))
 fmt.formatCompactTime(message.createdAt)
 ```

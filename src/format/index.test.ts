@@ -22,6 +22,7 @@ import {
 	pluralize,
 	splitDuration
 } from '.'
+import * as format from '.'
 
 const SECOND = 1000
 const MINUTE = 60 * SECOND
@@ -374,4 +375,34 @@ test('withLocale reads the locale on every call', () => {
 	expect(fmt.formatDate(new Date(2026, 2, 5), 'D MMM YYYY')).toBe(
 		'5. mar. 2026'
 	)
+})
+
+test('withLocale accepts a locale tag', () => {
+	const fmt = withLocale('da-DK')
+	expect(fmt.formatList(['a', 'b'])).toBe('a og b')
+	expect(
+		fmt.pluralize(2, { one: '{count} vare', other: '{count} varer' })
+	).toBe('2 varer')
+})
+
+test('withLocale binds every exported function with a locale parameter', () => {
+	// The cached Intl getters build formatters rather than format a value.
+	const notFormatters = new Set([
+		'withLocale',
+		'getNumberFormat',
+		'getDateTimeFormat',
+		'getRelativeTimeFormat',
+		'getListFormat',
+		'getPluralRules'
+	])
+	const takesLocale = Object.entries(format)
+		.filter(([name, value]) => {
+			if (typeof value !== 'function' || notFormatters.has(name)) return false
+			const params = /\(([^)]*)\)/.exec(value.toString())?.[1] ?? ''
+			return /\blocale\b/.test(params)
+		})
+		.map(([name]) => name)
+	const bound = withLocale('en-US')
+	expect(takesLocale.length).toBeGreaterThan(10)
+	expect(takesLocale.filter((name) => !(name in bound))).toEqual([])
 })
