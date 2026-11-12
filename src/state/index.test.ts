@@ -364,3 +364,55 @@ describe('createStateMachine', () => {
 		machine.for({ status: 'A', label: 'x' }, 'label')
 	})
 })
+
+describe('derived transitions', () => {
+	type Status = 'NEW' | 'PAID' | 'SHIPPED' | 'CANCELLED'
+	type Action = 'pay' | 'ship' | 'cancel'
+	type Order = { status: Status }
+	const orders = createStateMachine<Status, Action, Order>({
+		stateActionMap: {
+			NEW: { pay: 'PAID', cancel: 'CANCELLED' },
+			PAID: { ship: 'SHIPPED', cancel: 'CANCELLED' },
+			SHIPPED: {},
+			CANCELLED: {}
+		}
+	})
+
+	test('without stateTransitions, each state moves to its action targets', async () => {
+		const machine = orders.for({ status: 'NEW' }, 'status')
+		expect(machine.getStates()).toEqual(['NEW', 'PAID', 'SHIPPED', 'CANCELLED'])
+		expect(machine.getInitialState()).toBe('NEW')
+		expect(await machine.validateTransition('PAID')).toBe(true)
+		expect(await machine.validateTransition('SHIPPED')).toBe(
+			"Invalid transition from 'NEW' to 'SHIPPED'"
+		)
+		expect(await machine.getPossibleTransitions()).toEqual({
+			PAID: true,
+			CANCELLED: true
+		})
+		expect(orders.config.stateTransitions.PAID).toEqual([
+			'SHIPPED',
+			'CANCELLED'
+		])
+	})
+
+	test('sourcesFor lists the states that may move to a state', () => {
+		expect(orders.sourcesFor('CANCELLED')).toEqual(['NEW', 'PAID'])
+		expect(orders.sourcesFor('SHIPPED')).toEqual(['PAID'])
+		expect(orders.sourcesFor('NEW')).toEqual([])
+	})
+
+	test('sourcesFor follows stateTransitions when given', () => {
+		const machine = createStateMachine<S, Act, Item, Data>({
+			...baseConfig,
+			stateTransitions: { A: ['B', 'C'], B: ['C'], C: ['A'] }
+		})
+		expect(machine.sourcesFor('C')).toEqual(['A', 'B'])
+		expect(machine.sourcesFor('A')).toEqual(['C'])
+	})
+
+	test('sourcesForAction lists the states that have the action', () => {
+		expect(orders.sourcesForAction('cancel')).toEqual(['NEW', 'PAID'])
+		expect(orders.sourcesForAction('ship')).toEqual(['PAID'])
+	})
+})

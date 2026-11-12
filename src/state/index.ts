@@ -71,8 +71,9 @@ export interface StateMachineConfig<
 	// Maps states to possible actions and their target states
 	stateActionMap: Record<TState, Partial<Record<TAction, TState>>>
 
-	// Maps states to allowed direct transitions
-	stateTransitions: Record<TState, readonly TState[]>
+	// Maps states to allowed direct transitions. Defaults to each state's
+	// action targets in stateActionMap
+	stateTransitions?: Record<TState, readonly TState[]>
 
 	// Validation functions for specific states
 	validators?: Partial<Record<TState, ValidatorFn<TState, TContext, TAction>>>
@@ -85,7 +86,8 @@ export interface StateMachineConfig<
 		Record<TAction, ValidatorFn<TState, TContext, TAction>>
 	>
 
-	// State returned by getInitialState(). Defaults to the first key of stateTransitions
+	// State returned by getInitialState(). Defaults to the first key of
+	// stateTransitions, or of stateActionMap when stateTransitions is omitted
 	initialState?: TState
 
 	// Called after a successful action (after its handler). Throwing fails the action
@@ -113,6 +115,25 @@ export type ValidateTransitionOptions<TAction extends string> = {
 	action?: TAction
 }
 
+/** `stateTransitions` when given, else each state's action targets. */
+function transitionsOf<TState extends string, TAction extends string>(config: {
+	stateActionMap: Record<TState, Partial<Record<TAction, TState>>>
+	stateTransitions?: Record<TState, readonly TState[]>
+}): Record<TState, readonly TState[]> {
+	if (config.stateTransitions) return config.stateTransitions
+	const transitions = {} as Record<TState, readonly TState[]>
+	for (const state of Object.keys(config.stateActionMap) as TState[]) {
+		const targets = Object.values(config.stateActionMap[state]) as (
+			| TState
+			| undefined
+		)[]
+		transitions[state] = [...new Set(targets)].filter(
+			(target): target is TState => !!target
+		)
+	}
+	return transitions
+}
+
 /**
  * Creates a simple state machine with validation capabilities
  */
@@ -132,6 +153,7 @@ export class SimpleStateMachine<
 	>
 	private item: TContext
 	private stateKey: StateKey<TContext, TState>
+	private transitions: Record<TState, readonly TState[]>
 
 	constructor(
 		config: StateMachineConfig<
@@ -147,6 +169,7 @@ export class SimpleStateMachine<
 		this.config = config
 		this.item = item
 		this.stateKey = stateKey
+		this.transitions = transitionsOf(config)
 	}
 
 	getCurrentStatus(): TState {
@@ -184,8 +207,7 @@ export class SimpleStateMachine<
 	async getPossibleTransitions(): Promise<
 		Partial<Record<TState, ValidationResult>>
 	> {
-		const possibleTransitions =
-			this.config.stateTransitions[this.getCurrentStatus()] || []
+		const possibleTransitions = this.transitions[this.getCurrentStatus()] || []
 		const actionsMap = this.config.stateActionMap[this.getCurrentStatus()] || {}
 		const results = await Promise.all(
 			possibleTransitions.map(async (targetState) => {
@@ -289,8 +311,7 @@ export class SimpleStateMachine<
 		if (this.getCurrentStatus() === toState) return true
 
 		// Check if transition is allowed in the state machine
-		const allowedTransitions =
-			this.config.stateTransitions[this.getCurrentStatus()] || []
+		const allowedTransitions = this.transitions[this.getCurrentStatus()] || []
 
 		if (!allowedTransitions.includes(toState)) {
 			return `Invalid transition from '${this.getCurrentStatus()}' to '${toState}'`
@@ -341,7 +362,7 @@ export class SimpleStateMachine<
 	 * Get all states in the state machine
 	 */
 	getStates(): TState[] {
-		return Object.keys(this.config.stateTransitions) as TState[]
+		return Object.keys(this.transitions) as TState[]
 	}
 
 	/**
@@ -359,6 +380,11 @@ export class SimpleStateMachine<
  * @example
  * const orderMachine = createStateMachine<Status, Action, Order>(config)
  * const machine = orderMachine.for(order, 'status')
+ * // a guarded write outside the machine
+ * await db.order.updateMany({
+ *   where: { id, status: { in: orderMachine.sourcesFor('SHIPPED') } },
+ *   data: { status: 'SHIPPED' }
+ * })
  */
 export function createStateMachine<
 	TState extends string,
@@ -375,9 +401,21 @@ export function createStateMachine<
 		TActionResultMap
 	>
 ) {
+	const transitions = transitionsOf(config)
+	const states = Object.keys(transitions) as TState[]
+	// The effective table, so `machine.config.stateTransitions` is always set.
+	const resolved = { ...config, stateTransitions: transitions }
 	return {
-		config,
+		config: resolved,
 		for: (item: TContext, stateKey: StateKey<TContext, TState>) =>
-			new SimpleStateMachine(config, item, stateKey)
+			new SimpleStateMachine(resolved, item, stateKey),
+		/** The states that may move to `to`. */
+		sourcesFor: (to: TState): TState[] =>
+			states.filter((from) => transitions[from].includes(to)),
+		/** The states whose `stateActionMap` has `action`. */
+		sourcesForAction: (action: TAction): TState[] =>
+			(Object.keys(config.stateActionMap) as TState[]).filter(
+				(from) => !!config.stateActionMap[from][action]
+			)
 	}
 }
