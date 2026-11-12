@@ -93,6 +93,20 @@ describe('promise utilities', () => {
 		expect(caughtError).toBe(error)
 	})
 
+	test('backgroundPromise routes a synchronous throw to onError', async () => {
+		const error = new Error('threw before returning a promise')
+		const caught: unknown[] = []
+		const factory = (): Promise<void> => {
+			throw error
+		}
+
+		backgroundPromise(factory, { onError: (e) => caught.push(e) })
+		backgroundPromiseSync(factory, { onError: (e) => caught.push(e) })
+
+		await promiseTimeout(0)
+		expect(caught).toEqual([error, error])
+	})
+
 	test('backgroundPromiseSync schedules work', async () => {
 		let didRun = false
 

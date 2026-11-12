@@ -45,6 +45,34 @@ process.exitCode = await cli.run()
 Use `process.exit(await cli.run())` instead when open database or Redis
 handles would keep the process alive.
 
+A one-off script needs no separate `bin.ts`. Pass a single command as
+`commands` and run it in the same file:
+
+```ts
+#!/usr/bin/env bun
+// scripts/greet.ts
+import { z } from 'zod'
+import { defineCli, defineCommand } from 'hanzio/cli'
+
+process.exit(
+	await defineCli({
+		name: 'greet',
+		commands: defineCommand({
+			description: 'Greet someone',
+			input: z.object({
+				name: z.string().meta({ positional: true }),
+				shout: z.boolean().describe('Upper-case the greeting')
+			}),
+			run: ({ name, shout }) =>
+				shout ? `HELLO ${name.toUpperCase()}` : `Hello ${name}`
+		})
+	}).run()
+)
+```
+
+`bun scripts/greet.ts Ada --shout` prints `HELLO ADA`, and `--help` works as in
+any other CLI.
+
 ## Flags
 
 | Schema | Command line |

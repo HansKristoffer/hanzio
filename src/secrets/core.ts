@@ -43,25 +43,36 @@ export type SecretLogger = {
 	warn?: (message: string, attributes: SecretRetryLogAttributes) => void
 }
 
-export type SecretSchema<K extends string, Parsed> = {
-	parseAsync: (values: Record<K, string>) => Promise<Parsed>
+/** Required keys as strings, plus the optional keys that have a value. */
+export type SecretValues<K extends string, O extends string = never> = Record<
+	K,
+	string
+> &
+	Partial<Record<O, string>>
+
+export type SecretSchema<K extends string, Parsed, O extends string = never> = {
+	parseAsync: (values: SecretValues<K, O>) => Promise<Parsed>
 }
 
 export type CommonSecretSetOptions<
 	K extends string,
-	Parsed = Record<K, string>
+	Parsed = Record<K, string>,
+	O extends string = never
 > = SecretRequestOptions & {
 	readonly environment?: SecretEnvironmentOption
 	readonly writeToProcessEnv?: boolean
 	readonly logger?: SecretLogger | false
-	readonly schema?: SecretSchema<K, Parsed>
+	/** Keys that may be missing. List them here only, not in the required keys. */
+	readonly optional?: readonly O[]
+	readonly schema?: SecretSchema<K, Parsed, O>
 }
 
 export type CustomLoaderDefineSecretSetOptions<
 	K extends string,
-	Parsed = Record<K, string>
-> = CommonSecretSetOptions<K, Parsed> & {
-	readonly loader: SecretSetLoader<K>
+	Parsed = Record<K, string>,
+	O extends string = never
+> = CommonSecretSetOptions<K, Parsed, O> & {
+	readonly loader: SecretSetLoader<NoInfer<K | O>>
 }
 
 export type SecretSetLoaderContext<K extends string> = {
@@ -83,21 +94,30 @@ export type SecretSetLoader<K extends string> = ((
 	readonly source?: string
 }
 
-export type SecretSet<K extends string, Parsed = Record<K, string>> = {
+export type SecretSet<
+	K extends string,
+	Parsed = Record<K, string>,
+	O extends string = never
+> = {
 	secret: (key: K) => string
+	/** An optional key's value, or undefined when it is missing or empty. */
+	optional: (key: O) => string | undefined
+	/** Required keys only. */
 	secrets: () => Record<K, string>
 	parsed: () => Parsed
-	sources: () => Record<K, string>
-	reload: (options?: SecretRequestOptions) => Promise<SecretSet<K, Parsed>>
+	/** Labels for required keys and for the optional keys that have a value. */
+	sources: () => SecretValues<K, O>
+	reload: (options?: SecretRequestOptions) => Promise<SecretSet<K, Parsed, O>>
 }
 
 /** A declaration that must be loaded explicitly before its values can be read. */
 export type LazySecretSet<
 	K extends string,
-	Parsed = Record<K, string>
-> = SecretSet<K, Parsed> & {
+	Parsed = Record<K, string>,
+	O extends string = never
+> = SecretSet<K, Parsed, O> & {
 	/** Initialize once. Concurrent calls share a load; use reload to refresh. */
-	load: (options?: SecretRequestOptions) => Promise<LazySecretSet<K, Parsed>>
+	load: (options?: SecretRequestOptions) => Promise<LazySecretSet<K, Parsed, O>>
 }
 
 // Shared across bundled entry points and package copies in the same JS realm.
@@ -113,8 +133,9 @@ const environmentWrites =
 shared[registryKey] = environmentWrites
 
 const defaultLogger: SecretLogger = {
+	// stderr, so a CLI that prints JSON on stdout stays parseable.
 	info: (message, attrs) =>
-		console.log(
+		console.error(
 			`${message} environment=${attrs.environment} count=${attrs.count} source=${attrs.source} durationMs=${attrs.durationMs}`,
 			{ sources: attrs.sources }
 		),
@@ -156,15 +177,27 @@ function readOverrides<K extends string>(
 
 export function createSecretSet<
 	const Keys extends readonly string[],
-	Parsed = Record<Keys[number], string>
+	Parsed = Record<Keys[number], string>,
+	const O extends string = never
 >(
 	keys: Keys,
-	options: CustomLoaderDefineSecretSetOptions<Keys[number], Parsed>,
+	options: CustomLoaderDefineSecretSetOptions<Keys[number], Parsed, O>,
 	environmentVariables?: EnvironmentVariables
-): LazySecretSet<Keys[number], Parsed> {
+): LazySecretSet<Keys[number], Parsed, O> {
 	type K = Keys[number]
 
 	const keySet = [...new Set(keys)] as K[]
+	const optionalKeys = [...new Set(options.optional ?? [])] as O[]
+	const both = optionalKeys.filter((key) => keySet.includes(key as string))
+
+	if (both.length) {
+		throw new SecretLoadError(
+			'CONFIGURATION',
+			`Secret keys cannot be both required and optional: ${both.join(', ')}`
+		)
+	}
+
+	const allKeys: (K | O)[] = [...keySet, ...optionalKeys]
 	let environment: string | undefined
 	let initialized = false
 	const logger =
@@ -172,8 +205,9 @@ export function createSecretSet<
 
 	// These snapshots change together only after an entire load succeeds.
 	let cached: Record<K, string>
+	let optionalValues: Partial<Record<O, string>>
 	let parsed: Parsed
-	let sources: Record<K, string>
+	let sources: SecretValues<K, O>
 	let inFlight: Promise<void> | undefined
 
 	const log = (
@@ -195,10 +229,10 @@ export function createSecretSet<
 		environment: string
 	) => {
 		// Fetch only keys that lack genuine local overrides.
-		const local = readOverrides(keySet, environmentVariables)
-		const missing = keySet.filter((key) => !Object.hasOwn(local, key))
+		const local = readOverrides(allKeys, environmentVariables)
+		const missing = allKeys.filter((key) => !Object.hasOwn(local, key))
 		let loaderSource = options.loader.source ?? 'custom loader'
-		let loaded: Partial<Record<K, string>> = {}
+		let loaded: Partial<Record<K | O, string>> = {}
 
 		if (missing.length) {
 			try {
@@ -228,24 +262,21 @@ export function createSecretSet<
 			}
 		}
 
-		// Honor overrides changed while the loader was running.
-		const overrides = readOverrides(keySet, environmentVariables)
-		const next = Object.fromEntries(
-			keySet.map((key) => {
-				if (Object.hasOwn(overrides, key)) {
-					return [key, overrides[key]]
-				}
+		// Honor overrides changed while the loader was running. Keep only
+		// nonempty strings: a missing optional key is simply absent.
+		const overrides = readOverrides(allKeys, environmentVariables)
+		const values = Object.fromEntries(
+			allKeys.flatMap((key) => {
+				const value = Object.hasOwn(overrides, key)
+					? overrides[key]
+					: Object.hasOwn(loaded, key)
+						? loaded[key]
+						: undefined
 
-				if (Object.hasOwn(loaded, key)) {
-					return [key, loaded[key]]
-				}
-
-				return [key, undefined]
+				return typeof value === 'string' && value ? [[key, value]] : []
 			})
-		) as Record<K, string>
-		const missingKeys = keySet.filter(
-			(key) => typeof next[key] !== 'string' || !next[key]
-		)
+		) as Partial<Record<K | O, string>>
+		const missingKeys = keySet.filter((key) => !Object.hasOwn(values, key))
 
 		if (missingKeys.length) {
 			throw new SecretLoadError(
@@ -254,12 +285,16 @@ export function createSecretSet<
 			)
 		}
 
+		const next = Object.fromEntries(
+			keySet.map((key) => [key, values[key]])
+		) as Record<K, string>
+
 		// Validate the merged snapshot before touching the cache or environment.
 		let nextParsed: Parsed
 
 		try {
 			nextParsed = options.schema
-				? await options.schema.parseAsync({ ...next })
+				? await options.schema.parseAsync({ ...values } as SecretValues<K, O>)
 				: ({ ...next } as Parsed)
 
 			// Validate copyability before committing anything.
@@ -276,11 +311,11 @@ export function createSecretSet<
 		signal.throwIfAborted()
 
 		const nextSources = Object.fromEntries(
-			keySet.map((key) => [
+			Object.keys(values).map((key) => [
 				key,
 				Object.hasOwn(overrides, key) ? 'process.env' : loaderSource
 			])
-		) as Record<K, string>
+		) as SecretValues<K, O>
 
 		// Register only fetched values so future loads can identify our mirrors.
 		if (options.writeToProcessEnv !== false && environmentVariables) {
@@ -291,17 +326,30 @@ export function createSecretSet<
 				environmentWrites.set(environmentVariables, writes)
 			}
 
-			for (const key of keySet) {
+			for (const key of allKeys) {
 				if (Object.hasOwn(overrides, key)) {
 					continue
 				}
 
-				environmentVariables[key] = next[key]
-				writes.set(key, next[key])
+				const value = values[key]
+
+				if (value !== undefined) {
+					environmentVariables[key] = value
+					writes.set(key, value)
+				} else if (writes.has(key)) {
+					// An optional key removed upstream: drop our stale mirror.
+					delete environmentVariables[key]
+					writes.delete(key)
+				}
 			}
 		}
 
 		cached = next
+		optionalValues = Object.fromEntries(
+			optionalKeys.flatMap((key) =>
+				Object.hasOwn(values, key) ? [[key, values[key]]] : []
+			)
+		) as Partial<Record<O, string>>
 		parsed = nextParsed
 		sources = nextSources
 		initialized = true
@@ -333,10 +381,9 @@ export function createSecretSet<
 
 				// Report the sources of committed values, not attempted fetches.
 				const sourceCounts = new Map<string, number>()
+				const labels = Object.values<string>(sources)
 
-				for (const key of keySet) {
-					const source = sources[key]
-
+				for (const source of labels) {
 					sourceCounts.set(source, (sourceCounts.get(source) ?? 0) + 1)
 				}
 
@@ -344,7 +391,7 @@ export function createSecretSet<
 
 				log('info', 'Loaded secrets', {
 					environment: resolvedEnvironment,
-					count: keySet.length,
+					count: labels.length,
 					durationMs: Date.now() - start,
 					source: Object.keys(counts).join(' + ') || 'none',
 					sources: counts
@@ -380,7 +427,7 @@ export function createSecretSet<
 		}
 	}
 
-	const secretSet: LazySecretSet<K, Parsed> = {
+	const secretSet: LazySecretSet<K, Parsed, O> = {
 		secret(key) {
 			assertLoaded()
 
@@ -389,6 +436,20 @@ export function createSecretSet<
 			}
 
 			return cached[key]
+		},
+		optional(key) {
+			assertLoaded()
+
+			if (!optionalKeys.includes(key)) {
+				throw new SecretLoadError(
+					'CONFIGURATION',
+					`Secret ${key} is not declared in optional.`
+				)
+			}
+
+			return Object.hasOwn(optionalValues, key)
+				? optionalValues[key]
+				: undefined
 		},
 
 		// Return copies so consumers cannot mutate the internal snapshots.
@@ -429,11 +490,12 @@ export function createSecretSet<
 /** Compatibility API: declares and loads a complete snapshot before returning. */
 export async function defineSecretSet<
 	const Keys extends readonly string[],
-	Parsed = Record<Keys[number], string>
+	Parsed = Record<Keys[number], string>,
+	const O extends string = never
 >(
 	keys: Keys,
-	options: CustomLoaderDefineSecretSetOptions<Keys[number], Parsed>,
+	options: CustomLoaderDefineSecretSetOptions<Keys[number], Parsed, O>,
 	environmentVariables?: EnvironmentVariables
-): Promise<SecretSet<Keys[number], Parsed>> {
+): Promise<SecretSet<Keys[number], Parsed, O>> {
 	return createSecretSet(keys, options, environmentVariables).load()
 }

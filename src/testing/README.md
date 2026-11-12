@@ -44,6 +44,20 @@ await moduleMocker.mock('lib/posthog.ts', () => ({ captureException: mock() }))
 await moduleMocker.mock('ai', () => ({ generateText: mock() }))
 ```
 
+An override the real module does not export throws (`lib/posthog.ts has no
+export "captureExeption" (has: captureException, …)`), because Bun would drop
+it and leave the real export in place. Type the overrides against the real module with
+`moduleMocker.mock<typeof import('../lib/posthog')>(…)`.
+
+`replace(specifier, factory)` registers `factory` as the whole module without
+importing the real one, for modules that do I/O at import time. It throws when
+the specifier does not resolve. There is no original to restore, so `clear()`
+does not undo it.
+
+```ts
+await moduleMocker.replace('lib/db.ts', () => ({ db: fakeDb }))
+```
+
 Or give the constructor a resolver for your own shorthand:
 
 ```ts
@@ -122,7 +136,7 @@ forces a fresh login.
 
 ```ts
 const input = mockCallArg<CreateUserInput>(createUser) // call 0, argument 0
-mockCallArg<boolean>(createUser, 1, 1) // call 1, argument 1
+mockCallArg<boolean>(createUser, 1, 1) // call 1, argument 1, throws if missing
 
 runJob({ logger: noopLogger }) // trace…fatal discard; bind/child return itself
 ```

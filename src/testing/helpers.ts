@@ -27,7 +27,8 @@ export const noopLogger: NoopLogger = {
 
 /**
  * Reads one argument from a mock's call history as `T`. Bun types
- * `mock.calls` as `never[]` for loosely typed mocks.
+ * `mock.calls` as `never[]` for loosely typed mocks. Throws when the call or
+ * argument does not exist.
  *
  * @example
  * const input = mockCallArg<CreateUserInput>(createUser) // first call, first argument
@@ -37,5 +38,17 @@ export function mockCallArg<T>(
 	callIndex = 0,
 	argIndex = 0
 ): T {
-	return fn.mock.calls[callIndex]?.[argIndex] as T
+	const { calls } = fn.mock
+	const call = calls[callIndex]
+	if (!call) {
+		throw new Error(
+			`mock was called ${calls.length} time(s); no call at index ${callIndex}`
+		)
+	}
+	if (argIndex >= call.length) {
+		throw new Error(
+			`mock was called ${calls.length} time(s); call ${callIndex} has ${call.length} argument(s), no argument at index ${argIndex}`
+		)
+	}
+	return call[argIndex] as T
 }

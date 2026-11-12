@@ -44,7 +44,8 @@ export function backgroundPromise<T>(
 	options: BackgroundPromiseOptions = {}
 ): void {
 	const run = () => {
-		promiseFactory()
+		// The executor calls the factory now and turns a sync throw into a rejection.
+		new Promise<T>((resolve) => resolve(promiseFactory()))
 			.then(() => options.onSuccess?.())
 			.catch((error: unknown) => options.onError?.(error))
 	}

@@ -1,5 +1,41 @@
-/** One raw Redis command, e.g. `(command, args) => redis.getClient().send(command, args)`. */
+/** One raw Redis command, e.g. `redis.send` from `createManagedRedis`. */
 export type RedisSend = (command: string, args: string[]) => Promise<unknown>
+
+/** A Redis command that did not answer within its timeout. */
+export class RedisUnavailableError extends Error {
+	constructor(message: string) {
+		super(message)
+		this.name = 'RedisUnavailableError'
+	}
+}
+
+/** `send` that rejects with `RedisUnavailableError` after `timeoutMs`. */
+export function withCommandTimeout(
+	send: RedisSend,
+	timeoutMs: number
+): RedisSend {
+	return async (command, args) => {
+		let timer: ReturnType<typeof setTimeout> | undefined
+		try {
+			return await Promise.race([
+				send(command, args),
+				new Promise<never>((_, reject) => {
+					timer = setTimeout(
+						() =>
+							reject(
+								new RedisUnavailableError(
+									`Redis ${command} timed out after ${timeoutMs}ms`
+								)
+							),
+						timeoutMs
+					)
+				})
+			])
+		} finally {
+			if (timer) clearTimeout(timer)
+		}
+	}
+}
 
 function isNoScriptError(error: unknown) {
 	const message = error instanceof Error ? error.message : String(error)

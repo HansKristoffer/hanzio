@@ -27,6 +27,11 @@ writeFileSync(
 	'{"name":"only-here","type":"module","main":"index.js"}'
 )
 writeFileSync(path.join(onlyHere, 'index.js'), "export const name = 'real'\n")
+const sideEffect = path.join(fixtureDir, 'side-effect.ts')
+writeFileSync(
+	sideEffect,
+	"throw new Error('imported the real module')\nexport const db = 'real'\n"
+)
 
 describe('ModuleMocker', () => {
 	const moduleMocker = new ModuleMocker()
@@ -75,7 +80,36 @@ describe('ModuleMocker', () => {
 		aliased.clear()
 		expect((await import(fixture)).farewell).toBe('bye')
 	})
+
+	test('rejects an override the real module does not export', async () => {
+		await expect(
+			moduleMocker.mock(fixture, () => ({ greting: 'typo' }))
+		).rejects.toThrow(
+			`${fixture} has no export "greting" (has: farewell, greeting, shout)`
+		)
+		expect((await import(fixture)).greeting).toBe('hello')
+	})
+
+	test('replace swaps a module without importing it', async () => {
+		await moduleMocker.replace(sideEffect, () => ({ db: 'fake' }))
+		expect((await import(sideEffect)).db).toBe('fake')
+
+		await expect(
+			moduleMocker.replace(path.join(fixtureDir, 'missing.ts'), () => ({}))
+		).rejects.toThrow('missing.ts does not resolve')
+	})
 })
+
+// Never called: compile-time checks only.
+function _mockTypes(moduleMocker: ModuleMocker) {
+	type Greeting = { greeting: string; shout: (text: string) => string }
+	void moduleMocker.mock<Greeting>('x', () => ({ greeting: 'typed' }))
+	// @ts-expect-error a typed factory rejects a wrong export type
+	void moduleMocker.mock<Greeting>('x', () => ({ greeting: 1 }))
+	// Untyped stays loose.
+	void moduleMocker.mock('x', () => ({ anything: 1 }))
+}
+void _mockTypes
 
 type FakePrisma = {
 	user: {
@@ -170,7 +204,12 @@ describe('helpers', () => {
 		fn({ id: 'second' }, true)
 		expect(mockCallArg<{ id: string }>(fn, 1).id).toBe('second')
 		expect(mockCallArg<boolean>(fn, 1, 1)).toBe(true)
-		expect(mockCallArg(fn, 5)).toBeUndefined()
+		expect(() => mockCallArg(fn, 5)).toThrow(
+			'mock was called 2 time(s); no call at index 5'
+		)
+		expect(() => mockCallArg(fn, 0, 1)).toThrow(
+			'mock was called 2 time(s); call 0 has 1 argument(s), no argument at index 1'
+		)
 	})
 
 	test('noopLogger binds to itself', () => {

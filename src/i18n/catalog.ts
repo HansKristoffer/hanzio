@@ -7,7 +7,10 @@ export type CatalogRuntime = 'vue-i18n' | 'i18next' | 'plain'
 export type CatalogConfig = {
 	/** Shown in check output. */
 	name: string
-	/** Folder of `<locale>.json` files, relative to the config file. */
+	/**
+	 * Folder of `<locale>.json` files or `<locale>/<area>.json` folders,
+	 * relative to the config file.
+	 */
 	dir: string
 	runtime: CatalogRuntime
 	/** Where `hanzio-i18n generate` writes the key → placeholder map. */

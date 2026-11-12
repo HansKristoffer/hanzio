@@ -1,6 +1,7 @@
-// Catalog checks for `<dir>/<locale>.json` translation catalogs, used by the
-// `hanzio-i18n` bin. The base locale is the source of truth: every locale must
-// have its keys and placeholders, and the generated key maps must match it.
+// Catalog checks for translation catalogs stored as `<dir>/<locale>.json` or
+// as `<dir>/<locale>/<area>.json` folders, used by the `hanzio-i18n` bin. The
+// base locale is the source of truth: every locale must have its keys and
+// placeholders, and the generated key maps must match it.
 
 import {
 	existsSync,
@@ -39,13 +40,18 @@ export type I18nConfig<
 	 * so their top-level keys must not overlap.
 	 */
 	disjointNamespaces?: readonly (readonly NoInfer<Catalog>[])[]
+	/**
+	 * Groups of catalogs that share copy: a key in two or more of them must
+	 * have the same text in every locale they share.
+	 */
+	sameValues?: readonly (readonly NoInfer<Catalog>[])[]
 	rules?: ContentRulesConfig<NoInfer<Locale>>
 }
 
 /**
  * Types an `i18n.config.ts` default export: `baseLocale`, the catalog names
- * in `disjointNamespaces` and the locales in `rules.identical.allowKeys` must
- * be ones the config declares.
+ * in `disjointNamespaces` and `sameValues`, and the locales in
+ * `rules.identical.allowKeys` must be ones the config declares.
  */
 export function defineI18nConfig<
 	const Locale extends string,
@@ -89,6 +95,81 @@ function readCatalog(path: string, catalog: string, locale: string) {
 		}
 	}
 }
+
+const isDirectory = (path: string) =>
+	existsSync(path) && statSync(path).isDirectory()
+
+const jsonFiles = (dir: string) =>
+	readdirSync(dir)
+		.filter((file) => file.endsWith('.json'))
+		.sort()
+
+/** `vault-io.json` → `vaultIo`: an area file's top-level namespace. */
+const areaNamespace = (file: string) =>
+	file
+		.slice(0, -'.json'.length)
+		.replace(/[-_.\s]+([A-Za-z0-9])/g, (_, char: string) => char.toUpperCase())
+
+/**
+ * A locale's catalog: `<dir>/<locale>.json`, else every `*.json` in
+ * `<dir>/<locale>/`, each under its camelCased file name. `areas` lists the
+ * folder's files.
+ */
+function readLocale(dir: string, catalog: string, locale: string) {
+	const file = join(dir, `${locale}.json`)
+	const folder = join(dir, locale)
+	if (existsSync(file) || !isDirectory(folder)) {
+		return { ...readCatalog(file, catalog, locale), areas: undefined }
+	}
+
+	const issues: CatalogIssue[] = []
+	const merged: Record<string, unknown> = {}
+	const owners = new Map<string, string>()
+	const areas = jsonFiles(folder)
+	for (const area of areas) {
+		const namespace = areaNamespace(area)
+		const owner = owners.get(namespace)
+		if (owner) {
+			issues.push({
+				catalog,
+				locale,
+				message: `area files ${locale}/${owner} and ${locale}/${area} both map to namespace "${namespace}"`
+			})
+			continue
+		}
+		owners.set(namespace, area)
+		try {
+			merged[namespace] = JSON.parse(readFileSync(join(folder, area), 'utf8'))
+		} catch (error) {
+			issues.push({
+				catalog,
+				locale,
+				message: `invalid JSON in ${locale}/${area} - ${String(error)}`
+			})
+		}
+	}
+	const parsed = parseMessages(merged, catalog, locale)
+	return {
+		messages: parsed.messages,
+		issues: [...issues, ...parsed.issues],
+		areas
+	}
+}
+
+/** Locales with a `<locale>.json` file or a `<locale>/` folder of JSON files. */
+function discoverLocales(dir: string) {
+	const locales = new Set(
+		jsonFiles(dir).map((file) => file.slice(0, -'.json'.length))
+	)
+	for (const name of readdirSync(dir)) {
+		const folder = join(dir, name)
+		if (isDirectory(folder) && jsonFiles(folder).length > 0) locales.add(name)
+	}
+	return [...locales]
+}
+
+/** i18next's `{{ name }}` reads as `{name}`, so shared copy compares equal. */
+const I18NEXT_PLACEHOLDER = /\{\{\s*(\w+)\s*\}\}/g
 
 function collectSourceFiles(path: string, files: string[] = []): string[] {
 	if (!existsSync(path)) return files
@@ -163,6 +244,8 @@ export async function validateCatalogs(
 	const rules = createContentRules(config.rules)
 	const issues: CatalogIssue[] = []
 	const baseByCatalog = new Map<string, Messages>()
+	/** Flattened messages per catalog, then per locale, for `sameValues`. */
+	const flatByCatalog = new Map<string, Map<string, Map<string, string>>>()
 
 	// An optional peer, loaded only when a catalog needs it.
 	let compiler: VueCompiler | undefined
@@ -193,9 +276,7 @@ export async function validateCatalogs(
 			report(`catalog directory does not exist: ${catalog.dir}`)
 			continue
 		}
-		const files = readdirSync(dir)
-			.filter((file) => file.endsWith('.json'))
-			.map((file) => file.slice(0, -'.json'.length))
+		const files = discoverLocales(dir)
 		const missingFiles = locales.filter((locale) => !files.includes(locale))
 		const extraFiles = files.filter((locale) => !locales.includes(locale))
 		if (missingFiles.length > 0) {
@@ -205,13 +286,15 @@ export async function validateCatalogs(
 			report(`unregistered locale file(s): ${extraFiles.sort().join(', ')}`)
 		}
 
-		const basePath = join(dir, `${baseLocale}.json`)
-		if (!existsSync(basePath)) continue
-		const baseResult = readCatalog(basePath, catalog.name, baseLocale)
+		if (!files.includes(baseLocale)) continue
+		const baseResult = readLocale(dir, catalog.name, baseLocale)
 		issues.push(...baseResult.issues)
 		if (!baseResult.messages) continue
 		baseByCatalog.set(catalog.name, baseResult.messages)
 		const base = flattenCatalog(baseResult.messages)
+		const flatByLocale = new Map([[baseLocale, base]])
+		flatByCatalog.set(catalog.name, flatByLocale)
+		const baseName = baseResult.areas ? `${baseLocale}/` : `${baseLocale}.json`
 
 		for (const [key, value] of base) {
 			const shape = rules.codeShape(value)
@@ -240,20 +323,28 @@ export async function validateCatalogs(
 
 		for (const locale of locales) {
 			if (locale === baseLocale) continue
-			const path = join(dir, `${locale}.json`)
-			if (!existsSync(path)) continue
-			const result = readCatalog(path, catalog.name, locale)
+			if (!files.includes(locale)) continue
+			const result = readLocale(dir, catalog.name, locale)
 			issues.push(...result.issues)
+			if (baseResult.areas && result.areas) {
+				const missingAreas = baseResult.areas.filter(
+					(area) => !result.areas.includes(area)
+				)
+				if (missingAreas.length > 0) {
+					report(
+						`missing area file(s): ${missingAreas.map((area) => `${locale}/${area}`).join(', ')}`,
+						locale
+					)
+				}
+			}
 			if (!result.messages) continue
 			const translated = flattenCatalog(result.messages)
+			flatByLocale.set(locale, translated)
 
 			const stale = [...translated.keys()].filter((key) => !base.has(key))
 			const missing = [...base.keys()].filter((key) => !translated.has(key))
 			if (stale.length > 0) {
-				report(
-					`stale key(s) not in ${baseLocale}.json: ${stale.join(', ')}`,
-					locale
-				)
+				report(`stale key(s) not in ${baseName}: ${stale.join(', ')}`, locale)
 			}
 			if (missing.length > 0) {
 				report(`missing translation key(s): ${missing.join(', ')}`, locale)
@@ -339,6 +430,35 @@ export async function validateCatalogs(
 		}
 	}
 
+	const runtimes = new Map(
+		config.catalogs.map((catalog) => [catalog.name, catalog.runtime])
+	)
+	const comparable = (catalog: string, value: string) =>
+		runtimes.get(catalog) === 'i18next'
+			? value.replace(I18NEXT_PLACEHOLDER, '{$1}')
+			: value
+	for (const group of config.sameValues ?? []) {
+		for (const locale of locales) {
+			const first = new Map<string, { catalog: string; value: string }>()
+			for (const name of group) {
+				const messages = flatByCatalog.get(name)?.get(locale) ?? []
+				for (const [key, value] of messages) {
+					const seen = first.get(key)
+					if (!seen) first.set(key, { catalog: name, value })
+					else if (
+						comparable(seen.catalog, seen.value) !== comparable(name, value)
+					) {
+						issues.push({
+							catalog: group.join('/'),
+							locale,
+							message: `"${key}" differs between ${seen.catalog} and ${name} in ${locale}: "${seen.value}" vs "${value}"`
+						})
+					}
+				}
+			}
+		}
+	}
+
 	return issues
 }
 
@@ -355,8 +475,8 @@ export function writeCatalogTypes(
 	const issues: CatalogIssue[] = []
 	for (const catalog of config.catalogs) {
 		if (!catalog.generatedTypes) continue
-		const parsed = readCatalog(
-			join(options.root, catalog.dir, `${config.baseLocale}.json`),
+		const parsed = readLocale(
+			join(options.root, catalog.dir),
 			catalog.name,
 			config.baseLocale
 		)

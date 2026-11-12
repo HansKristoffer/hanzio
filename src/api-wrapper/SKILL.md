@@ -50,7 +50,9 @@ mkdir -p src/api-wrapper/{api-name}/utils
 
 ### Step 3: Create The Index File
 
-The index file creates and exports the API client. When the token comes from
+The index file creates and exports the API client. Import `createApiClient`
+and `defineEndpoint` from `hanzio/api-wrapper`; the root `hanzio` entry does
+not export them. When the token comes from
 a secret store, create the client at module level and resolve the header
 lazily with a `defaultHeaders` function; take the token as a parameter only
 when callers supply it per instance.
@@ -139,8 +141,25 @@ export const usersGet = defineEndpoint({
 })
 ```
 
-`defineEndpoint` types `reqParams` from the `:params` in `path`, so add a
-`reqParamsSchema` only when params need validation or coercion.
+Define every endpoint with `defineEndpoint`, not `satisfies ApiEndpoint`:
+`satisfies` widens `path` to `string`, so `reqParams` is no longer required or
+checked and a missing `:userId` only fails at runtime. `defineEndpoint` types
+`reqParams` from the `:params` in `path`, so add a `reqParamsSchema` only when
+params need validation or coercion.
+
+POST and PATCH endpoints are retried only on `429` by default, because a
+request that timed out after the server did the work would be sent twice. When
+the API makes one safe to repeat (an idempotency key, or an upsert), mark it:
+
+```ts
+export const ordersCreate = defineEndpoint({
+	method: 'POST',
+	path: '/orders',
+	reqBodySchema: OrderInput,
+	resSchema: Order,
+	idempotent: true
+})
+```
 
 ### Step 6: Create Utility Functions
 
@@ -239,7 +258,8 @@ const UserResponse = z.object({
 - [ ] Create `types.ts` for shared schemas when needed.
 - [ ] Create one file per endpoint.
 - [ ] Define Zod schemas for all request and response data.
-- [ ] Use `defineEndpoint` for endpoint definitions.
+- [ ] Use `defineEndpoint` for endpoint definitions, never `satisfies ApiEndpoint`.
+- [ ] Set `idempotent: true` on POST/PATCH endpoints that are safe to retry.
 - [ ] Create helpers in `utils/` when needed.
 - [ ] Export the API type, for example `export type ExampleApi = typeof exampleApi`.
 - [ ] Test with `createMockFetch` from `hanzio/api-wrapper/testing` passed as `fetch`; don't replace `globalThis.fetch`.

@@ -12,4 +12,8 @@ export {
 	type RedisConcurrencyLimit,
 	type RedisConcurrencyLimitOptions
 } from './concurrency-limit'
-export { createLuaScript, type RedisSend } from './lua-script'
+export {
+	createLuaScript,
+	RedisUnavailableError,
+	type RedisSend
+} from './lua-script'

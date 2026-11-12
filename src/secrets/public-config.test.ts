@@ -48,3 +48,21 @@ test('validates the same snapshot it returns when inputs are getters', () => {
 	expect(config.secret('VITE_URL')).toBe('https://example.test')
 	expect(reads).toBe(1)
 })
+
+test('optional public keys may be missing and are skipped by getViteDefine', () => {
+	const config = readPublicConfig(
+		['VITE_API_URL'],
+		{ VITE_API_URL: 'https://example.test', VITE_POSTHOG_KEY: '' },
+		{ optional: ['VITE_POSTHOG_KEY', 'VITE_SENTRY_DSN'] }
+	)
+	const posthog: string | undefined = config.optional('VITE_POSTHOG_KEY')
+
+	expect(posthog).toBeUndefined()
+	expect(config.secrets()).toEqual({ VITE_API_URL: 'https://example.test' })
+	expect(
+		getViteDefine(config, { publicKeys: ['VITE_API_URL', 'VITE_SENTRY_DSN'] })
+	).toEqual({ 'import.meta.env.VITE_API_URL': '"https://example.test"' })
+	expect(() =>
+		readPublicConfig(['VITE_A'], { VITE_A: 'a' }, { optional: ['VITE_A'] })
+	).toThrow('both required and optional: VITE_A')
+})

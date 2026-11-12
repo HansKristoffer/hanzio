@@ -245,6 +245,7 @@ function createApiClientImpl<
 				endpointName,
 				method: endpoint.method,
 				fullUrl,
+				idempotent: endpoint.idempotent,
 				meta: input.meta,
 				onResponse: apiConfig.onResponse,
 				onRetry: apiConfig.onRetry

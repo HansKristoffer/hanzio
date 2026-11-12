@@ -517,27 +517,52 @@ export function pluralize(
 // ─── Bound to a locale ──────────────────────────────────────────────────────
 
 /**
- * The date formatters with the locale read on every call, for apps whose
- * locale lives in their i18n runtime:
- * `export const fmt = withLocale(() => uiLocales.tag(appI18n.locale()))`.
+ * Every formatter that takes a locale, with that argument bound. Pass a tag,
+ * or a getter that is read on every call for apps whose locale lives in their
+ * i18n runtime: `export const fmt = withLocale(() => i18n.locale())`.
  */
-export function withLocale(getLocale: () => string) {
+export function withLocale(locale: string | (() => string)) {
+	const get = typeof locale === 'function' ? locale : () => locale
 	return {
-		formatDate: (
-			date: DateInput,
-			format: DatePreset | Intl.DateTimeFormatOptions
-		) => formatDate(date, format, getLocale()),
-		formatDateTime: (date: DateInput) => formatDateTime(date, getLocale()),
-		formatCompactTime: (date: DateInput) =>
-			formatCompactTime(date, getLocale()),
-		formatDayDivider: (date: DateInput) => formatDayDivider(date, getLocale()),
+		formatNumber: (value: number, options?: Intl.NumberFormatOptions) =>
+			formatNumber(value, get(), options),
+		formatPercent: (value: number, options?: Intl.NumberFormatOptions) =>
+			formatPercent(value, get(), options),
+		formatCurrency: (
+			amount: number,
+			currency: string,
+			options?: Intl.NumberFormatOptions
+		) => formatCurrency(amount, currency, get(), options),
+		formatPrice: (amount: number, currency: string) =>
+			formatPrice(amount, currency, get()),
+		formatCompactNumber: (value: number) => formatCompactNumber(value, get()),
+		formatDuration: (ms: number, options?: FormatDurationOptions) =>
+			formatDuration(ms, get(), options),
 		formatRelativeTime: (
 			date: DateInput,
 			options?: FormatRelativeTimeOptions
-		) => formatRelativeTime(date, getLocale(), options),
-		formatNumber: (value: number, options?: Intl.NumberFormatOptions) =>
-			formatNumber(value, getLocale(), options),
-		formatPrice: (amount: number, currency: string) =>
-			formatPrice(amount, currency, getLocale())
+		) => formatRelativeTime(date, get(), options),
+		formatWait: (value: DateInput, options?: { now?: DateInput }) =>
+			formatWait(value, get(), options),
+		formatDateRange: (
+			start: DateInput,
+			end: DateInput,
+			options?: Intl.DateTimeFormatOptions
+		) => formatDateRange(start, end, get(), options),
+		formatDate: (
+			date: DateInput,
+			format: DatePreset | Intl.DateTimeFormatOptions
+		) => formatDate(date, format, get()),
+		formatDateTime: (date: DateInput) => formatDateTime(date, get()),
+		formatCompactTime: (date: DateInput, options?: { now?: DateInput }) =>
+			formatCompactTime(date, get(), options),
+		formatDayDivider: (date: DateInput, options?: { now?: DateInput }) =>
+			formatDayDivider(date, get(), options),
+		formatList: (items: readonly string[], options?: Intl.ListFormatOptions) =>
+			formatList(items, get(), options),
+		pluralize: (
+			count: number,
+			forms: Partial<Record<Intl.LDMLPluralRule, string>> & { other: string }
+		) => pluralize(count, forms, get())
 	}
 }

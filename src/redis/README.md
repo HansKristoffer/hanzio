@@ -11,7 +11,8 @@ For Bun servers. The client wraps `Bun.RedisClient`; the limiter takes any
 import {
 	createLuaScript,
 	createManagedRedis,
-	createRedisConcurrencyLimit
+	createRedisConcurrencyLimit,
+	RedisUnavailableError
 } from 'hanzio/redis'
 ```
 
@@ -36,8 +37,25 @@ redis.close() // on shutdown
 ```
 
 - `getClient()` returns one shared command connection. Both connections retry
-  forever (Bun gives up after about 20 seconds by default) and queue commands
-  while offline. If Bun closes one permanently, the next call builds a new one.
+  forever (Bun gives up after about 20 seconds by default). If Bun closes one
+  permanently, the next call builds a new one.
+- By default a command sent while Redis is down is queued until the connection
+  comes back. On a request path that means the request waits for the whole
+  outage. There, turn the queue off and bound each command with `send`:
+
+  ```ts
+  export const redis = createManagedRedis({
+  	url: () => getSecret('REDIS_URL'),
+  	offlineQueue: false,
+  	commandTimeoutMs: 500
+  })
+
+  // Rejects with RedisUnavailableError after 500ms, connecting included.
+  const cached = await redis.send('GET', [`session:${id}`])
+  ```
+
+  `offlineQueue` applies to the command connection only; the subscriber keeps
+  its queue. `commandTimeoutMs` bounds `send` only, not calls on `getClient()`.
 - `subscribe` shares one Redis `SUBSCRIBE` per channel, however many handlers
   listen. The channel is unsubscribed when its last handler leaves. After a
   reconnect, or a replaced subscriber connection, every channel is subscribed
@@ -62,7 +80,7 @@ const withOpenAiSlot = createRedisConcurrencyLimit({
 	max: 20,
 	slotTtlMs: 30_000,
 	maxStartsPerSecond: 10, // optional: also cap starts in a sliding 1s window
-	send: (command, args) => redis.getClient().send(command, args)
+	send: redis.send
 })
 
 const reply = await withOpenAiSlot(() => openai.chat(request), signal)
@@ -105,10 +123,10 @@ the function `onQueueDepth` returned, so the gauge stops reading the limiter.
 
 ## Lua scripts
 
-`createLuaScript(send, source)` sends a script by SHA (`EVALSHA`) and falls back
+`createLuaScript(send, source)`, where `send` can be `redis.send`, sends a script by SHA (`EVALSHA`) and falls back
 to `EVAL` when Redis has forgotten it after a restart or `SCRIPT FLUSH`.
 
 ```ts
-const increment = createLuaScript(send, `return redis.call('INCRBY', KEYS[1], ARGV[1])`)
+const increment = createLuaScript(redis.send, `return redis.call('INCRBY', KEYS[1], ARGV[1])`)
 await increment(['counter'], ['2'])
 ```

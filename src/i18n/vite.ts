@@ -3,8 +3,9 @@ import type { Plugin } from 'vite'
 const INTLIFY_VIRTUAL_PREFIX = 'virtual:intlify-i18n-'
 
 /**
- * Dev-server plugin: reload the page with fresh catalogs when a
- * `locales/*.json` file changes.
+ * Dev-server plugin: reload the page with fresh catalogs when a `.json` file
+ * below a `locales` folder changes (`locales/en.json`,
+ * `locales/en/settings.json`).
  *
  * `@intlify/unplugin-vue-i18n` serves each catalog as a `virtual:intlify-i18n-N`
  * module that the module graph cannot tie back to its JSON file, and its own
@@ -15,11 +16,12 @@ const INTLIFY_VIRTUAL_PREFIX = 'virtual:intlify-i18n-'
  */
 export function localeCatalogReloadPlugin(
 	options: {
-		/** Which changed files are catalogs. Default: `.json` in a `locales` folder. */
+		/** Which changed files are catalogs. Default: `.json` below a `locales` folder. */
 		match?: RegExp
 	} = {}
 ): Plugin {
-	const match = options.match ?? /[/\\]locales[/\\][^/\\]+\.json$/
+	const match =
+		options.match ?? /[/\\]locales[/\\](?:[^/\\]+[/\\])*[^/\\]+\.json$/
 	return {
 		name: 'hanzio-locale-catalog-reload',
 		apply: 'serve',

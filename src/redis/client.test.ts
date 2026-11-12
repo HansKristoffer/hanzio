@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
-import type { RedisClient } from 'bun'
+import type { RedisClient, RedisOptions } from 'bun'
 import { createManagedRedis, type RedisMessageHandler } from './client'
+import { createLuaScript, RedisUnavailableError } from './lua-script'
 
 /** A connection whose `unsubscribe` stays pending until settled or `close()` rejects it. */
 function fakeConnection() {
@@ -26,6 +27,12 @@ function fakeConnection() {
 			})
 		},
 		holdUnsubscribe: false,
+		sent: [] as [string, string[]][],
+		reply: (async () => 'OK') as () => Promise<unknown>,
+		send(command: string, args: string[]) {
+			connection.sent.push([command, args])
+			return connection.reply()
+		},
 		close() {
 			rejectUnsubscribe(new Error('Connection closed'))
 			connection.onclose?.(new Error('Connection closed'))
@@ -155,5 +162,86 @@ describe('createManagedRedis', () => {
 			role: 'client',
 			stage: 'close'
 		})
+	})
+
+	test('reports a subscriber close without an error as an Error', async () => {
+		const { redis, connections, onError } = setup()
+		await redis.subscribe('events', () => {})
+
+		;(connections[0]!.onclose as (error?: Error) => void)(undefined)
+		expect(onError).toHaveBeenCalledWith(expect.any(Error), {
+			role: 'subscriber',
+			stage: 'close'
+		})
+	})
+})
+
+describe('createManagedRedis send', () => {
+	function withOptions(
+		options: { commandTimeoutMs?: number; offlineQueue?: boolean } = {}
+	) {
+		const connections: ReturnType<typeof fakeConnection>[] = []
+		const created: RedisOptions[] = []
+		const redis = createManagedRedis({
+			url: 'redis://test',
+			onError: () => {},
+			...options,
+			createClient: (_url, connectionOptions) => {
+				const connection = fakeConnection()
+				connections.push(connection)
+				created.push(connectionOptions)
+				return connection as unknown as RedisClient
+			}
+		})
+		return { redis, connections, created }
+	}
+
+	test('sends one raw command on the command connection', async () => {
+		const { redis, connections } = withOptions()
+		expect(await redis.send('INCR', ['visits'])).toBe('OK')
+		expect(connections[0]!.sent).toEqual([['INCR', ['visits']]])
+	})
+
+	test('fits createLuaScript as its send', async () => {
+		const { redis, connections } = withOptions()
+		await createLuaScript(redis.send, 'return 1')([], [])
+		expect(connections[0]!.sent.map(([command]) => command)).toEqual([
+			'SCRIPT',
+			'EVALSHA'
+		])
+	})
+
+	test('rejects with RedisUnavailableError after commandTimeoutMs', async () => {
+		const { redis, connections } = withOptions({ commandTimeoutMs: 20 })
+		redis.getClient()
+		connections[0]!.reply = () => new Promise(() => {})
+
+		const sent = redis.send('GET', ['key'])
+		await expect(sent).rejects.toBeInstanceOf(RedisUnavailableError)
+		await expect(sent).rejects.toThrow('Redis GET timed out after 20ms')
+	})
+
+	test('rejects an invalid commandTimeoutMs', () => {
+		for (const commandTimeoutMs of [0, -1, Number.NaN, Infinity]) {
+			expect(() => withOptions({ commandTimeoutMs })).toThrow(
+				`commandTimeoutMs must be a positive finite number, got ${commandTimeoutMs}`
+			)
+		}
+	})
+
+	test('offlineQueue: false applies to the command connection only', async () => {
+		const { redis, created } = withOptions({ offlineQueue: false })
+		redis.getClient()
+		await redis.subscribe('events', () => {})
+		expect(created.map((options) => options.enableOfflineQueue)).toEqual([
+			false,
+			true
+		])
+	})
+
+	test('offlineQueue defaults to true', () => {
+		const { redis, created } = withOptions()
+		redis.getClient()
+		expect(created[0]!.enableOfflineQueue).toBe(true)
 	})
 })

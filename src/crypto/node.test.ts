@@ -87,3 +87,60 @@ describe('createSealerSync', () => {
 		expect(() => createSealerSync({ secret: '' })).toThrow(TypeError)
 	})
 })
+
+describe.each([
+	['createSealer', createSealer],
+	['createSealerSync', createSealerSync]
+] as const)('%s secret rotation', (_name, create) => {
+	const previous = 'previous-secret-with-enough-entropy-0123'
+	const info = 'app.credentials.v1'
+
+	test('a fallback with its own secret opens values sealed under it', async () => {
+		const sealedBefore = await create({ secret: previous, info }).seal('x')
+		const sealer = create({
+			secret,
+			info,
+			fallbacks: [{ secret: previous, info }]
+		})
+
+		expect(await sealer.open(sealedBefore)).toBe('x')
+		expect(await sealer.needsReseal(sealedBefore)).toBe(true)
+		expect(await sealer.needsReseal(await sealer.seal('y'))).toBe(false)
+	})
+
+	test('a fallback whose secret is undefined or empty is skipped', async () => {
+		const sealedBefore = await create({ secret: previous, info }).seal('x')
+		for (const missing of [undefined, '']) {
+			const sealer = create({
+				secret,
+				info,
+				fallbacks: [{ secret: missing, info }]
+			})
+			expect(await sealer.needsReseal(await sealer.seal('y'))).toBe(false)
+			await expect(
+				Promise.resolve().then(() => sealer.open(sealedBefore))
+			).rejects.toThrow(SealerError)
+		}
+	})
+
+	test('a fallback without a secret uses the primary one', async () => {
+		const sealedBefore = await create({ secret, info: 'old' }).seal('x')
+		const sealer = create({ secret, info, fallbacks: [{ info: 'old' }] })
+		expect(await sealer.open(sealedBefore)).toBe('x')
+		expect(await sealer.needsReseal(sealedBefore)).toBe(true)
+	})
+
+	test('needsReseal is true for a passthrough value and throws like open otherwise', async () => {
+		expect(
+			await create({ secret, passthroughUnsealed: true }).needsReseal('plain')
+		).toBe(true)
+		const sealer = create({ secret })
+		await expect(
+			Promise.resolve().then(() => sealer.needsReseal('plain'))
+		).rejects.toThrow(expect.objectContaining({ code: 'malformed' }))
+		const foreign = await create({ secret: previous }).seal('x')
+		await expect(
+			Promise.resolve().then(() => sealer.needsReseal(foreign))
+		).rejects.toThrow(expect.objectContaining({ code: 'decrypt_failed' }))
+	})
+})

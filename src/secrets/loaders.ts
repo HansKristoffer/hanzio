@@ -1,6 +1,7 @@
 import { DEFAULT_INFISICAL_SITE_URL, fetchInfisicalSecrets } from './infisical'
 import {
 	validateInfisicalOrganizationId,
+	validateInfisicalProjectId,
 	type InfisicalProjectOptions
 } from './infisical-config'
 import type { SecretSetLoader, SecretSetLoaderContext } from './core'
@@ -15,6 +16,7 @@ export function infisicalLoader<SecretKey extends string>(
 	}
 ): SecretSetLoader<SecretKey> {
 	validateInfisicalOrganizationId(config.organizationId)
+	validateInfisicalProjectId(config.projectId)
 
 	const loader: SecretSetLoader<SecretKey> = async (ctx) =>
 		fetchInfisicalSecrets({

@@ -43,14 +43,30 @@ export function validateInfisicalScope(options: InfisicalScope<string>): void {
 		)
 	}
 
-	if (
-		!options.projectId.trim() ||
-		!options.environment.trim() ||
-		!(options.secretPath ?? '/').startsWith('/')
-	) {
+	validateInfisicalProjectId(options.projectId)
+
+	if (typeof options.environment !== 'string' || !options.environment.trim()) {
 		throw new SecretLoadError(
 			'CONFIGURATION',
-			'Infisical requires a projectId, environment, and absolute secretPath.'
+			'Infisical environment is required and must be a nonempty slug.'
+		)
+	}
+
+	const secretPath = options.secretPath ?? '/'
+
+	if (typeof secretPath !== 'string' || !secretPath.startsWith('/')) {
+		throw new SecretLoadError(
+			'CONFIGURATION',
+			`Infisical secretPath must start with /, got ${JSON.stringify(secretPath)}.`
+		)
+	}
+}
+
+export function validateInfisicalProjectId(projectId: unknown): void {
+	if (typeof projectId !== 'string' || !projectId.trim()) {
+		throw new SecretLoadError(
+			'CONFIGURATION',
+			'Infisical projectId is required and must be a nonempty ID.'
 		)
 	}
 }
