@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.1](https://github.com/HansKristoffer/hanzio/compare/v4.0.0...v4.0.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* ship CHANGELOG.md in the npm package ([#39](https://github.com/HansKristoffer/hanzio/issues/39)) ([43b2505](https://github.com/HansKristoffer/hanzio/commit/43b2505b96bf1f4c4f1671e8efecc2d6ca56f054))
+
 ## [4.0.0](https://github.com/HansKristoffer/hanzio/compare/v3.4.0...v4.0.0) (2026-11-12)
 
 
