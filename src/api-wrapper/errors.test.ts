@@ -9,7 +9,7 @@ import {
 } from '.'
 import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
 
-describe('createApiClient — validation & HTTP errors', () => {
+describe('createApiClient: validation & HTTP errors', () => {
 	afterEach(() => {
 		globalThis.fetch = originalFetch
 	})
@@ -59,34 +59,30 @@ describe('createApiClient — validation & HTTP errors', () => {
 			}
 		})
 
-		try {
-			await api.request('getThing')
-			throw new Error('expected throw')
-		} catch (err) {
-			expect(err).toBeInstanceOf(ResponseValidationError)
-			const e = err as ResponseValidationError
-			const byPath = Object.fromEntries(e.issues.map((i) => [i.path, i]))
+		const err = await api.request('getThing').catch((e: unknown) => e)
+		expect(err).toBeInstanceOf(ResponseValidationError)
+		const e = err as ResponseValidationError
+		const byPath = Object.fromEntries(e.issues.map((i) => [i.path, i]))
 
-			expect(byPath.id).toBeDefined()
-			expect(byPath.id!.received).toBe('string')
-			expect(byPath.id!.expected).toBeDefined()
-			expect(byPath.id!.value).toBe('oops')
-			expect(byPath.id!.valuePreview).toBe('"oops"')
+		expect(byPath.id).toBeDefined()
+		expect(byPath.id!.received).toBe('string')
+		expect(byPath.id!.expected).toBeDefined()
+		expect(byPath.id!.value).toBe('oops')
+		expect(byPath.id!.valuePreview).toBe('"oops"')
 
-			expect(byPath['tags[1]']).toBeDefined()
-			expect(byPath['tags[1]']!.value).toBe(42)
+		expect(byPath['tags[1]']).toBeDefined()
+		expect(byPath['tags[1]']!.value).toBe(42)
 
-			expect(byPath['nested.count']).toBeDefined()
-			expect(byPath['nested.count']!.value).toBe('not-a-number')
+		expect(byPath['nested.count']).toBeDefined()
+		expect(byPath['nested.count']!.value).toBe('not-a-number')
 
-			expect(e.message).toContain('Response validation failed')
-			expect(e.message).toContain('id')
-			expect(e.message).toContain('value:')
-			expect(e.context.url).toBe('https://api.example.com/thing')
+		expect(e.message).toContain('Response validation failed')
+		expect(e.message).toContain('id')
+		expect(e.message).toContain('value:')
+		expect(e.context.url).toBe('https://api.example.com/thing')
 
-			const json = e.toJSON()
-			expect(Array.isArray(json.issues)).toBe(true)
-		}
+		const json = e.toJSON()
+		expect(Array.isArray(json.issues)).toBe(true)
 	})
 
 	test('ResponseValidationError fires when response body is not valid JSON', async () => {
@@ -111,15 +107,9 @@ describe('createApiClient — validation & HTTP errors', () => {
 			}
 		})
 
-		try {
-			await api.request('getThing')
-			throw new Error('expected throw')
-		} catch (err) {
-			expect(err).toBeInstanceOf(ResponseValidationError)
-			expect((err as ResponseValidationError).message).toContain(
-				'not valid JSON'
-			)
-		}
+		const err = await api.request('getThing').catch((e: unknown) => e)
+		expect(err).toBeInstanceOf(ResponseValidationError)
+		expect((err as ResponseValidationError).message).toContain('not valid JSON')
 	})
 
 	test('RequestValidationError includes the offending input value', async () => {
@@ -141,26 +131,24 @@ describe('createApiClient — validation & HTTP errors', () => {
 			}
 		})
 
-		try {
-			await api.request('createUser', {
+		const err = await api
+			.request('createUser', {
 				reqBody: {
 					name: 123 as unknown as string,
 					age: 'old' as unknown as number
 				}
 			})
-			throw new Error('expected throw')
-		} catch (err) {
-			expect(err).toBeInstanceOf(RequestValidationError)
-			const e = err as RequestValidationError
-			expect(e.target).toBe('body')
-			const paths = e.issues.map((i) => i.path)
-			expect(paths).toContain('name')
-			expect(paths).toContain('age')
-			const nameIssue = e.issues.find((i) => i.path === 'name')!
-			expect(nameIssue.value).toBe(123)
-			expect(nameIssue.received).toBe('number')
-			expect(e.message).toContain('Request body validation failed')
-		}
+			.catch((e: unknown) => e)
+		expect(err).toBeInstanceOf(RequestValidationError)
+		const e = err as RequestValidationError
+		expect(e.target).toBe('body')
+		const paths = e.issues.map((i) => i.path)
+		expect(paths).toContain('name')
+		expect(paths).toContain('age')
+		const nameIssue = e.issues.find((i) => i.path === 'name')!
+		expect(nameIssue.value).toBe(123)
+		expect(nameIssue.received).toBe('number')
+		expect(e.message).toContain('Request body validation failed')
 	})
 
 	test('HttpResponseError carries request context, headers, and parsed body', async () => {
@@ -189,25 +177,23 @@ describe('createApiClient — validation & HTTP errors', () => {
 			}
 		})
 
-		try {
-			await api.request('getItem', { reqParams: { id: 9 } })
-			throw new Error('expected throw')
-		} catch (err) {
-			expect(isHttpResponseError(err)).toBe(true)
-			const e = err as HttpResponseError
-			expect(e.status).toBe(404)
-			expect(e.requestId).toBe('req-123')
-			expect(e.bodyJson).toEqual({ error: { code: 'nope' } })
-			expect(e.context.endpoint).toBe('svc.getItem')
-			expect(e.context.method).toBe('GET')
-			expect(e.context.url).toBe('https://api.example.com/items/9')
-			expect(e.context.attempt).toBeGreaterThanOrEqual(0)
-			expect(e.toJSON()).toMatchObject({
-				name: 'HttpResponseError',
-				status: 404,
-				requestId: 'req-123'
-			})
-		}
+		const err = await api
+			.request('getItem', { reqParams: { id: 9 } })
+			.catch((e: unknown) => e)
+		expect(isHttpResponseError(err)).toBe(true)
+		const e = err as HttpResponseError
+		expect(e.status).toBe(404)
+		expect(e.requestId).toBe('req-123')
+		expect(e.bodyJson).toEqual({ error: { code: 'nope' } })
+		expect(e.context.endpoint).toBe('svc.getItem')
+		expect(e.context.method).toBe('GET')
+		expect(e.context.url).toBe('https://api.example.com/items/9')
+		expect(e.context.attempt).toBeGreaterThanOrEqual(0)
+		expect(e.toJSON()).toMatchObject({
+			name: 'HttpResponseError',
+			status: 404,
+			requestId: 'req-123'
+		})
 	})
 
 	test('throws RequestValidationError for bad request body/query', async () => {
@@ -226,15 +212,13 @@ describe('createApiClient — validation & HTTP errors', () => {
 			}
 		})
 
-		try {
-			await api.request('createUser', {
+		const err = await api
+			.request('createUser', {
 				reqBody: { name: 123 as unknown as string }
 			})
-			throw new Error('expected throw')
-		} catch (err) {
-			expect(err).toBeInstanceOf(RequestValidationError)
-			expect((err as RequestValidationError).target).toBe('body')
-		}
+			.catch((e: unknown) => e)
+		expect(err).toBeInstanceOf(RequestValidationError)
+		expect((err as RequestValidationError).target).toBe('body')
 	})
 
 	test('throws RequestValidationError for invalid path params', async () => {
@@ -252,17 +236,15 @@ describe('createApiClient — validation & HTTP errors', () => {
 			}
 		})
 
-		try {
-			await api.request('getItem', {
+		const err = await api
+			.request('getItem', {
 				reqParams: { id: 'bad' as unknown as number }
 			})
-			throw new Error('expected throw')
-		} catch (err) {
-			expect(err).toBeInstanceOf(RequestValidationError)
-			const e = err as RequestValidationError
-			expect(e.target).toBe('params')
-			expect(e.message).toContain('Request params validation failed')
-			expect(globalThis.fetch).not.toHaveBeenCalled()
-		}
+			.catch((e: unknown) => e)
+		expect(err).toBeInstanceOf(RequestValidationError)
+		const e = err as RequestValidationError
+		expect(e.target).toBe('params')
+		expect(e.message).toContain('Request params validation failed')
+		expect(globalThis.fetch).not.toHaveBeenCalled()
 	})
 })

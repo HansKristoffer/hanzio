@@ -38,7 +38,9 @@ export type CatalogIssue = {
 	message: string
 }
 
+/** UTF-8 bytes read as Latin-1 (`Ã¦` for `æ`), and the replacement character. */
 const MOJIBAKE = /(?:Ã.|Â.|â€|�)/
+/** i18next's plural categories, which name a key's variants (`cars_one`). */
 const I18NEXT_PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/
 
 /**

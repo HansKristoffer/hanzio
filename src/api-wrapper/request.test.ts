@@ -9,7 +9,7 @@ import {
 } from '.'
 import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
 
-describe('createApiClient — request & hooks', () => {
+describe('createApiClient: request & hooks', () => {
 	afterEach(() => {
 		globalThis.fetch = originalFetch
 	})

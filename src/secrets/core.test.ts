@@ -167,6 +167,7 @@ describe('validation, deadlines, and reporting', () => {
 			})
 		).toThrow('Invalid secret environment')
 	})
+
 	test('supports explicit custom slugs and environment callbacks', async () => {
 		const loader = mock(async () => ({ A: 'value' }))
 
@@ -335,7 +336,7 @@ describe('validation, deadlines, and reporting', () => {
 		).not.toContain('private')
 	})
 
-	test('supports disabled logging and logger failures do not affect results', async () => {
+	test('logger failures do not affect results', async () => {
 		const set = await defineSecretSet(['A'], {
 			logger: {
 				info: () => {
@@ -380,6 +381,7 @@ describe('public Vite values', () => {
 		})
 		expect(getViteDefine(set, { publicKeys: [] })).toEqual({})
 	})
+
 	test('allows VITE_ keys by default', async () => {
 		const set = await defineSecretSet(['VITE_PUBLIC'], {
 			...quiet,

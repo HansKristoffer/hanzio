@@ -1,8 +1,7 @@
 /**
- * Simple State Machine - A lightweight state machine implementation
- *
- * This provides a generic state machine abstraction that can be used
- * for various workflows and business processes.
+ * A small state machine: an action moves an item from one state to another
+ * after its validators and handler pass. Pass `applyTransition` to write the new
+ * state onto the item.
  */
 
 /**

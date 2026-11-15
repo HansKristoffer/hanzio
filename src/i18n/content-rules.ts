@@ -41,6 +41,7 @@ export type ContentRulesConfig<Locale extends string = string> = {
 }
 
 const PLACEHOLDER_MASK = '￼'
+/** Operators and casts that only source code uses, so they stay code even with spaces. */
 const EXPRESSION_FRAGMENT = /(?:\?\?|=>|\bas\s+(?:string|number|boolean)\b)/
 
 /** Placeholders are content, so `{count} mo.` must not read as a dotted path. */

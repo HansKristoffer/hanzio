@@ -32,13 +32,13 @@ const decoded = jwtDecode(token) // { header, payload } | null
 
 `jwtSign(payload, secret, options?)`
 
-| Option       | Claim | Notes                               |
-| ------------ | ----- | ----------------------------------- |
-| `expiresIn`  | `exp` | seconds from now                    |
-| `notBefore`  | `nbf` | seconds from now                    |
-| `issuer`     | `iss` |                                     |
-| `audience`   | `aud` | `string \| string[]`                |
-| `algorithm`  | —     | `'HS256'` (default), `'HS384'`, `'HS512'` |
+| Option      | Claim | Notes                                     |
+| ----------- | ----- | ----------------------------------------- |
+| `expiresIn` | `exp` | seconds from now                          |
+| `notBefore` | `nbf` | seconds from now                          |
+| `issuer`    | `iss` |                                           |
+| `audience`  | `aud` | `string \| string[]`                      |
+| `algorithm` | none  | `'HS256'` (default), `'HS384'`, `'HS512'` |
 
 - `iat` is always set to the current time.
 - Options win: a claim set through an option replaces the same claim in `payload`.
@@ -52,12 +52,12 @@ const decoded = jwtDecode(token) // { header, payload } | null
 `Result<Payload, JwtVerifyError>` (see `hanzio` promise helpers). `error.code` is one of
 `'malformed' | 'unsupported_alg' | 'invalid_signature' | 'expired' | 'not_yet_valid' | 'invalid_issuer' | 'invalid_audience'`.
 
-| Option       | Default                 | Notes                                      |
-| ------------ | ----------------------- | ------------------------------------------ |
-| `leewaySec`  | `0`                     | clock skew tolerance for `exp` / `nbf`     |
-| `issuer`     | —                       | required `iss`                             |
-| `audience`   | —                       | must equal `aud` or be one of its entries  |
-| `algorithms` | `['HS256','HS384','HS512']` | the header `alg` must be in this list |
+| Option       | Default                     | Notes                                     |
+| ------------ | --------------------------- | ----------------------------------------- |
+| `leewaySec`  | `0`                         | clock skew tolerance for `exp` / `nbf`    |
+| `issuer`     | none                        | required `iss`                            |
+| `audience`   | none                        | must equal `aud` or be one of its entries |
+| `algorithms` | `['HS256','HS384','HS512']` | the header `alg` must be in this list     |
 
 - The signature is checked before any claim, so unsigned claims never decide the error code.
 - `alg: 'none'` and anything outside `algorithms` is rejected as `unsupported_alg`.

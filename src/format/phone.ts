@@ -7,7 +7,7 @@ import {
 } from 'libphonenumber-js'
 
 /**
- * A stored phone number as a person reads it. `country` is the READER's ISO
+ * A stored phone number as a person reads it. `country` is the reader's ISO
  * 3166-1 alpha-2 country (the organization's, say), not the number's: a local
  * number prints the local way, any other with its country code.
  *
@@ -18,7 +18,7 @@ import {
  * ```
  *
  * Nothing is lost: an unparseable value comes back trimmed but verbatim, and
- * the national form is used only for a VALID number (`+4512345678` parses as
+ * the national form is used only for a valid number (`+4512345678` parses as
  * DK but is not a real number, so it keeps its `+45`). A country
  * libphonenumber cannot dial falls back to international. Empty input is
  * `''`; the caller decides what stands in for "no number". Use the raw E.164

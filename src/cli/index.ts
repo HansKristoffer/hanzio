@@ -479,6 +479,7 @@ complete -F ${fn} ${config.name}
 				const pre: string[] = []
 				const positionals: string[] = []
 				let index = 0
+
 				while (typeof node !== 'function' && !isCommand(node)) {
 					const group: CommandGroup = node
 					current = { node: group, path: [...path] }
@@ -559,6 +560,8 @@ complete -F ${fn} ${config.name}
 
 				const command = await loadCommand(node)
 				current = { node: command, path }
+
+				// Help and version answer before any value is parsed or validated.
 				const rest = args.slice(index)
 				const fields = command.raw ? [] : fieldsOf(command.input)
 				const dash = rest.indexOf('--')
@@ -600,10 +603,13 @@ complete -F ${fn} ${config.name}
 					const eq = token.indexOf('=')
 					const field = canonical.get(eq < 0 ? token : token.slice(0, eq))
 					if (!field) return token
-					const value =
-						eq < 0 ? (field.optionalValue ? '=' : '') : token.slice(eq)
+
+					// A bare optional-value flag gets an empty value, which readFields reads as true.
+					const bareValue = field.optionalValue ? '=' : ''
+					const value = eq < 0 ? bareValue : token.slice(eq)
 					return `--${optionName(field)}${value}`
 				})
+
 				const strict = command.strict !== false
 				let parsed: ReturnType<typeof parseArgs>
 				try {
@@ -616,14 +622,16 @@ complete -F ${fn} ${config.name}
 					})
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error)
-					const unknown = /^Unknown option '(-[^']*)'/.exec(message)?.[1]
-					if (!unknown) throw new UsageError(message.split('. ')[0] ?? message)
+					const unknownFlag = /^Unknown option '(-[^']*)'/.exec(message)?.[1]
+					if (!unknownFlag)
+						throw new UsageError(message.split('. ')[0] ?? message)
+
 					const guess = closest(
-						unknown.replace(/^--?/, ''),
+						unknownFlag.replace(/^--?/, ''),
 						all.flatMap((field) => [field.flag, ...field.aliases])
 					)
 					throw new UsageError(
-						`Unknown option ${unknown}.${guess ? ` Did you mean --${guess}?` : ''}`
+						`Unknown option ${unknownFlag}.${guess ? ` Did you mean --${guess}?` : ''}`
 					)
 				}
 
@@ -674,6 +682,7 @@ complete -F ${fn} ${config.name}
 					globals: globals as z.output<G>,
 					context
 				})
+
 				const ctx: CommandContext = {
 					context,
 					globals,
@@ -688,6 +697,7 @@ complete -F ${fn} ${config.name}
 				}
 				const run = command.run as (input: unknown, ctx: unknown) => unknown
 				const result = await run(input, ctx)
+
 				const output =
 					(command.output as
 						| ((result: unknown, ctx: unknown) => unknown)
@@ -705,18 +715,25 @@ complete -F ${fn} ${config.name}
 									: ''
 							})
 						: error
+
 				let printed: number | undefined
 				const print = () => {
 					if (printed !== undefined) return printed
+
 					const message =
 						failure instanceof Error ? failure.message : String(failure)
-					if (failure instanceof CliUsageError)
+					// Only unexpected errors print a stack; CliError and usage errors print the message.
+					const isUnexpected =
+						failure instanceof Error && !(failure instanceof CliError)
+					if (failure instanceof CliUsageError) {
 						stderr.write(`${message}\nRun "${usage} --help" for usage.\n`)
-					else if (json) stderr.write(`${JSON.stringify({ error: message })}\n`)
-					else
-						stderr.write(
-							`${failure instanceof Error && !(failure instanceof CliError) ? (failure.stack ?? message) : message}\n`
-						)
+					} else if (json) {
+						stderr.write(`${JSON.stringify({ error: message })}\n`)
+					} else {
+						const text = isUnexpected ? (failure.stack ?? message) : message
+						stderr.write(`${text}\n`)
+					}
+
 					printed = failure instanceof CliError ? failure.exitCode : 1
 					return printed
 				}

@@ -9,10 +9,10 @@ type ModuleExports = Record<string, unknown>
 function resolveFrom(baseDir: string) {
 	return (specifier: string) => {
 		if (isAbsolute(specifier)) return specifier
-		if (specifier.startsWith('.')) return Bun.resolveSync(specifier, baseDir)
 		try {
 			return Bun.resolveSync(specifier, baseDir)
 		} catch (error) {
+			// Not a package name, so `lib/x` is a path under baseDir.
 			try {
 				return Bun.resolveSync(`./${specifier}`, baseDir)
 			} catch {

@@ -153,8 +153,8 @@ export function formatBytes(
 	) {
 		exponent++
 	}
-	const maximumFractionDigits =
-		exponent === 0 ? 0 : (decimals ?? (exponent === 1 ? 0 : 1))
+	const defaultDigits = exponent === 1 ? 0 : 1
+	const maximumFractionDigits = exponent === 0 ? 0 : (decimals ?? defaultDigits)
 	const value = formatNumber(bytes / base ** exponent, locale, {
 		maximumFractionDigits
 	})
@@ -319,17 +319,14 @@ export function formatWait(
 			: toTime(options.now ?? Date.now()) - toTime(value)
 	const waited = Math.max(0, elapsed)
 	if (!Number.isFinite(waited)) return ''
-	const [amount, unit]: [number, string] =
-		waited < HOUR_MS
-			? [Math.max(1, Math.floor(waited / MINUTE_MS)), 'minute']
-			: waited < DAY_MS
-				? [Math.floor(waited / HOUR_MS), 'hour']
-				: [Math.floor(waited / DAY_MS), 'day']
-	return formatNumber(amount, locale, {
-		style: 'unit',
-		unit,
-		unitDisplay: 'short'
-	})
+
+	const short = (amount: number, unit: string) =>
+		formatNumber(amount, locale, { style: 'unit', unit, unitDisplay: 'short' })
+	if (waited < HOUR_MS) {
+		return short(Math.max(1, Math.floor(waited / MINUTE_MS)), 'minute')
+	}
+	if (waited < DAY_MS) return short(Math.floor(waited / HOUR_MS), 'hour')
+	return short(Math.floor(waited / DAY_MS), 'day')
 }
 
 // ─── Dates and lists ────────────────────────────────────────────────────────
@@ -432,6 +429,18 @@ function dayOffset(date: Date, now: Date): number {
 	return Math.round((start(date) - start(now)) / DAY_MS)
 }
 
+/** Where `date` falls against `now` by calendar day, or null when it does not parse. */
+function placeInDays(date: DateInput, now: DateInput | undefined) {
+	const value = new Date(toTime(date))
+	if (Number.isNaN(value.getTime())) return null
+	const reference = new Date(toTime(now ?? Date.now()))
+	return {
+		value,
+		offset: dayOffset(value, reference),
+		sameYear: value.getFullYear() === reference.getFullYear()
+	}
+}
+
 /** "today" / "yesterday" in the locale's own words. */
 const relativeDay = (offset: 0 | -1, locale: string) =>
 	getRelativeTimeFormat(locale, { numeric: 'auto' }).format(offset, 'day')
@@ -446,14 +455,15 @@ export function formatCompactTime(
 	locale: string,
 	options: { now?: DateInput } = {}
 ): string {
-	const value = new Date(toTime(date))
-	if (Number.isNaN(value.getTime())) return ''
-	const now = new Date(toTime(options.now ?? Date.now()))
-	const offset = dayOffset(value, now)
-	if (offset === 0) return formatDate(value, 'HH:mm', locale)
-	if (offset === -1) return relativeDay(-1, locale)
-	const sameYear = value.getFullYear() === now.getFullYear()
-	return formatDate(value, sameYear ? 'D MMM' : 'D MMM YYYY', locale)
+	const placed = placeInDays(date, options.now)
+	if (!placed) return ''
+	if (placed.offset === 0) return formatDate(placed.value, 'HH:mm', locale)
+	if (placed.offset === -1) return relativeDay(-1, locale)
+	return formatDate(
+		placed.value,
+		placed.sameYear ? 'D MMM' : 'D MMM YYYY',
+		locale
+	)
 }
 
 /**
@@ -466,13 +476,16 @@ export function formatDayDivider(
 	locale: string,
 	options: { now?: DateInput } = {}
 ): string {
-	const value = new Date(toTime(date))
-	if (Number.isNaN(value.getTime())) return ''
-	const now = new Date(toTime(options.now ?? Date.now()))
-	const offset = dayOffset(value, now)
-	if (offset === 0 || offset === -1) return relativeDay(offset, locale)
-	const sameYear = value.getFullYear() === now.getFullYear()
-	return formatDate(value, sameYear ? 'dddd, MMMM D' : 'D MMM YYYY', locale)
+	const placed = placeInDays(date, options.now)
+	if (!placed) return ''
+	if (placed.offset === 0 || placed.offset === -1) {
+		return relativeDay(placed.offset, locale)
+	}
+	return formatDate(
+		placed.value,
+		placed.sameYear ? 'dddd, MMMM D' : 'D MMM YYYY',
+		locale
+	)
 }
 
 /** "a, b, and c". Falls back to a comma join where `Intl.ListFormat` is missing. */

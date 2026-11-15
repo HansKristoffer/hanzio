@@ -163,7 +163,7 @@ export const currencyNames = {
 
 export type CurrencyCode = keyof typeof currencyNames
 
-export const currencyCodes = Object.keys(
+export const currencyCodes = /* @__PURE__ */ Object.keys(
 	currencyNames
 ) as readonly CurrencyCode[]
 

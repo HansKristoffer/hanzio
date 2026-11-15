@@ -121,13 +121,15 @@ export function parseEnvelope(
 	}
 
 	const parts = sealed.slice(PREFIX.length).split('.')
+	if (parts.length !== 3) throw new SealerError('malformed')
+	const [ivPart, tagPart, ciphertextPart] = parts as [string, string, string]
+
 	let envelope: Envelope
 	try {
-		if (parts.length !== 3) throw new Error()
 		envelope = {
-			iv: decodeBase64Url(parts[0] as string),
-			tag: decodeBase64Url(parts[1] as string),
-			ciphertext: decodeBase64Url(parts[2] as string)
+			iv: decodeBase64Url(ivPart),
+			tag: decodeBase64Url(tagPart),
+			ciphertext: decodeBase64Url(ciphertextPart)
 		}
 	} catch (_error) {
 		throw new SealerError('malformed')
@@ -161,6 +163,7 @@ export function createSealer(options: SealerOptions): Sealer {
 			const context = contexts[index] as (typeof contexts)[number]
 			key = deriveKey(context.secret, context.salt, context.info)
 			keys[index] = key
+			// A failed derivation is dropped so the next call tries again.
 			key.catch(() => {
 				keys[index] = undefined
 			})
@@ -185,12 +188,12 @@ export function createSealer(options: SealerOptions): Sealer {
 		)
 	}
 
-	/** The plaintext and the index of the context that opened it. */
+	/** The plaintext, and the index of the context that opened it. */
 	const openEnvelope = async ({
 		iv,
 		tag,
 		ciphertext
-	}: Envelope): Promise<[string, number]> => {
+	}: Envelope): Promise<{ plaintext: string; contextIndex: number }> => {
 		const encrypted = new Uint8Array(ciphertext.length + TAG_BYTES)
 		encrypted.set(ciphertext)
 		encrypted.set(tag, ciphertext.length)
@@ -203,15 +206,17 @@ export function createSealer(options: SealerOptions): Sealer {
 					key,
 					encrypted
 				)
-				return [utf8Decode(plaintext), index]
-			} catch (_error) {}
+				return { plaintext: utf8Decode(plaintext), contextIndex: index }
+			} catch (_error) {
+				// Wrong context for this value: try the next one.
+			}
 		}
 		throw new SealerError('decrypt_failed')
 	}
 
 	const open = async (sealed: string): Promise<string> => {
 		const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
-		return envelope ? (await openEnvelope(envelope))[0] : sealed
+		return envelope ? (await openEnvelope(envelope)).plaintext : sealed
 	}
 
 	return {
@@ -221,12 +226,12 @@ export function createSealer(options: SealerOptions): Sealer {
 		async openJson<T = unknown>(sealed: unknown) {
 			const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
 			return (
-				envelope ? JSON.parse((await openEnvelope(envelope))[0]) : sealed
+				envelope ? JSON.parse((await openEnvelope(envelope)).plaintext) : sealed
 			) as T
 		},
 		async needsReseal(sealed: unknown) {
 			const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
-			return envelope ? (await openEnvelope(envelope))[1] > 0 : true
+			return envelope ? (await openEnvelope(envelope)).contextIndex > 0 : true
 		}
 	}
 }

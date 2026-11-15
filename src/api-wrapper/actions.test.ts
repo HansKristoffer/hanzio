@@ -11,7 +11,7 @@ import {
 } from '.'
 import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
 
-describe('createApiClient — actions', () => {
+describe('createApiClient: actions', () => {
 	afterEach(() => {
 		globalThis.fetch = originalFetch
 	})
@@ -51,23 +51,15 @@ describe('createApiClient — actions', () => {
 					resSchema: z.object({ id: z.number(), name: z.string() })
 				}
 			},
-			actions: (
-				helpers: ActionsFactoryHelpers<
-					Record<string, ApiEndpoint>,
-					Record<string, ApiAction>
-				>
-			) => {
-				const { defineAction } = helpers
+			actions: ({ defineAction }) => {
 				return {
 					loginAndGetMe: defineAction<{
 						email: string
 						password: string
 					}>()({
 						handler: async ({ input, api }) => {
-							// biome-ignore lint/suspicious/noExplicitAny: factory uses generic Record<> endpoints; narrow for test
-							const client = api as any
-							const auth = await client.login({ reqBody: input })
-							const me = await client.usersGet({
+							const auth = await api.login({ reqBody: input })
+							const me = await api.usersGet({
 								reqParams: { userId: auth.data.userId },
 								reqHeaders: { Authorization: `Bearer ${auth.data.token}` }
 							})
@@ -110,7 +102,7 @@ describe('createApiClient — actions', () => {
 		expect(greeting).toBe('hello Ada')
 	})
 
-	test('action input is TS-only — no runtime validation', async () => {
+	test('action input is TS-only: no runtime validation', async () => {
 		const api = createApiClient({
 			baseApiUrls: { default: 'https://api.example.com' },
 			endpoints: {},
@@ -236,11 +228,9 @@ describe('createApiClient — actions', () => {
 		})
 
 		// @ts-expect-error exercise runtime rejection of invalid action options
-		await expect(api.refresh({ foo: 'bar' })).rejects.toBeInstanceOf(
-			ConfigError
-		)
-		// @ts-expect-error exercise runtime rejection of invalid action options
-		await expect(api.refresh({ foo: 'bar' })).rejects.toThrow(
+		const rejection = await api.refresh({ foo: 'bar' }).catch((e: unknown) => e)
+		expect(rejection).toBeInstanceOf(ConfigError)
+		expect((rejection as ConfigError).message).toContain(
 			'does not accept input'
 		)
 	})

@@ -130,6 +130,8 @@ export function createManagedRedis(options: ManagedRedisOptions): ManagedRedis {
 		if (!listener) {
 			listener = (message, messageChannel) => {
 				if (messageChannel !== channel) return
+
+				// Iterate over a copy: a handler may unsubscribe while the message is being fanned out.
 				for (const entry of [...(handlers.get(channel) ?? [])]) {
 					try {
 						entry.handler(message, channel)
@@ -197,6 +199,7 @@ export function createManagedRedis(options: ManagedRedisOptions): ManagedRedis {
 			: withCommandTimeout(rawSend, commandTimeoutMs)
 
 	async function subscribe(channel: string, handler: RedisMessageHandler) {
+		// A fresh object per call, so subscribing the same function twice counts twice.
 		const entry = { handler }
 		let entries = handlers.get(channel)
 		if (!entries) {
@@ -205,11 +208,13 @@ export function createManagedRedis(options: ManagedRedisOptions): ManagedRedis {
 		}
 		entries.add(entry)
 
+		// Callers that arrive while a SUBSCRIBE is in flight share its promise; only the first sends one.
 		let pending = subscribing.get(channel)
 		const first = !pending && entries.size === 1
 		if (first) {
 			pending = getSubscriber().subscribe(channel, listenerFor(channel))
 			subscribing.set(channel, pending)
+			// The awaiting caller below handles a rejection; this chain only clears the in-flight entry.
 			void pending
 				.catch(() => {})
 				.finally(() => {
@@ -234,8 +239,13 @@ export function createManagedRedis(options: ManagedRedisOptions): ManagedRedis {
 		return async () => {
 			if (left) return
 			left = true
+
 			const current = handlers.get(channel)
-			if (!current?.delete(entry) || current.size > 0) return
+			if (!current?.delete(entry)) return
+
+			// Other handlers still listen to the channel, so it stays subscribed.
+			if (current.size > 0) return
+
 			handlers.delete(channel)
 			const listener = listeners.get(channel)
 			listeners.delete(channel)

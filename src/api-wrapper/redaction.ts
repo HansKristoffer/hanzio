@@ -50,12 +50,10 @@ function redactHeaders(
 }
 
 function redactBody(body: unknown): unknown {
-	if (body === null || body === undefined) return body
-	if (typeof body !== 'object' || Array.isArray(body)) {
+	if (typeof body !== 'object' || body === null || Array.isArray(body)) {
 		return body
 	}
-	const rec = body as Record<string, unknown>
-	const out: Record<string, unknown> = { ...rec }
+	const out: Record<string, unknown> = { ...(body as Record<string, unknown>) }
 	for (const key of Object.keys(out)) {
 		if (SENSITIVE_BODY_KEYS.has(key.toLowerCase())) {
 			out[key] = '[REDACTED]'
@@ -68,11 +66,10 @@ function redactBody(body: unknown): unknown {
 export function redactUrl(url: string): string {
 	const queryStart = url.indexOf('?')
 	if (queryStart === -1) return url
+
 	const hashStart = url.indexOf('#', queryStart)
-	const query = url.slice(
-		queryStart + 1,
-		hashStart === -1 ? undefined : hashStart
-	)
+	const queryEnd = hashStart === -1 ? url.length : hashStart
+	const query = url.slice(queryStart + 1, queryEnd)
 	const redacted = query
 		.split('&')
 		.map((pair) => {
@@ -82,13 +79,18 @@ export function redactUrl(url: string): string {
 				: pair
 		})
 		.join('&')
-	return `${url.slice(0, queryStart + 1)}${redacted}${hashStart === -1 ? '' : url.slice(hashStart)}`
+
+	const prefix = url.slice(0, queryStart + 1)
+	const fragment = hashStart === -1 ? '' : url.slice(hashStart)
+	return `${prefix}${redacted}${fragment}`
 }
 
+// Query keys are form-encoded, so a `+` in a key stands for a space.
 function decodeKey(key: string): string {
 	try {
 		return decodeURIComponent(key.replace(/\+/g, ' '))
 	} catch {
+		// A malformed escape is kept as written, so the raw key is what gets checked.
 		return key
 	}
 }

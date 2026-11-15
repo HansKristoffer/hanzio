@@ -51,8 +51,7 @@ describe('supportsColor', () => {
 
 	test('does not throw without process', () => {
 		const saved = globalThis.process
-		// biome-ignore lint/suspicious/noExplicitAny: simulate a browser/Worker global
-		;(globalThis as any).process = undefined
+		;(globalThis as { process?: unknown }).process = undefined
 		try {
 			expect(supportsColor()).toBe(false)
 			expect(colorize('x', 'red')).toBe('x')

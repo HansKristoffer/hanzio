@@ -37,8 +37,11 @@ const CALLING_CODES = (
 export function languageFromE164PhoneNumber(
 	phoneNumber: string | null | undefined
 ) {
-	const digits = phoneNumber?.trim().replace(/^\+/, '').replace(/\D/g, '')
+	// Strips the `+`, spaces and separators, so `+45 20 30` and `4520 30` match alike.
+	const digits = phoneNumber?.replace(/\D/g, '')
 	if (!digits) return null
+
+	// A bare calling code with no subscriber digits after it is not a number.
 	const code = CALLING_CODES.find(
 		(code) => digits.startsWith(code) && digits.length > code.length
 	)

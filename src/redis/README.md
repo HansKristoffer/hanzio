@@ -123,8 +123,9 @@ the function `onQueueDepth` returned, so the gauge stops reading the limiter.
 
 ## Lua scripts
 
-`createLuaScript(send, source)`, where `send` can be `redis.send`, sends a script by SHA (`EVALSHA`) and falls back
-to `EVAL` when Redis has forgotten it after a restart or `SCRIPT FLUSH`.
+`createLuaScript(send, source)` sends a script by SHA (`EVALSHA`) and falls back
+to `EVAL` when Redis has forgotten it after a restart or `SCRIPT FLUSH`. `send`
+can be `redis.send`.
 
 ```ts
 const increment = createLuaScript(redis.send, `return redis.call('INCRBY', KEYS[1], ARGV[1])`)

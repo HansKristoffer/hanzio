@@ -65,6 +65,7 @@ let cli: {
 	delayMs?: number
 }
 let home: string
+let identityFile: string
 const endInput = mock(() => {})
 const kill = mock((_signal?: string) => {})
 const execute = mock(
@@ -125,10 +126,11 @@ beforeEach(() => {
 		delete process.env[key]
 	}
 	// Never this machine's real identity file.
-	process.env.INFISICAL_UNIVERSAL_AUTH_FILE = join(
+	identityFile = join(
 		mkdtempSync(join(tmpdir(), 'hanzio-')),
 		'universal-auth.json'
 	)
+	process.env.INFISICAL_UNIVERSAL_AUTH_FILE = identityFile
 
 	output = sessionToken('org-a')
 	remoteSecrets = [
@@ -175,10 +177,7 @@ afterEach(() => {
 
 describe('Infisical identity file', () => {
 	const writeIdentity = (identity: unknown) =>
-		writeFileSync(
-			process.env.INFISICAL_UNIVERSAL_AUTH_FILE!,
-			JSON.stringify(identity)
-		)
+		writeFileSync(identityFile, JSON.stringify(identity))
 	const httpLogin = (expected: { clientId: string; clientSecret: string }) => {
 		globalThis.fetch = mock(
 			async (url: string | URL | Request, init?: RequestInit) => {
@@ -222,6 +221,7 @@ describe('Infisical identity file', () => {
 		process.env.INFISICAL_CLIENT_SECRET = 'env-secret'
 		httpLogin({ clientId: 'env-id', clientSecret: 'env-secret' })
 		await loadInfisicalSecrets(options)
+		expect(execute).not.toHaveBeenCalled()
 
 		delete process.env.INFISICAL_CLIENT_ID
 		delete process.env.INFISICAL_CLIENT_SECRET
@@ -229,7 +229,7 @@ describe('Infisical identity file', () => {
 		globalThis.fetch = mock(async () =>
 			Response.json({ secrets: [] })
 		) as unknown as typeof fetch
-		await loadInfisicalSecrets({ ...options, auth: 'cli' }).catch(() => {})
+		await loadInfisicalSecrets({ ...options, auth: 'cli' })
 		expect(execute).toHaveBeenCalledTimes(1)
 	})
 
@@ -247,10 +247,7 @@ describe('Infisical identity file', () => {
 	})
 
 	test('fails without echoing an invalid file', async () => {
-		writeFileSync(
-			process.env.INFISICAL_UNIVERSAL_AUTH_FILE!,
-			'{"clientSecret":"file-secret"'
-		)
+		writeFileSync(identityFile, '{"clientSecret":"file-secret"')
 		const error = await loadInfisicalSecrets(options).catch(
 			(e: unknown) => e as Error
 		)
@@ -476,16 +473,11 @@ describe('Infisical CLI fallback', () => {
 				? 'private'.repeat(2 * 1024 * 1024)
 				: 'private stdout'
 
-		try {
-			await loadInfisicalSecrets(options)
+		const error = await rejection(loadInfisicalSecrets(options))
 
-			throw new Error('Expected CLI failure')
-		} catch (error) {
-			expect(error).toBeInstanceOf(Error)
-			expect((error as Error).message).toContain(message)
-			expect(String(error)).not.toContain('private')
-			expect((error as Error).cause).toBeUndefined()
-		}
+		expect(error.message).toContain(message)
+		expect(String(error)).not.toContain('private')
+		expect(error.cause).toBeUndefined()
 	})
 
 	test('custom loaders do not invoke the CLI', async () => {
@@ -504,7 +496,7 @@ describe('Infisical CLI fallback', () => {
 					clientSecret: 'secret'
 				})
 			})
-		).rejects.toThrow()
+		).rejects.toMatchObject({ code: 'HTTP' })
 
 		expect(execute).not.toHaveBeenCalled()
 	})
@@ -564,13 +556,15 @@ describe('Infisical controls and safe HTTP failures', () => {
 				secrets: [{ secretKey: 'TEST_CLI_SECRET', secretValue: 'value' }]
 			})
 		}) as unknown as typeof fetch
-		await defineSecretSet(options.keys, {
+		const secrets = await defineSecretSet(options.keys, {
 			...options,
 			auth: 'http',
 			secretPath: '/backend',
 			environment: { slug: 'preview-123' },
 			logger: false
 		})
+
+		expect(secrets.secret('TEST_CLI_SECRET')).toBe('value')
 	})
 
 	test.each([
@@ -594,34 +588,32 @@ describe('Infisical controls and safe HTTP failures', () => {
 			return Response.json({ message: 'private-response' }, { status: 401 })
 		}) as unknown as typeof fetch
 
-		try {
-			await fetchInfisicalSecrets({
+		const error = await rejection(
+			fetchInfisicalSecrets({
 				...options,
 				clientId: 'private-id',
 				clientSecret: 'private-credential'
 			})
+		)
 
-			throw new Error('Expected HTTP failure')
-		} catch (error) {
-			expect(error).toMatchObject({
-				code: 'HTTP',
-				operation: stage === 'login' ? 'login' : 'listSecrets'
-			})
+		expect(error).toMatchObject({
+			code: 'HTTP',
+			operation: stage === 'login' ? 'login' : 'listSecrets'
+		})
 
-			if (stage !== 'validation') {
-				expect(error).toMatchObject({ status: 401 })
-			}
-
-			for (const rendered of [
-				String(error),
-				JSON.stringify(error),
-				inspect(error)
-			]) {
-				expect(rendered).not.toContain('private-')
-			}
-
-			expect((error as Error).cause).toBeUndefined()
+		if (stage !== 'validation') {
+			expect(error).toMatchObject({ status: 401 })
 		}
+
+		for (const rendered of [
+			String(error),
+			JSON.stringify(error),
+			inspect(error)
+		]) {
+			expect(rendered).not.toContain('private-')
+		}
+
+		expect(error.cause).toBeUndefined()
 	})
 
 	test('HTTP deadline covers body reads and does not leak abort reasons', async () => {
@@ -872,10 +864,12 @@ describe('Infisical organization-scoped CLI sessions', () => {
 					return Response.json({ token: sessionToken(organizationId) })
 				}
 
-				const project = request.searchParams.get('projectId')!
-				const bearer = new Headers(init?.headers).get('Authorization')!.slice(7)
+				const project = request.searchParams.get('projectId') ?? ''
+				const bearer = (
+					new Headers(init?.headers).get('Authorization') ?? ''
+				).slice(7)
 				const claims = JSON.parse(
-					Buffer.from(bearer.split('.')[1]!, 'base64url').toString()
+					Buffer.from(bearer.split('.')[1] ?? '', 'base64url').toString()
 				)
 
 				expect(claims.organizationId).toBe(project.replace('project-', 'org-'))
@@ -886,21 +880,25 @@ describe('Infisical organization-scoped CLI sessions', () => {
 			}
 		) as unknown as typeof fetch
 
-		const [first, second] = await Promise.all(
-			['b', 'c'].map((suffix) =>
-				defineSecretSet(options.keys, {
-					...scopedOptions,
-					organizationId: `org-${suffix}`,
-					projectId: `project-${suffix}`,
-					logger: false
-				})
-			)
-		)
+		const [first, second] = await Promise.all([
+			defineSecretSet(options.keys, {
+				...scopedOptions,
+				organizationId: 'org-b',
+				projectId: 'project-b',
+				logger: false
+			}),
+			defineSecretSet(options.keys, {
+				...scopedOptions,
+				organizationId: 'org-c',
+				projectId: 'project-c',
+				logger: false
+			})
+		])
 
-		await Promise.all([first!.reload(), second!.reload()])
+		await Promise.all([first.reload(), second.reload()])
 
-		expect(first!.secret('TEST_CLI_SECRET')).toBe('project-b')
-		expect(second!.secret('TEST_CLI_SECRET')).toBe('project-c')
+		expect(first.secret('TEST_CLI_SECRET')).toBe('project-b')
+		expect(second.secret('TEST_CLI_SECRET')).toBe('project-c')
 		expect(process.env.TEST_CLI_SECRET).toBeUndefined()
 		// Concurrent sets share one CLI read: once to load, once to reload.
 		expect(execute).toHaveBeenCalledTimes(2)
@@ -1335,7 +1333,11 @@ describe('Infisical CLI subprocess', () => {
 		const controller = new AbortController()
 		const read = readInfisicalCliToken({ siteUrl, signal: controller.signal })
 
-		await new Promise((resolve) => setTimeout(resolve, 20))
+		// Give up only once the CLI process exists, so the kill has something to stop.
+		while (execute.mock.calls.length === 0) {
+			await new Promise((resolve) => setTimeout(resolve, 1))
+		}
+
 		controller.abort(new Error('caller reason'))
 
 		await expect(read).rejects.toThrow('caller reason')

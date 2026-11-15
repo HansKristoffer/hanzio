@@ -126,7 +126,6 @@ await sealer.open(sealed)
   Error messages never contain the secret or the plaintext.
 - `sealJson` stores `JSON.stringify(value)`. It throws for `undefined` and for
   functions.
-
 - `fallbacks: [{ secret?, salt, info }]`: older contexts `open` also tries, so
   values sealed before a rename or a secret rotation stay readable. `seal`
   always uses the primary `secret`, `salt` and `info`. A fallback without a

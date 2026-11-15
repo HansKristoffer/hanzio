@@ -71,7 +71,9 @@ export type PriorityQueueOptions = {
 } & QueueAddOptions
 
 export class PriorityQueue implements Queue<RunFunction, PriorityQueueOptions> {
-	readonly #queue: Array<PriorityQueueOptions & { run: RunFunction }> = []
+	readonly #queue: Array<
+		PriorityQueueOptions & { priority: number; run: RunFunction }
+	> = []
 
 	enqueue(run: RunFunction, options: Partial<PriorityQueueOptions> = {}): void {
 		const element = {
@@ -80,8 +82,9 @@ export class PriorityQueue implements Queue<RunFunction, PriorityQueueOptions> {
 			run
 		}
 
+		// Insert before the first lower-priority job, so equal priorities keep FIFO order.
 		const index = this.#queue.findIndex(
-			(item) => item.priority! < element.priority
+			(item) => item.priority < element.priority
 		)
 
 		if (index === -1) {
@@ -108,15 +111,16 @@ export class PriorityQueue implements Queue<RunFunction, PriorityQueueOptions> {
 
 	setPriority(id: string, priority: number): void {
 		const index = this.#queue.findIndex((item) => item.id === id)
+		const item = this.#queue[index]
 
-		if (index === -1) {
+		if (!item) {
 			throw new ReferenceError(
 				`No promise function with the id "${id}" exists in the queue.`
 			)
 		}
 
-		const [item] = this.#queue.splice(index, 1)
-		this.enqueue(item!.run, { ...item, priority })
+		this.#queue.splice(index, 1)
+		this.enqueue(item.run, { ...item, priority })
 	}
 
 	remove(id: string): void {
@@ -167,6 +171,7 @@ export default class PQueue<
 		const {
 			concurrency = Number.POSITIVE_INFINITY,
 			autoStart = true,
+			// The default is PriorityQueue, which TypeScript cannot prove is a QueueType.
 			queueClass = PriorityQueue as unknown as new () => QueueType,
 			intervalCap = Number.POSITIVE_INFINITY,
 			interval = 0,
@@ -176,9 +181,7 @@ export default class PQueue<
 			timeout
 		} = options
 
-		if (!(typeof concurrency === 'number' && concurrency >= 1)) {
-			throw new TypeError('Expected `concurrency` to be a number from 1 and up')
-		}
+		assertConcurrency(concurrency)
 
 		if (!(typeof intervalCap === 'number' && intervalCap >= 1)) {
 			throw new TypeError('Expected `intervalCap` to be a number from 1 and up')
@@ -252,9 +255,7 @@ export default class PQueue<
 	}
 
 	set concurrency(newConcurrency: number) {
-		if (!(typeof newConcurrency === 'number' && newConcurrency >= 1)) {
-			throw new TypeError('Expected `concurrency` to be a number from 1 and up')
-		}
+		assertConcurrency(newConcurrency)
 
 		this.#concurrency = newConcurrency
 		this.#processQueue()
@@ -316,6 +317,7 @@ export default class PQueue<
 		} as Partial<EnqueueOptionsType> & Required<Pick<QueueAddOptions, 'id'>>
 
 		return new Promise<TaskResultType>((resolve, reject) => {
+			const { signal } = taskOptions
 			const taskSymbol = Symbol(taskOptions.id)
 			let didRun = false
 			let queuedAbortHandler: (() => void) | undefined
@@ -323,7 +325,7 @@ export default class PQueue<
 
 			const cleanupQueuedAbort = () => {
 				if (queuedAbortHandler) {
-					taskOptions.signal?.removeEventListener('abort', queuedAbortHandler)
+					signal?.removeEventListener('abort', queuedAbortHandler)
 					queuedAbortHandler = undefined
 				}
 			}
@@ -340,10 +342,8 @@ export default class PQueue<
 				})
 
 				try {
-					taskOptions.signal?.throwIfAborted()
-					const operation = Promise.resolve(
-						function_({ signal: taskOptions.signal })
-					)
+					signal?.throwIfAborted()
+					const operation = Promise.resolve(function_({ signal }))
 					const result = await this.#withTimeoutAndAbort(
 						operation,
 						taskOptions,
@@ -358,10 +358,7 @@ export default class PQueue<
 					this.emit('error', error)
 				} finally {
 					if (runningAbortHandler) {
-						taskOptions.signal?.removeEventListener(
-							'abort',
-							runningAbortHandler
-						)
+						signal?.removeEventListener('abort', runningAbortHandler)
 					}
 
 					this.#runningTasks.delete(taskSymbol)
@@ -371,25 +368,24 @@ export default class PQueue<
 				}
 			}
 
-			if (taskOptions.signal?.aborted) {
-				reject(taskOptions.signal.reason)
+			if (signal?.aborted) {
+				reject(signal.reason)
 				return
 			}
 
-			if (taskOptions.signal) {
+			if (signal) {
+				// A task that has started is aborted by its running listener instead.
 				queuedAbortHandler = () => {
 					if (didRun) {
 						return
 					}
 
 					this.#queue.remove?.(taskOptions.id)
-					reject(taskOptions.signal?.reason)
+					reject(signal.reason)
 					this.emit('next')
 					this.#tryToStartAnother()
 				}
-				taskOptions.signal.addEventListener('abort', queuedAbortHandler, {
-					once: true
-				})
+				signal.addEventListener('abort', queuedAbortHandler, { once: true })
 			}
 
 			this.#queue.enqueue(run, taskOptions)
@@ -403,7 +399,7 @@ export default class PQueue<
 		options?: Partial<EnqueueOptionsType>
 	): Promise<TaskResultsType[]> {
 		return Promise.all(
-			functions.map(async (function_) => this.add(function_, options))
+			functions.map((function_) => this.add(function_, options))
 		)
 	}
 
@@ -493,7 +489,7 @@ export default class PQueue<
 		await this.#onEvent('next', () => this.#queue.size < limit)
 	}
 
-	async #onEvent(event: EventName, filter?: () => boolean): Promise<void> {
+	#onEvent(event: EventName, filter?: () => boolean): Promise<void> {
 		return new Promise((resolve) => {
 			const listener = () => {
 				if (filter && !filter()) {
@@ -513,30 +509,29 @@ export default class PQueue<
 		options: Partial<EnqueueOptionsType>,
 		setAbortListener: (listener: () => void) => void
 	): Promise<TaskResultType> {
+		const { signal, timeout } = options
 		const races: Array<Promise<TaskResultType>> = [operation]
 		let timeoutId: ReturnType<typeof setTimeout> | undefined
 
-		if (options.timeout) {
+		if (timeout) {
 			races.push(
 				new Promise<never>((_resolve, reject) => {
 					timeoutId = setTimeout(() => {
-						reject(
-							new TimeoutError(`Task timed out after ${options.timeout}ms`)
-						)
-					}, options.timeout)
+						reject(new TimeoutError(`Task timed out after ${timeout}ms`))
+					}, timeout)
 				})
 			)
 		}
 
-		if (options.signal) {
+		if (signal) {
 			races.push(
 				new Promise<never>((_resolve, reject) => {
 					const listener = () => {
-						reject(options.signal?.reason)
+						reject(signal.reason)
 					}
 
 					setAbortListener(listener)
-					options.signal?.addEventListener('abort', listener, { once: true })
+					signal.addEventListener('abort', listener, { once: true })
 				})
 			)
 		}
@@ -617,9 +612,9 @@ export default class PQueue<
 				return true
 			}
 
-			this.#scheduleIntervalResume(
-				this.#interval - (now - this.#strictTimestamps[0]!)
-			)
+			// At the cap there is a timestamp to wait on, because intervalCap is at least 1.
+			const oldest = this.#strictTimestamps[0]!
+			this.#scheduleIntervalResume(this.#interval - (now - oldest))
 			return false
 		}
 
@@ -690,3 +685,9 @@ export default class PQueue<
 }
 
 export { PQueue }
+
+function assertConcurrency(value: number): void {
+	if (!(typeof value === 'number' && value >= 1)) {
+		throw new TypeError('Expected `concurrency` to be a number from 1 and up')
+	}
+}

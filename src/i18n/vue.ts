@@ -59,7 +59,8 @@ export function createVueI18n<L extends string>(
 	})
 
 	const apply = (locale: L) => {
-		;(i18n.global.locale as WritableComputedRef<string>).value = locale
+		const localeRef = i18n.global.locale as WritableComputedRef<string>
+		localeRef.value = locale
 		if (browser.document) browser.document.documentElement.lang = locale
 	}
 	apply(initial)

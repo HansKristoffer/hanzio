@@ -78,13 +78,13 @@
  *    })
  */
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Helper types for return type inference
-// ═══════════════════════════════════════════════════════════════════════════
-
-/** Extract raw return type from a handler function (preserves Promise) */
-// biome-ignore lint/suspicious/noExplicitAny: Required for type extraction from functions
-type RawHandlerReturnType<T> = T extends (...args: any[]) => infer R ? R : never
+/**
+ * Extract raw return type from a handler function (preserves Promise). `never[]`
+ * matches a handler with any parameter list, as `any[]` would, without `any`.
+ */
+type RawHandlerReturnType<T> = T extends (...args: never[]) => infer R
+	? R
+	: never
 
 /** Get union of all raw return types from a cases object's values */
 type RawCasesReturnType<Cases> = RawHandlerReturnType<Cases[keyof Cases]>
@@ -119,10 +119,6 @@ type HandledCaseKeys<Cases, K = keyof Cases> = K extends keyof Cases
 			: K
 	: never
 
-// ═══════════════════════════════════════════════════════════════════════════
-// String input mode types
-// ═══════════════════════════════════════════════════════════════════════════
-
 // The exported case-map types below are annotation helpers for consumers who
 // want to type reusable case maps. The typedSwitch overloads infer their own
 // shapes and do not depend on these types.
@@ -136,10 +132,6 @@ export type StringSwitchCases<T extends string, R> = {
 export type PartialStringSwitchCases<T extends string, R> = {
 	[K in T]?: (value: K) => R | Promise<R>
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Object input mode types
-// ═══════════════════════════════════════════════════════════════════════════
 
 /** Discriminant values supported in object mode. Cases are keyed by `${value}`. */
 type Discriminant = string | number | boolean
@@ -236,10 +228,6 @@ type SkipForObjects<T> = [T] extends [PlainValue] ? [] : [never]
 
 type Handler = (value: unknown) => unknown
 type CasesRecord = Record<string, Handler | undefined>
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Function overloads
-// ═══════════════════════════════════════════════════════════════════════════
 
 // Each mode has two overloads. The first four take the result type `R` from
 // the call's contextual type, such as an annotated variable or a declared
@@ -463,8 +451,11 @@ export function typedSwitchGroup(
 	keysOrHandler: unknown,
 	handler?: Handler
 ): CasesRecord {
-	const keys = (handler ? keysOrHandler : keyOrKeys) as Discriminant[]
-	const shared = handler ?? (keysOrHandler as Handler)
+	// The object form has a key argument, so its keys and handler sit one place later.
+	const isObjectForm = handler !== undefined
+	const keys = (isObjectForm ? keysOrHandler : keyOrKeys) as Discriminant[]
+	const shared = (isObjectForm ? handler : keysOrHandler) as Handler
+
 	const cases: CasesRecord = {}
 	for (const key of keys) cases[String(key)] = shared
 	return cases

@@ -15,6 +15,7 @@ type PropertyConfig<T, U> = {
 	[K in keyof T]?: ((jsonObject: U) => T[K]) | NestedConfig<NonNullable<T[K]>>
 }
 
+// `any` on purpose: an interface-typed JSON object is assignable to Record<string, any> but not to Record<string, unknown>.
 export function jsonToZodSchemaMapper<
 	T extends z.ZodType,
 	U extends Record<string, any>
@@ -27,7 +28,7 @@ export function jsonToZodSchemaMapper<
 }
 
 function mapObject(
-	jsonObject: Record<string, any>,
+	jsonObject: Record<string, unknown>,
 	schema: z.core.$ZodType,
 	config: Record<string, unknown>
 ): Record<string, unknown> {

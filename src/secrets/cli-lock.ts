@@ -39,6 +39,7 @@ export async function acquireCliLock(
 				await handle.close()
 			}
 
+			// A waiter may have taken this lock over as stale already; a failed release must not fail the load.
 			return () => fs.unlink(lock).catch(() => {})
 		} catch (error) {
 			if ((error as { code?: string }).code !== 'EEXIST') {

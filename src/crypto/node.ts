@@ -65,12 +65,12 @@ export function createSealerSync(options: SealerOptions): SealerSync {
 		return formatEnvelope(iv, cipher.getAuthTag(), ciphertext)
 	}
 
-	/** The plaintext and the index of the context that opened it. */
+	/** The plaintext, and the index of the context that opened it. */
 	const openEnvelope = ({
 		iv,
 		tag,
 		ciphertext
-	}: Envelope): [string, number] => {
+	}: Envelope): { plaintext: string; contextIndex: number } => {
 		for (let index = 0; index < contexts.length; index++) {
 			try {
 				const decipher = createDecipheriv(ALGORITHM, getKey(index), iv)
@@ -79,8 +79,10 @@ export function createSealerSync(options: SealerOptions): SealerSync {
 					decipher.update(ciphertext),
 					decipher.final()
 				])
-				return [plaintext.toString('utf8'), index]
-			} catch (_error) {}
+				return { plaintext: plaintext.toString('utf8'), contextIndex: index }
+			} catch (_error) {
+				// Wrong context for this value: try the next one.
+			}
 		}
 		throw new SealerError('decrypt_failed')
 	}
@@ -89,16 +91,18 @@ export function createSealerSync(options: SealerOptions): SealerSync {
 		seal,
 		open(sealed) {
 			const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
-			return envelope ? openEnvelope(envelope)[0] : sealed
+			return envelope ? openEnvelope(envelope).plaintext : sealed
 		},
 		sealJson: (value) => seal(jsonToSeal(value)),
 		openJson<T = unknown>(sealed: unknown) {
 			const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
-			return (envelope ? JSON.parse(openEnvelope(envelope)[0]) : sealed) as T
+			return (
+				envelope ? JSON.parse(openEnvelope(envelope).plaintext) : sealed
+			) as T
 		},
 		needsReseal(sealed) {
 			const envelope = parseEnvelope(sealed, options.passthroughUnsealed)
-			return envelope ? openEnvelope(envelope)[1] > 0 : true
+			return envelope ? openEnvelope(envelope).contextIndex > 0 : true
 		}
 	}
 }

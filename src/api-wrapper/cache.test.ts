@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { createApiClient, defineAction, ActionError } from '.'
 import { originalFetch } from './test-helpers'
 
-describe('createApiClient — action cache', () => {
+describe('createApiClient: action cache', () => {
 	afterEach(() => {
 		globalThis.fetch = originalFetch
 	})

@@ -124,14 +124,15 @@ export function cacheFunction<T extends AnyFunction>(
 		cleanupInterval.unref?.()
 	}
 
-	const buildKey = (args: Parameters<T>): string => {
-		const keyArgs = cacheKeyFn
-			? cacheKeyFn(...args)
-			: cacheKeyArgs
-				? cacheKeyArgs.map((i) => args[i])
-				: args
-		return `${name}:${stableStringify(keyArgs)}`
+	// cacheKeyFn takes precedence over cacheKeyArgs; with neither, every argument is in the key.
+	const keyArgsOf = (args: Parameters<T>) => {
+		if (cacheKeyFn) return cacheKeyFn(...args)
+		if (cacheKeyArgs) return cacheKeyArgs.map((i) => args[i])
+		return args
 	}
+
+	const buildKey = (args: Parameters<T>): string =>
+		`${name}:${stableStringify(keyArgsOf(args))}`
 
 	const isFresh = (entry: CacheStoreEntry) =>
 		Date.now() - entry.timestamp < cacheTimeMs
@@ -150,6 +151,7 @@ export function cacheFunction<T extends AnyFunction>(
 		}
 	}
 
+	// A failing store degrades to calling fn: the error goes to onStoreError and the call goes on.
 	const guardStore = async <R>(
 		operation: () => Promise<R>
 	): Promise<R | undefined> => {

@@ -1,6 +1,10 @@
-import { ZodError } from 'zod'
+import { type z, ZodError } from 'zod'
 import { buildQueryString } from '../url'
-import { type ConfigError, RequestValidationError } from './errors'
+import {
+	type ConfigError,
+	RequestValidationError,
+	type RequestValidationTarget
+} from './errors'
 import { normalizeHeaders } from './headers'
 import type {
 	ApiErrorContext,
@@ -9,6 +13,8 @@ import type {
 	QueryParams
 } from './shared'
 import type { ApiEndpoint } from './types'
+
+type ErrorContextFactory = (over?: Partial<ApiErrorContext>) => ApiErrorContext
 
 export type BuildUrlOptions = {
 	endpoint: ApiEndpoint
@@ -70,62 +76,71 @@ export function buildUrl(options: BuildUrlOptions) {
 	}
 }
 
-export function buildPathParams(
-	endpoint: ApiEndpoint,
-	params: PathParams | undefined,
-	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
-): PathParams | undefined {
-	if (!endpoint.reqParamsSchema) return params
-
+/**
+ * Parses one part of a request. A Zod failure becomes a RequestValidationError
+ * that names the part, so the caller sees what was wrong before anything is sent.
+ */
+function parseRequestPart<T>(
+	schema: z.ZodType,
+	value: unknown,
+	target: RequestValidationTarget,
+	ctx: ErrorContextFactory
+): T {
 	try {
-		return endpoint.reqParamsSchema.parse(params) as PathParams
+		return schema.parse(value) as T
 	} catch (error) {
 		if (error instanceof ZodError) {
-			throw new RequestValidationError(error, 'params', params, ctx())
+			throw new RequestValidationError(error, target, value, ctx())
 		}
 		throw error
 	}
 }
 
+export function buildPathParams(
+	endpoint: ApiEndpoint,
+	params: PathParams | undefined,
+	ctx: ErrorContextFactory
+): PathParams | undefined {
+	if (!endpoint.reqParamsSchema) return params
+
+	return parseRequestPart<PathParams>(
+		endpoint.reqParamsSchema,
+		params,
+		'params',
+		ctx
+	)
+}
+
 export function buildQueryParams(
 	endpoint: ApiEndpoint,
 	query: QueryParams | undefined,
-	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
+	ctx: ErrorContextFactory
 ): QueryParams {
 	const defaultParams = endpoint.reqDefaultQueryParams ?? {}
-	let parsedQuery: QueryParams
-	if (endpoint.reqQuerySchema) {
-		try {
-			parsedQuery = endpoint.reqQuerySchema.parse(query) as QueryParams
-		} catch (error) {
-			if (error instanceof ZodError) {
-				throw new RequestValidationError(error, 'query', query, ctx())
-			}
-			throw error
-		}
-	} else {
-		parsedQuery = query ?? {}
-	}
+	const parsedQuery = endpoint.reqQuerySchema
+		? parseRequestPart<QueryParams>(
+				endpoint.reqQuerySchema,
+				query,
+				'query',
+				ctx
+			)
+		: (query ?? {})
 	return { ...defaultParams, ...parsedQuery }
 }
 
 export function buildRequestBody(
 	endpoint: ApiEndpoint,
 	body: unknown,
-	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
+	ctx: ErrorContextFactory
 ): unknown {
 	if (!endpoint.reqBodySchema) return body
 
-	let parsedBody: Record<string, unknown>
-	try {
-		parsedBody = endpoint.reqBodySchema.parse(body) as Record<string, unknown>
-	} catch (error) {
-		if (error instanceof ZodError) {
-			throw new RequestValidationError(error, 'body', body, ctx())
-		}
-		throw error
-	}
-
+	const parsedBody = parseRequestPart<Record<string, unknown>>(
+		endpoint.reqBodySchema,
+		body,
+		'body',
+		ctx
+	)
 	if (endpoint.reqBodyFormat !== 'form-data') {
 		return parsedBody
 	}
@@ -143,27 +158,19 @@ export function buildHeaders(
 	endpoint: ApiEndpoint,
 	headers: Record<string, string> | undefined,
 	defaultHeaders: Record<string, string>,
-	ctx: (over?: Partial<ApiErrorContext>) => ApiErrorContext
+	ctx: ErrorContextFactory
 ): Record<string, string> {
 	const contentType =
 		endpoint.reqBodyFormat === 'json' ? 'application/json' : undefined
 
-	let parsedHeaders: Record<string, string>
-	if (endpoint.reqHeadersSchema) {
-		try {
-			parsedHeaders = endpoint.reqHeadersSchema.parse(headers) as Record<
-				string,
-				string
-			>
-		} catch (error) {
-			if (error instanceof ZodError) {
-				throw new RequestValidationError(error, 'headers', headers, ctx())
-			}
-			throw error
-		}
-	} else {
-		parsedHeaders = headers ?? {}
-	}
+	const parsedHeaders = endpoint.reqHeadersSchema
+		? parseRequestPart<Record<string, string>>(
+				endpoint.reqHeadersSchema,
+				headers,
+				'headers',
+				ctx
+			)
+		: (headers ?? {})
 
 	return normalizeHeaders({
 		...defaultHeaders,
@@ -174,7 +181,7 @@ export function buildHeaders(
 }
 
 /** Joins with exactly one `/`; empty paths and query-only paths are appended as-is. */
-export function joinUrlPath(base: string, path: string): string {
+function joinUrlPath(base: string, path: string): string {
 	if (!path || path.startsWith('?')) return `${base}${path}`
 	return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
 }
@@ -192,7 +199,7 @@ function replaceUrlPathParams(
 	return `${origin}${replacePathParams(path, params, configError)}${rest.slice(path.length)}`
 }
 
-export function replacePathParams(
+function replacePathParams(
 	path: string,
 	params: PathParams | undefined,
 	configError: (msg: string) => ConfigError

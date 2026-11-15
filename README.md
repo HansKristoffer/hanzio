@@ -2,7 +2,7 @@
 
 A small TypeScript-first utility library for common application code: arrays,
 strings, promises, caching, state machines, dates, URLs, colors, Zod helpers,
-API clients, JWTs, sitemap crawling, queues, secrets, and colorful terminal
+API clients, JWTs, sitemap crawling, queues, secrets, and colored terminal
 logging.
 
 ## Install
@@ -993,14 +993,15 @@ const initialForm = zodDefaults(FormSchema) // defaults, first enum value, '' fo
 ### API Wrapper (`hanzio/api-wrapper`)
 
 `createApiClient` creates a Zod-backed API client with typed request inputs and
-response data (`defineEndpoint` infers path params from `'/users/:id'`),
-`api.safe` for `Result`-based error handling, retries with exponential backoff, middleware (`use`),
-dependency-free OpenTelemetry tracing (`otelMiddleware`), lazy
-`defaultHeaders`, `checkResponse` for error envelopes, composite actions and
-structured errors. Failed requests are logged with a category (server error,
-rejected request, input or output validation, network, timeout) and the
-details needed to fix them. `paginate` iterates cursor- or page-based endpoints. See the
-[API wrapper docs](src/api-wrapper/README.md).
+response data. `defineEndpoint` infers path params from `'/users/:id'`.
+
+The client also has `api.safe` for `Result`-based error handling, retries with
+exponential backoff, middleware (`use`), dependency-free OpenTelemetry tracing
+(`otelMiddleware`), lazy `defaultHeaders`, `checkResponse` for error envelopes,
+composite actions and structured errors. Failed requests are logged with a
+category (server error, rejected request, input or output validation, network,
+timeout) and the details needed to fix them. `paginate` iterates cursor- or
+page-based endpoints. See the [API wrapper docs](src/api-wrapper/README.md).
 
 ```ts
 import { createApiClient, isHttpResponseError, paginate } from 'hanzio/api-wrapper'

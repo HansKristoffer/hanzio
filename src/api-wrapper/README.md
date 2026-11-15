@@ -195,16 +195,15 @@ accepts:
 | `onResponse` | Hook that runs after each response is received (called per attempt). |
 | `onRetry` | Hook called before each retry with `{ delayMs, nextAttempt, ... }`. |
 | `onError` | Hook called when an `ApiError` is about to be thrown. |
-| `redact` | Optional `(context: ApiErrorContext) => ApiErrorContext` applied before `logger` / `onError` and before errors store context. Built-in default redaction strips sensitive headers (`authorization`, `cookie`, `set-cookie`) and common secret-like body keys (`password`, `token`, `accessToken`, `refreshToken`, `secret`). Override wholly or layer on top of the default by copying fields you need from the incoming context. |
+| `redact` | Optional `(context: ApiErrorContext) => ApiErrorContext` applied before `logger` / `onError` and before errors store context. Built-in default redaction strips sensitive headers (`authorization`, `cookie`, `set-cookie`, `x-api-key`, `x-auth-token`) and common secret-like body keys (`password`, `token`, `accessToken`, `refreshToken`, `secret`, `apiKey`). Override wholly or layer on top of the default by copying fields you need from the incoming context. |
 
 The default retry policy retries network errors, timeouts and `5xx`/`429`
 responses, and **does not retry** validation, abort, config, or `4xx` errors.
 Requests that are not idempotent (POST and PATCH without `idempotent: true`)
 are retried only on `429`. A retried response's body is cancelled before the
-wait, so its connection is released. `Retry-After`
-headers on `429`/`503` are respected up to `maxRetryDelayMs`. Aborting the
-caller's `signal` while waiting between retries throws `RequestAbortedError`
-immediately.
+wait, so its connection is released. `Retry-After` headers on `429`/`503` are
+respected up to `maxRetryDelayMs`. Aborting the caller's `signal` while waiting
+between retries throws `RequestAbortedError` immediately.
 
 ### Middleware
 
@@ -555,7 +554,7 @@ The factory receives `{ api, defineAction }`. `defineAction` returned by the
 factory is bound to your endpoints, so `ctx.api` (and `ctx.input`,
 `ctx.cache`, etc.) are all properly typed. There is also a top-level
 `defineAction` import for ad-hoc usage outside `createApiClient`, but its
-`ctx.api` is typed as `any` — prefer the factory form.
+`ctx.api` is typed as `any`, so prefer the factory form.
 
 ### `defineAction`
 
@@ -590,7 +589,7 @@ defineAction({
 | Field | Description |
 | --- | --- |
 | `input` | The caller input: parsed by the `input` schema, or typed via the generic on `defineAction`. |
-| `api` | The full client — endpoints and other actions. Calls inside the handler benefit from the same hooks/retries/errors as direct calls. |
+| `api` | The full client, with endpoints and other actions. Calls inside the handler benefit from the same hooks/retries/errors as direct calls. |
 | `signal` | Caller's `AbortSignal`. Forward it into inner `api.endpoint({ signal })` calls to make cancellation work. |
 | `meta` | Arbitrary metadata passed by the caller. |
 | `logger` | Same logger as the client. |
@@ -606,7 +605,7 @@ Per-call options:
 await api.loginAndGetMe({ email, password }, { signal, meta })
 ```
 
-Action names must not collide with endpoint names — a `ConfigError` is
+Action names must not collide with endpoint names. A `ConfigError` is
 thrown at `createApiClient` time if they do.
 
 ### Sharing Auth (and Anything Else) Across Actions
