@@ -27,6 +27,7 @@ describe('linearRegressionTrend', () => {
 		const y = linearRegressionTrend([7, 7, 7, 7])
 		expect(y.every((v) => v === 7)).toBe(true)
 	})
+
 	test('linearRegression exposes slope, intercept and r2', () => {
 		const exact = linearRegression([1, 3, 5])!
 		expect(exact.slope).toBeCloseTo(2, 10)

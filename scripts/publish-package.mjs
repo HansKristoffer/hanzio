@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
-// Retry only the verified artifact. Registry/network errors must not look like absence.
+// A version already on the registry is skipped, so a re-run after a partial failure does not publish again.
+// Only a 404 means the version is absent; any other registry error stops the run, because it must not look like absence.
 const { name, version } = JSON.parse(readFileSync('.artifacts/package.json', 'utf8'))
 const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}/${version}`, {
 	signal: AbortSignal.timeout(15_000)

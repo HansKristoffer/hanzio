@@ -13,6 +13,8 @@ permissions:
   contents: read
   pull-requests: read
 jobs:
+  # Squash merges use the PR title as the commit that Release Please reads, so the title must be a
+  # Conventional Commits title: a type, an optional (scope), an optional !, and a subject.
   pr-title:
     name: PR title
     if: github.event_name == 'pull_request'

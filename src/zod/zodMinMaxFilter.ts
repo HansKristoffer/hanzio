@@ -19,17 +19,11 @@ function toRange<T>(
 	lower: string,
 	upper: string
 ): Record<string, T> | undefined {
-	if (!filter) return undefined
+	const range: Record<string, T> = {}
+	if (filter?.min !== undefined) range[lower] = filter.min
+	if (filter?.max !== undefined) range[upper] = filter.max
 
-	const hasMin = filter.min !== undefined
-	const hasMax = filter.max !== undefined
-
-	if (!hasMin && !hasMax) return undefined
-
-	return {
-		...(hasMin && { [lower]: filter.min as T }),
-		...(hasMax && { [upper]: filter.max as T })
-	}
+	return Object.keys(range).length > 0 ? range : undefined
 }
 
 /**

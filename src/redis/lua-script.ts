@@ -66,14 +66,17 @@ export function createLuaScript(send: RedisSend, source: string) {
 	}
 
 	return async function evalScript(keys: string[], args: string[]) {
-		const tail = [String(keys.length), ...keys, ...args]
+		// Both EVAL and EVALSHA take the key count, then the keys, then the arguments.
+		const evalArgs = [String(keys.length), ...keys, ...args]
+
 		sha ??= await load()
 		try {
-			return await send('EVALSHA', [sha, ...tail])
+			return await send('EVALSHA', [sha, ...evalArgs])
 		} catch (error) {
 			if (!isNoScriptError(error)) throw error
+
 			sha = null
-			return await send('EVAL', [source, ...tail])
+			return await send('EVAL', [source, ...evalArgs])
 		}
 	}
 }

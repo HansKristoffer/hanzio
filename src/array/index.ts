@@ -138,6 +138,11 @@ export function getUniqueValuesByKey<T>(
 	return result
 }
 
+// Reads the grouping key from a property name or a key callback.
+function keyOf<T, TKey>(item: T, keyOrFn: keyof T | ((item: T) => TKey)): TKey {
+	return typeof keyOrFn === 'function' ? keyOrFn(item) : (item[keyOrFn] as TKey)
+}
+
 export function groupBy<
 	T,
 	TKey extends keyof T,
@@ -154,10 +159,7 @@ export function groupBy<T, TGroupKey extends PropertyKeyValue>(
 	const result: Partial<Record<TGroupKey, T[]>> = {}
 
 	for (const item of array) {
-		const groupKey =
-			typeof keyOrFn === 'function'
-				? keyOrFn(item)
-				: (item[keyOrFn] as TGroupKey)
+		const groupKey = keyOf(item, keyOrFn)
 		result[groupKey] ??= []
 		result[groupKey].push(item)
 	}
@@ -181,10 +183,7 @@ export function countBy<T, TGroupKey extends PropertyKeyValue>(
 	const result: Partial<Record<TGroupKey, number>> = {}
 
 	for (const item of array) {
-		const groupKey =
-			typeof keyOrFn === 'function'
-				? keyOrFn(item)
-				: (item[keyOrFn] as TGroupKey)
+		const groupKey = keyOf(item, keyOrFn)
 		result[groupKey] = (result[groupKey] ?? 0) + 1
 	}
 
@@ -207,11 +206,7 @@ export function keyBy<T, TRecordKey extends PropertyKeyValue>(
 	const result = {} as Record<TRecordKey, T>
 
 	for (const item of array) {
-		const recordKey =
-			typeof keyOrFn === 'function'
-				? keyOrFn(item)
-				: (item[keyOrFn] as TRecordKey)
-		result[recordKey] = item
+		result[keyOf(item, keyOrFn)] = item
 	}
 
 	return result

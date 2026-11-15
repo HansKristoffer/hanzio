@@ -52,10 +52,10 @@ mkdir -p src/api-wrapper/{api-name}/utils
 
 The index file creates and exports the API client. Import `createApiClient`
 and `defineEndpoint` from `hanzio/api-wrapper`; the root `hanzio` entry does
-not export them. When the token comes from
-a secret store, create the client at module level and resolve the header
-lazily with a `defaultHeaders` function; take the token as a parameter only
-when callers supply it per instance.
+not export them. When the token comes from a secret store, create the client
+at module level and resolve the header lazily with a `defaultHeaders`
+function; take the token as a parameter only when callers supply it per
+instance.
 
 ```ts
 import { createApiClient } from 'hanzio/api-wrapper'
@@ -169,9 +169,9 @@ loop:
 
 ```ts
 import { paginate } from 'hanzio/api-wrapper'
-import type { GetExampleApi } from '../index'
+import type { ExampleApi } from '../index'
 
-export const usersGetAll = (api: GetExampleApi) =>
+export const usersGetAll = (api: ExampleApi) =>
 	Array.fromAsync(
 		paginate(
 			(page: number = 1) => api.usersList({ reqQuery: { page } }),

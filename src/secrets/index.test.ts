@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import {
 	cloudflareWorkerEnvLoader,
 	createSecretSet,
@@ -32,6 +32,10 @@ const originalEnv = Object.fromEntries(
 const originalConsoleError = console.error
 const originalFetch = globalThis.fetch
 
+beforeEach(() => {
+	console.error = mock(() => {})
+})
+
 afterEach(() => {
 	console.error = originalConsoleError
 	globalThis.fetch = originalFetch
@@ -49,8 +53,6 @@ afterEach(() => {
 
 describe('defineSecretSet', () => {
 	test('loads all configured secrets before resolving', async () => {
-		console.error = mock(() => {})
-
 		const loader: SecretSetLoader<
 			'APP_SECRET' | 'DATABASE_URL'
 		> = async () => ({
@@ -73,7 +75,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('uses process.env values without calling the loader', async () => {
-		console.error = mock(() => {})
 		process.env.LOCAL_ONLY = 'from-env'
 
 		let calls = 0
@@ -91,7 +92,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('process.env values override loaded values', async () => {
-		console.error = mock(() => {})
 		process.env.APP_SECRET = 'from-env'
 
 		const secretSet = await defineSecretSet(
@@ -109,8 +109,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('fails fast with all missing configured secrets', async () => {
-		console.error = mock(() => {})
-
 		await expect(
 			defineSecretSet(['MISSING_SECRET', 'OTHER_MISSING_SECRET'] as const, {
 				loader: async () => ({})
@@ -119,8 +117,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('caches secrets and can reload them', async () => {
-		console.error = mock(() => {})
-
 		let calls = 0
 
 		const secretSet = await defineSecretSet(['REMOTE_ONLY'] as const, {
@@ -142,8 +138,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('secrets returns a copy of cached values', async () => {
-		console.error = mock(() => {})
-
 		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
 			loader: async () => ({ APP_SECRET: 'app-secret' })
 		})
@@ -157,7 +151,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('custom loaders receive only missing keys and environment', async () => {
-		console.error = mock(() => {})
 		process.env.APP_SECRET = 'from-env'
 
 		const contexts: unknown[] = []
@@ -180,8 +173,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('exposes loaded secrets as Vite define values', async () => {
-		console.error = mock(() => {})
-
 		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
 			loader: async () => ({ APP_SECRET: 'app-secret' })
 		})
@@ -192,8 +183,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('creates a Vite plugin that returns define config', async () => {
-		console.error = mock(() => {})
-
 		const secretSet = await defineSecretSet(['APP_SECRET'] as const, {
 			loader: async () => ({ APP_SECRET: 'app-secret' })
 		})
@@ -237,7 +226,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('loads missing secrets from Infisical over direct HTTP', async () => {
-		console.error = mock(() => {})
 		process.env.INFISICAL_CLIENT_ID = 'client-id'
 		process.env.INFISICAL_CLIENT_SECRET = 'client-secret'
 
@@ -308,7 +296,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('cloudflareWorkerEnvLoader reads from the passed Worker env object', async () => {
-		console.error = mock(() => {})
 		delete process.env.REMOTE_ONLY
 
 		const fetchMock = mock(async () => {
@@ -328,7 +315,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('cloudflareWorkerEnvLoader is overridden by process.env when set', async () => {
-		console.error = mock(() => {})
 		process.env.REMOTE_ONLY = 'from-process'
 
 		const secretSet = await defineSecretSet(['REMOTE_ONLY'] as const, {
@@ -341,7 +327,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('processEnvLoader resolves from process.env only without fetch', async () => {
-		console.error = mock(() => {})
 		process.env.REMOTE_ONLY = 'from-env-direct'
 
 		const fetchMock = mock(async () => {
@@ -359,7 +344,6 @@ describe('defineSecretSet', () => {
 	})
 
 	test('infisicalLoader uses explicit client credentials', async () => {
-		console.error = mock(() => {})
 		delete process.env.INFISICAL_CLIENT_ID
 		delete process.env.INFISICAL_CLIENT_SECRET
 
@@ -438,12 +422,11 @@ describe('optional keys and loaders alongside Infisical options', () => {
 			throw new Error('fetch should not be called')
 		}) as unknown as typeof fetch
 
-		const isTest = true as boolean
 		const secrets = await defineSecretSet(['APP_SECRET'], {
 			...infisical,
 			projectId: '',
 			logger: false,
-			loader: isTest ? processEnvLoader : undefined
+			loader: processEnvLoader
 		})
 
 		expect(secrets.secret('APP_SECRET')).toBe('from-env')
@@ -537,12 +520,10 @@ describe('optional keys and loaders alongside Infisical options', () => {
 			// @ts-expect-error The optional result may be undefined.
 			const notString: string = secrets.optional('EXA_API_KEY')
 
-			const isTest = Boolean(process.env.CI)
-
 			await defineSecretSet(['DATABASE_URL'], {
 				...infisical,
 				optional: ['RESEND_API_KEY'],
-				loader: isTest ? processEnvLoader : undefined
+				loader: processEnvLoader
 			})
 
 			return [url, resend, sources, notString]

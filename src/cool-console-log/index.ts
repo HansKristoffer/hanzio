@@ -42,7 +42,7 @@ export type TerminalColor = keyof typeof terminalColors
 
 const noColors = Object.fromEntries(
 	Object.keys(terminalColors).map((key) => [key, ''])
-) as unknown as typeof terminalColors
+) as Record<TerminalColor, string>
 
 function getProcessEnvironment():
 	| Record<string, string | undefined>
@@ -105,7 +105,7 @@ function formatValue(value: unknown): string {
 	if (typeof value !== 'object' || value === null) return String(value)
 	try {
 		return JSON.stringify(value)
-	} catch (_error) {
+	} catch {
 		return '[Unserializable]'
 	}
 }
@@ -211,7 +211,7 @@ export function logOperationSummary(
 	operationName: string,
 	durationMs: number,
 	success: boolean,
-	options: { devOnly?: boolean; error?: Error | unknown } = {}
+	options: { devOnly?: boolean; error?: unknown } = {}
 ): void {
 	const { devOnly = true, error } = options
 

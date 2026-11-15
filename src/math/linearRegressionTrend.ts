@@ -18,13 +18,12 @@ export function linearRegression(values: number[]): LinearRegression | null {
 		if (!Number.isFinite(v)) return null
 	}
 
+	// Sums for the normal equations; x is the index.
 	let sumX = 0
 	let sumY = 0
 	let sumXY = 0
 	let sumX2 = 0
-	for (let i = 0; i < n; i++) {
-		const x = i
-		const y = values[i]!
+	for (const [x, y] of values.entries()) {
 		sumX += x
 		sumY += y
 		sumXY += x * y
@@ -41,9 +40,8 @@ export function linearRegression(values: number[]): LinearRegression | null {
 	const fitted: number[] = []
 	let ssRes = 0
 	let ssTot = 0
-	for (let i = 0; i < n; i++) {
-		const y = values[i]!
-		const f = intercept + slope * i
+	for (const [x, y] of values.entries()) {
+		const f = intercept + slope * x
 		fitted.push(f)
 		ssRes += (y - f) ** 2
 		ssTot += (y - mean) ** 2

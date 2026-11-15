@@ -160,7 +160,7 @@ export function zodToExample(schema: Schema): unknown {
 				return result
 			}
 
-			// Always return array with one item for better example
+			// One element is enough to show the item shape.
 			case 'array':
 				return [zodToExample(def.element)]
 

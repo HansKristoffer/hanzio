@@ -4,7 +4,7 @@ import type { SecretSetLoader } from './core'
  * Reads secrets from a Cloudflare Worker `env` bindings object (or any similar
  * `Record`), for Workers where `process.env` is not populated. Pass the same
  * object you get as `env` in your fetch handler, or values you’d read from
- * `import { env } from "cloudflare:workers"` in your Worker bundle — this
+ * `import { env } from "cloudflare:workers"` in your Worker bundle. This
  * package does not import that module.
  */
 export function cloudflareWorkerEnvLoader<SecretKey extends string>(
@@ -37,14 +37,6 @@ function workerBindingToString(value: unknown): string | undefined {
 
 	if (typeof value === 'string') {
 		return value === '' ? undefined : value
-	}
-
-	if (
-		typeof value === 'number' ||
-		typeof value === 'boolean' ||
-		typeof value === 'bigint'
-	) {
-		return String(value)
 	}
 
 	// JSON bindings remain strings until the optional schema parses them.

@@ -38,7 +38,7 @@ export interface SitemapEntry {
 	lastmod?: string
 }
 
-type Request = (url: string, method?: string) => Promise<Response>
+type RequestFn = (url: string, method?: string) => Promise<Response>
 
 const COMMON_LOCATIONS = [
 	'/sitemap.xml',
@@ -56,17 +56,21 @@ const XML_ENTITIES: Record<string, string> = {
 	apos: "'"
 }
 
+// The regex only captures the five named entities above or a numeric reference.
+const decodeEntity = (entity: string) => {
+	if (entity[0] !== '#') return XML_ENTITIES[entity]!
+
+	const isHex = entity[1] === 'x' || entity[1] === 'X'
+	const codePoint = isHex
+		? Number.parseInt(entity.slice(2), 16)
+		: Number(entity.slice(1))
+	return String.fromCodePoint(codePoint)
+}
+
 const decodeXml = (value: string) =>
 	value.replace(
 		/&(#[xX][\da-fA-F]+|#\d+|amp|lt|gt|quot|apos);/g,
-		(_, entity: string) =>
-			entity[0] !== '#'
-				? XML_ENTITIES[entity]!
-				: String.fromCodePoint(
-						entity[1] === 'x' || entity[1] === 'X'
-							? Number.parseInt(entity.slice(2), 16)
-							: Number(entity.slice(1))
-					)
+		(_, entity: string) => decodeEntity(entity)
 	)
 
 const matchesFilter = (filter: SitemapUrlFilter | undefined, url: string) => {
@@ -229,7 +233,7 @@ export function isAllowedByRobots(
 
 const fetchRobots = async (
 	origin: string,
-	request: Request,
+	request: RequestFn,
 	userAgent: string,
 	onError: (url: string, error: unknown) => void
 ): Promise<RobotsRules | undefined> => {
@@ -246,7 +250,7 @@ const fetchRobots = async (
 /** The first common sitemap location that answers a HEAD request. */
 const probeSitemapLocations = async (
 	origin: string,
-	request: Request
+	request: RequestFn
 ): Promise<string[]> => {
 	for (const location of COMMON_LOCATIONS) {
 		try {
@@ -282,7 +286,7 @@ export const getDomainSitemapEntries = async (
 		respectRobots = false
 	} = options
 
-	const request: Request = (url, method = 'GET') =>
+	const request: RequestFn = (url, method = 'GET') =>
 		fetchFn(url, {
 			method,
 			headers: { 'User-Agent': userAgent },
@@ -294,12 +298,13 @@ export const getDomainSitemapEntries = async (
 	const sitemapUrls = robots?.sitemaps.length
 		? robots.sitemaps
 		: await probeSitemapLocations(origin, request)
-	const keepUrl = (url: string) =>
-		matchesFilter(filterUrls, url) &&
-		(!respectRobots || !robots || isAllowedByRobots(robots, url))
 	if (sitemapUrls.length === 0) {
 		throw new Error('No sitemaps found for the domain')
 	}
+
+	const keepUrl = (url: string) =>
+		matchesFilter(filterUrls, url) &&
+		(!respectRobots || !robots || isAllowedByRobots(robots, url))
 
 	const queue = new PQueue({ concurrency })
 	const entries = new Map<string, SitemapEntry>()
@@ -329,8 +334,9 @@ export const getDomainSitemapEntries = async (
 					}
 				} else if (entries.size >= maxUrls) {
 					return
-				} else if (keepUrl(entry.loc)) {
-					entries.set(entry.loc, entries.get(entry.loc) ?? entry)
+				} else if (keepUrl(entry.loc) && !entries.has(entry.loc)) {
+					// The first occurrence wins, so its lastmod is the one kept.
+					entries.set(entry.loc, entry)
 				}
 			}
 		} catch (error) {

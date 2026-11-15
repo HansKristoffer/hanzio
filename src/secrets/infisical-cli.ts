@@ -110,6 +110,11 @@ function runCli(
 
 	const login = `Run infisical login --domain=${siteUrl}.`
 	const needsLogin = `The Infisical CLI session for ${siteUrl} has expired or needs a login. ${login}`
+	const sessionFailed = () =>
+		new SecretLoadError(
+			'CLI',
+			`Infisical CLI session token failed. ${login} Then verify access to the configured organization, project, and environment.`
+		)
 
 	return new Promise<string>((resolve, reject) => {
 		const child = spawn(
@@ -184,10 +189,7 @@ function runCli(
 							'CLI',
 							'Infisical CLI not found. Install infisical and ensure it is on PATH, or provide Infisical client credentials.'
 						)
-					: new SecretLoadError(
-							'CLI',
-							`Infisical CLI session token failed. ${login} Then verify access to the configured organization, project, and environment.`
-						)
+					: sessionFailed()
 			)
 		})
 		child.on('close', (code: number | null) => {
@@ -210,12 +212,7 @@ function runCli(
 					)
 				)
 			} else if (code !== 0) {
-				settle(
-					new SecretLoadError(
-						'CLI',
-						`Infisical CLI session token failed. ${login} Then verify access to the configured organization, project, and environment.`
-					)
-				)
+				settle(sessionFailed())
 			} else {
 				settle(undefined, stdout.trim())
 			}

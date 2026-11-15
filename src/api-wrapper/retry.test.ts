@@ -2,6 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { z } from 'zod'
 import {
 	createApiClient,
+	defaultShouldRetry,
 	defineEndpoint,
 	HttpResponseError,
 	RequestAbortedError,
@@ -10,9 +11,9 @@ import {
 } from '.'
 import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
 import { createMockFetch, jsonResponse } from './testing'
-import { defaultShouldRetry, getRetryDelay } from './transport'
+import { getRetryDelay } from './transport'
 
-describe('createApiClient — retries & transport', () => {
+describe('createApiClient: retries & transport', () => {
 	afterEach(() => {
 		globalThis.fetch = originalFetch
 	})
@@ -200,13 +201,9 @@ describe('createApiClient — retries & transport', () => {
 			}
 		})
 
-		try {
-			await api.request('getUser')
-			throw new Error('expected throw')
-		} catch (err) {
-			expect(err).toBeInstanceOf(ResponseValidationError)
-			expect((err as ResponseValidationError).context.attempt).toBe(2)
-		}
+		const error = await api.request('getUser').catch((err: unknown) => err)
+		expect(error).toBeInstanceOf(ResponseValidationError)
+		expect((error as ResponseValidationError).context.attempt).toBe(2)
 		expect(calls).toBe(3)
 	})
 
@@ -385,19 +382,17 @@ describe('createApiClient — retries & transport', () => {
 			}
 		})
 
-		try {
-			await api.request('search', { reqQuery: { q: 'hello world' } })
-			throw new Error('expected throw')
-		} catch (err) {
-			expect(err).toBeInstanceOf(HttpResponseError)
-			expect((err as HttpResponseError).context.url).toBe(
-				'https://api.example.com/search?q=hello+world'
-			)
-			expect(globalThis.fetch).toHaveBeenCalledWith(
-				'https://api.example.com/search?q=hello+world',
-				expect.anything()
-			)
-		}
+		const error = await api
+			.request('search', { reqQuery: { q: 'hello world' } })
+			.catch((err: unknown) => err)
+		expect(error).toBeInstanceOf(HttpResponseError)
+		expect((error as HttpResponseError).context.url).toBe(
+			'https://api.example.com/search?q=hello+world'
+		)
+		expect(globalThis.fetch).toHaveBeenCalledWith(
+			'https://api.example.com/search?q=hello+world',
+			expect.anything()
+		)
 	})
 })
 

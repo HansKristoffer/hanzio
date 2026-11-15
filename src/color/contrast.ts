@@ -61,8 +61,14 @@ export function parseColor(color: string): Rgba | undefined {
 	const c2 = parseChannel(y, isRgb ? 255 : 100)
 	const c3 = parseChannel(z, isRgb ? 255 : 100)
 	const a = parseChannel(alpha, 1)
-	if (c1 === undefined || c2 === undefined || c3 === undefined) return undefined
-	if (a === undefined) return undefined
+	if (
+		c1 === undefined ||
+		c2 === undefined ||
+		c3 === undefined ||
+		a === undefined
+	) {
+		return undefined
+	}
 
 	const [r, g, b] = isRgb
 		? [c1, c2, c3]
@@ -108,11 +114,12 @@ export function toRgbString(color: Rgba | string): string {
 /** WCAG 2.x relative luminance (0 = black, 1 = white); alpha is ignored. */
 export function relativeLuminance(color: Rgba | string): number {
 	const { r, g, b } = toRgba(color)
-	const [lr, lg, lb] = [r, g, b].map((v) => {
+	// sRGB channel to linear light, per the WCAG definition.
+	const linear = (v: number) => {
 		const c = clamp(v, 0, 255) / 255
 		return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
-	}) as [number, number, number]
-	return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb
+	}
+	return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
 }
 
 /** WCAG contrast ratio between two colors, from 1 to 21. */

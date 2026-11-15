@@ -56,7 +56,9 @@ function resolveLikeBundlers() {
 				for (const suffix of BUNDLER_SUFFIXES) {
 					try {
 						return nextResolve(specifier + suffix, context)
-					} catch {}
+					} catch {
+						// This suffix does not resolve either, so try the next. The original error is rethrown below.
+					}
 				}
 				throw error
 			}

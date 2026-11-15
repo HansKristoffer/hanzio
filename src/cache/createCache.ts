@@ -117,6 +117,7 @@ export function createCache(options: CreateCacheOptions = {}): KeyValueCache {
 			// Refresh in place so get() keeps serving a stale value meanwhile.
 			const entry: Entry = existing ?? { hasValue: false }
 			const startedAt = now()
+			// The async wrapper turns a sync throw from fn into a rejection the catch handles.
 			const promise = (async () => fn())()
 			entry.inflight = promise
 			touch(key, entry)

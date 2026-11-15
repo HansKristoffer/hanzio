@@ -4,7 +4,7 @@ import type { ActionsFactoryHelpers, ApiAction, ApiEndpoint } from '.'
 import { createApiClient, defineAction } from '.'
 import { createMockResponse, mockFetch, originalFetch } from './test-helpers'
 
-describe('createApiClient — types', () => {
+describe('createApiClient: types', () => {
 	afterEach(() => {
 		globalThis.fetch = originalFetch
 	})
@@ -163,7 +163,7 @@ describe('createApiClient — types', () => {
 		expect(_typeCheck).toBeInstanceOf(Function)
 	})
 
-	test('curried defineAction does not run zod — garbage input still reaches handler', async () => {
+	test('curried defineAction does not run zod, so garbage input still reaches handler', async () => {
 		const api = createApiClient({
 			baseApiUrls: { default: 'https://api.example.com' },
 			endpoints: {},

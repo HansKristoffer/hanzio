@@ -33,11 +33,13 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
   publish:
     needs: release-please
-    if: always() && (needs.release-please.outputs.created == 'true' || github.event_name == 'workflow_dispatch')
+    # always() runs this job on a manual dispatch, where release-please was skipped.
+    if: always() &&(needs.release-please.outputs.created == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
+      # npm trusted publishing and --provenance both sign with this OIDC token.
       id-token: write
     env:
       TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}

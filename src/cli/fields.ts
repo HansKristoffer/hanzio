@@ -51,12 +51,11 @@ const strings = (value: unknown, what: string, key: string): string[] => {
 	return list
 }
 
-const kindOf = (def: Def) =>
-	def.type === 'boolean'
-		? 'boolean'
-		: def.type === 'number'
-			? 'number'
-			: 'string'
+function kindOf(def: Def): Field['kind'] {
+	if (def.type === 'boolean') return 'boolean'
+	if (def.type === 'number') return 'number'
+	return 'string'
+}
 
 function choicesOf(def: Def): string[] | undefined {
 	if (def.type === 'enum') return Object.values(def.entries).map(String)
@@ -111,15 +110,19 @@ function toField(key: string, schema: Schema): Field {
 	let def = defOf(current)
 	const multiple = def.type === 'array'
 	if (def.type === 'array') {
+		// Wrappers on the element, such as `.optional()`, do not change the flag's kind.
 		let element = def.element
-		for (let inner = unwrapOnce(defOf(element)); inner; ) {
+		let inner = unwrapOnce(defOf(element))
+		while (inner) {
 			element = inner
 			inner = unwrapOnce(defOf(element))
 		}
 		def = defOf(element)
 	}
+
 	const valueDef = multiple ? undefined : optionalValueOf(def)
 	const names = strings(meta.alias, 'alias', key)
+
 	return {
 		key,
 		flag: kebab(key),
@@ -169,19 +172,18 @@ export function readFields(
 	const queue = [...positionals]
 	for (const field of fields) {
 		let raw: string | boolean | (string | boolean)[] | undefined
-		if (field.positional)
-			raw = field.multiple
-				? queue.length
-					? queue.splice(0)
-					: undefined
-				: queue.shift()
-		else raw = values[optionName(field)]
+		if (!field.positional) raw = values[optionName(field)]
+		else if (!field.multiple) raw = queue.shift()
+		else raw = queue.length > 0 ? queue.splice(0) : undefined
 		if (field.optionalValue && raw === '') raw = true
-		const value =
-			raw === undefined
-				? field.env.map((name) => env[name]).find((value) => value?.trim())
-				: undefined
-		if (value !== undefined) raw = field.multiple ? [value] : value
+
+		// A blank environment variable counts as unset, so the next name is tried.
+		if (raw === undefined) {
+			const fromEnv = field.env
+				.map((name) => env[name])
+				.find((value) => value?.trim())
+			if (fromEnv !== undefined) raw = field.multiple ? [fromEnv] : fromEnv
+		}
 		if (raw === undefined) {
 			if (field.optional || field.hasDefault) continue
 			if (field.multiple) raw = []
@@ -198,25 +200,24 @@ export function readFields(
 }
 
 export function fieldLabel(field: Field): string {
-	if (field.positional)
-		return field.multiple
-			? `<${field.flag}...>`
-			: field.optional || field.hasDefault
-				? `[${field.flag}]`
-				: `<${field.flag}>`
-	const name =
+	if (field.positional) {
+		if (field.multiple) return `<${field.flag}...>`
+		return field.optional || field.hasDefault
+			? `[${field.flag}]`
+			: `<${field.flag}>`
+	}
+
+	// A boolean that defaults to true also takes `--no-`, so the help shows both forms.
+	const takesNegation =
 		field.kind === 'boolean' &&
 		field.defaultValue === true &&
 		!field.flag.startsWith('no-')
-			? `--[no-]${field.flag}`
-			: `--${field.flag}`
+	const name = takesNegation ? `--[no-]${field.flag}` : `--${field.flag}`
+
 	const type = `<${field.choices?.join('|') ?? field.kind}>`
-	const value =
-		field.kind === 'boolean'
-			? ''
-			: field.optionalValue
-				? `[=${type}]`
-				: ` ${type}${field.multiple ? '...' : ''}`
+	let value = ` ${type}${field.multiple ? '...' : ''}`
+	if (field.kind === 'boolean') value = ''
+	else if (field.optionalValue) value = `[=${type}]`
 	const aliases = field.aliases.map((alias) => `, --${alias}`).join('')
 	return `${field.alias ? `-${field.alias}, ` : ''}${name}${aliases}${value}`
 }
@@ -243,6 +244,7 @@ export function closest(
 	let best: string | undefined
 	let bestDistance = Math.max(2, Math.floor(input.length / 3)) + 1
 	for (const candidate of candidates) {
+		// A prefix counts as one edit, so a half-typed name finds its full command.
 		const distance = candidate.startsWith(input)
 			? 1
 			: levenshtein(input, candidate)

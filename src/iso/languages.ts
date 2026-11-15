@@ -187,7 +187,7 @@ export const languageNames = {
 
 export type LanguageCode = keyof typeof languageNames
 
-export const languageCodes = Object.keys(
+export const languageCodes = /* @__PURE__ */ Object.keys(
 	languageNames
 ) as readonly LanguageCode[]
 
@@ -203,6 +203,7 @@ export function isLanguageCode(value: unknown): value is LanguageCode {
 export function matchLanguageCode(
 	tag: string | null | undefined
 ): LanguageCode | null {
-	const language = tag?.trim().replaceAll('_', '-').split('-')[0]?.toLowerCase()
+	const normalized = tag?.trim().replaceAll('_', '-')
+	const language = normalized?.split('-')[0]?.toLowerCase()
 	return isLanguageCode(language) ? language : null
 }

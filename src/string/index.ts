@@ -97,13 +97,19 @@ const UNDECOMPOSED_LETTERS: Record<string, string> = {
 	Ð: 'D'
 }
 
+// Built from the table so the pattern and the replacements cannot drift apart.
+const UNDECOMPOSED_PATTERN = new RegExp(
+	`[${Object.keys(UNDECOMPOSED_LETTERS).join('')}]`,
+	'g'
+)
+
 /** Removes accents and spells out letters like `æ`, `ø` and `ß` in ASCII. */
 function stripAccents(value: string): string {
 	return value
 		.normalize('NFKD')
 		.replace(/\p{M}/gu, '')
 		.replace(
-			/[æøœßđłþðÆØŒẞĐŁÞÐ]/g,
+			UNDECOMPOSED_PATTERN,
 			(letter) => UNDECOMPOSED_LETTERS[letter] ?? ''
 		)
 }
@@ -226,7 +232,7 @@ const HAS_LETTER = /\p{L}/u
 
 /**
  * Up to `max` (default 2) uppercase letters for an avatar, or `''` when the
- * value has no letters (phone numbers, `'—'`). One word gives its first
+ * value has no letters (phone numbers, `'-'`). One word gives its first
  * letters (`'Ada'` → `'AD'`), several give first and last (`'Hans Kristoffer
  * Hansen'` → `'HH'`). An email is read as its local part without the `+tag`:
  * `'ada.lovelace+news@x.com'` → `'AL'`.
@@ -237,8 +243,10 @@ export function initials(
 ): string {
 	const { max = 2 } = options
 	const trimmed = name?.trim() ?? ''
-	const source = /^[^\s@]+@[^\s@]+$/.test(trimmed)
-		? (trimmed.split('@')[0] ?? '').replace(/\+.*$/, '').replace(/[._-]+/g, ' ')
+	const isEmail = /^[^\s@]+@[^\s@]+$/.test(trimmed)
+	const localPart = trimmed.split('@')[0] ?? ''
+	const source = isEmail
+		? localPart.replace(/\+.*$/, '').replace(/[._-]+/g, ' ')
 		: trimmed
 	const words = source.split(/\s+/).filter((word) => HAS_LETTER.test(word))
 	const first = words[0]
@@ -377,7 +385,7 @@ export function fileExtension(filename: string): string | undefined {
  * JSON column. Throws on `bigint` and circular references.
  */
 export function toJsonValue(value: unknown): JsonValue {
-	if (value === undefined) return null
+	// JSON.stringify returns undefined for top-level undefined, so this covers it too.
 	const text = JSON.stringify(value)
 	return text === undefined ? null : (JSON.parse(text) as JsonValue)
 }

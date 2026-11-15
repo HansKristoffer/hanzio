@@ -12,6 +12,16 @@ export type FormattedZodIssue = {
 	extra?: Record<string, unknown>
 }
 
+// The keys Zod sets itself. Anything else on an issue is kept as `extra`.
+const KNOWN_ISSUE_KEYS = new Set([
+	'code',
+	'path',
+	'message',
+	'expected',
+	'received',
+	'fatal'
+])
+
 export function formatZodIssues(
 	error: ZodError,
 	rawData: unknown
@@ -23,26 +33,19 @@ export function formatZodIssues(
 		const valuePreview = value === undefined ? undefined : previewValue(value)
 
 		const raw = issue as unknown as Record<string, unknown>
-		const expected =
-			typeof raw.expected === 'string' ? (raw.expected as string) : undefined
-		const received =
-			typeof raw.received === 'string'
-				? (raw.received as string)
-				: value !== undefined
-					? typeofVerbose(value)
-					: undefined
+		const expected = typeof raw.expected === 'string' ? raw.expected : undefined
 
-		const known = new Set([
-			'code',
-			'path',
-			'message',
-			'expected',
-			'received',
-			'fatal'
-		])
+		// Prefer the type Zod reports; without one, describe the value that was found.
+		let received: string | undefined
+		if (typeof raw.received === 'string') {
+			received = raw.received
+		} else if (value !== undefined) {
+			received = typeofVerbose(value)
+		}
+
 		const extra: Record<string, unknown> = {}
 		for (const [k, v] of Object.entries(raw)) {
-			if (!known.has(k) && v !== undefined) extra[k] = v
+			if (!KNOWN_ISSUE_KEYS.has(k) && v !== undefined) extra[k] = v
 		}
 
 		return {
@@ -104,8 +107,7 @@ function getValueAtPath(
 ): unknown {
 	let current: unknown = data
 	for (const segment of pathArray) {
-		if (current === null || current === undefined) return undefined
-		if (typeof current !== 'object') return undefined
+		if (typeof current !== 'object' || current === null) return undefined
 		current = (current as Record<string | number, unknown>)[segment]
 	}
 	return current
@@ -120,13 +122,13 @@ function typeofVerbose(value: unknown): string {
 export function previewValue(value: unknown, maxLen = 200): string {
 	let str: string
 	try {
-		if (value === undefined) str = 'undefined'
-		else if (typeof value === 'string') str = JSON.stringify(value)
-		else str = JSON.stringify(value)
+		// JSON.stringify returns undefined for undefined, functions and symbols.
+		str = JSON.stringify(value) ?? String(value)
 	} catch {
+		// BigInt and circular values make JSON.stringify throw.
 		str = String(value)
 	}
-	if (str === undefined) str = String(value)
+
 	if (str.length > maxLen) str = `${str.slice(0, maxLen)}…`
 	return str
 }
@@ -143,7 +145,7 @@ export function makeJsonParseZodError(error: unknown, text: string): ZodError {
 			path: [],
 			message: `${message} (body preview: ${JSON.stringify(preview)})`,
 			input: text
-		} as never
+		}
 	])
 }
 

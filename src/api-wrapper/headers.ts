@@ -35,8 +35,8 @@ export function getHeader(
 ): string | undefined {
 	const lower = name.toLowerCase()
 	const canonical = CANONICAL_HEADER_NAMES[lower]
-	if (canonical !== undefined) {
-		if (headers[canonical] !== undefined) return headers[canonical]
+	if (canonical !== undefined && headers[canonical] !== undefined) {
+		return headers[canonical]
 	}
 	for (const [k, v] of Object.entries(headers)) {
 		if (k.toLowerCase() === lower) return v

@@ -13,6 +13,7 @@ export function calculateSizeInMb(data: unknown): number {
 	} else if (typeof data === 'string') {
 		bytes = new TextEncoder().encode(data).length
 	} else {
+		// JSON.stringify returns undefined for functions and symbols; those send no bytes.
 		bytes = new TextEncoder().encode(JSON.stringify(data) ?? '').length
 	}
 	return bytes / (1024 * 1024)

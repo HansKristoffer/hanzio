@@ -268,7 +268,8 @@ export function isCountryCode(value: unknown): value is CountryCode {
  * the two letters.
  */
 export function countryFlag(code: CountryCode): string {
-	return String.fromCodePoint(
-		...[...code].map((letter) => 0x1f1a5 + letter.charCodeAt(0))
+	const regionalIndicators = [...code].map(
+		(letter) => 0x1f1a5 + letter.charCodeAt(0)
 	)
+	return String.fromCodePoint(...regionalIndicators)
 }

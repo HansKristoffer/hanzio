@@ -10,7 +10,7 @@ import { colorFunctionArgs, parseColor } from './contrast'
 export const METRICS_SERIES_PALETTE_SIZE = 10
 
 /**
- * FNV-1a 32-bit hash — stable palette index for a string key.
+ * FNV-1a 32-bit hash: a stable palette index for a string key.
  */
 export function hashStringToColorIndex(
 	str: string,
@@ -77,14 +77,6 @@ export function resolveSeriesColorMap(
 ): Map<string, number> {
 	const result = new Map<string, number>()
 	const uniqueKeys = [...new Set(keys)]
-	if (uniqueKeys.length === 0) return result
-
-	if (uniqueKeys.length === 1) {
-		const only = uniqueKeys[0]!
-		result.set(only, hashStringToColorIndex(only, paletteSize))
-		return result
-	}
-
 	const usedIndices = new Set<number>()
 	const entries = uniqueKeys.map((key) => ({
 		key,

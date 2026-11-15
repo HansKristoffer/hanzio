@@ -64,7 +64,7 @@ application entry point before starting servers or workers. Reading before a
 successful load throws a clear configuration error.
 
 ```ts
-// backend/config.ts — safe for tooling to import
+// backend/config.ts is safe for tooling to import
 import { createSecretSet } from 'hanzio/secrets'
 
 export const secrets = createSecretSet(['DATABASE_URL', 'APP_SECRET'], {
@@ -160,7 +160,7 @@ over. Waiting for the lock counts against the load's deadline and signal.
 
 A logged-in CLI prints its token at once, so the subprocess gets 5 seconds of
 its own. When the session has expired, the CLI starts an interactive login
-instead: the helper stops it as soon as it prints a login prompt, or when the 5
+instead. The helper stops it as soon as it prints a login prompt, or when the 5
 seconds run out, and fails with `AUTHENTICATION`:
 
 ```text
@@ -208,7 +208,7 @@ with sanitized errors. Complete login for the target organization and domain
 when additional MFA or SSO is required. The helper cannot satisfy interactive
 authentication challenges.
 
-Sign in to the same instance as `siteUrl`: reading a token uses the CLI's active
+Sign in to the same instance as `siteUrl`. Reading a token uses the CLI's active
 profile, and does not automatically choose a different account or instance.
 This HTTP flow requires network access and does not use the CLI's offline
 secret backup. Project, environment, folder, imports, and reference expansion
@@ -251,7 +251,7 @@ silently selecting development.
 
 `environment` also accepts a function returning a standard environment or
 `{ slug }`. It is resolved on the first load (`defineSecretSet` loads immediately); reload keeps that scope.
-An empty `SECRETS_ENV` is invalid—unset it to use the default.
+An empty `SECRETS_ENV` is invalid. Unset it to use the default.
 
 ## Overrides, isolation, and reload
 
@@ -371,7 +371,8 @@ Loaded secrets environment=dev count=3 source=process.env + Infisical HTTP durat
 ```
 
 Use `secrets.sources()` for per-key source labels. Built-in labels are
-`process.env`, `Infisical HTTP`, and `Cloudflare Worker bindings`.
+`process.env`, `Infisical HTTP`, `Infisical HTTP (identity file)` and
+`Cloudflare Worker bindings`.
 Organization-scoped user loads use
 `Infisical CLI session (organization=<id> project=<id> environment=<slug>)`;
 this indicates CLI authentication followed by HTTP fetching. The same label
@@ -493,7 +494,6 @@ when building a staging configuration.
 - Add `organizationId` to every Infisical configuration, including explicit HTTP
   loaders. CLI authentication now always uses the organization-scoped session
   flow; the unscoped CLI export fallback has been removed.
-
 - Vite calls that exposed non-`VITE_` keys now fail. Rename public keys or pass
   an explicit `publicKeys` list. Never allowlist server credentials.
 - Unknown/empty explicit environments now fail. Use `{ slug: 'custom-name' }`

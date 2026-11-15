@@ -108,7 +108,7 @@ export async function jwtVerify<Payload extends JWTPayload>(
 	try {
 		const result = await jwtVerifyResult<Payload>(token, secret, options)
 		return result.ok ? result.data : null
-	} catch (_error) {
+	} catch {
 		return null
 	}
 }
@@ -141,7 +141,7 @@ export async function jwtVerifyResult<Payload extends JWTPayload>(
 	let signature: Uint8Array<ArrayBuffer>
 	try {
 		signature = decodeBase64Url(token.slice(lastDot + 1))
-	} catch (_error) {
+	} catch {
 		return fail('malformed')
 	}
 
@@ -192,7 +192,7 @@ export function jwtDecode<Payload extends JWTPayload = JWTPayload>(
 		if (!isRecord(payload)) return null
 
 		return { header: header as JwtHeader, payload: payload as Payload }
-	} catch (_error) {
+	} catch {
 		return null
 	}
 }
@@ -231,6 +231,7 @@ function getKey(
 		[usage]
 	)
 	keyCache.set(cacheKey, key)
+	// A rejected import must not stay cached, or every later call fails the same way.
 	key.catch(() => keyCache.delete(cacheKey))
 
 	return key

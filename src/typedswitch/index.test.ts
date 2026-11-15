@@ -9,10 +9,6 @@ import {
 	type PartialObjectSwitchCases
 } from '.'
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Test helper types and values
-// ═══════════════════════════════════════════════════════════════════════════
-
 /** Identity function that preserves union types (prevents TypeScript narrowing) */
 const asType = <T>(value: T): T => value
 
@@ -34,10 +30,6 @@ type CancelledOrder = { status: 'cancelled'; reason: string }
 type Order = PendingOrder | CompletedOrder | CancelledOrder
 
 const getOrder = (o: Order) => asType(o)
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Runtime tests
-// ═══════════════════════════════════════════════════════════════════════════
 
 describe('typedSwitch runtime behavior', () => {
 	describe('string input mode', () => {
@@ -396,10 +388,6 @@ describe('typedSwitch runtime behavior', () => {
 	})
 })
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Type tests - String input mode
-// ═══════════════════════════════════════════════════════════════════════════
-
 describe('typedSwitch string mode type inference', () => {
 	test('return type is inferred from handler return types (uniform)', async () => {
 		const result = await typedSwitch(getStatus('success'), {
@@ -516,10 +504,6 @@ describe('typedSwitch string mode type inference', () => {
 		expectTypeOf(result).toEqualTypeOf<{ async: boolean } | { sync: boolean }>()
 	})
 })
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Type tests - Object input mode
-// ═══════════════════════════════════════════════════════════════════════════
 
 describe('typedSwitch object mode type inference', () => {
 	test('handler receives narrowed discriminated union type', async () => {
@@ -722,10 +706,6 @@ describe('typedSwitch object mode type inference', () => {
 	})
 })
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Type tests - Case exhaustiveness
-// ═══════════════════════════════════════════════════════════════════════════
-
 describe('typedSwitch exhaustiveness type checking', () => {
 	test('string mode: all cases required when no default provided', () => {
 		type Status = 'a' | 'b' | 'c'
@@ -896,10 +876,6 @@ describe('typedSwitch negative type checking', () => {
 	})
 })
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Type tests - Edge cases
-// ═══════════════════════════════════════════════════════════════════════════
-
 describe('typedSwitch edge case types', () => {
 	test('empty string is valid case key', async () => {
 		type EmptyOrFilled = '' | 'filled'
@@ -969,10 +945,6 @@ describe('typedSwitch edge case types', () => {
 	})
 })
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Type tests - Sync vs Async return types
-// ═══════════════════════════════════════════════════════════════════════════
-
 describe('typedSwitch sync/async return type inference', () => {
 	test('sync handlers return non-Promise type', () => {
 		const result = typedSwitch(getStatus('success'), {
@@ -1036,10 +1008,6 @@ describe('typedSwitch sync/async return type inference', () => {
 		expect(doubled).toBe(84)
 	})
 })
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Type tests - Enforcing a return type
-// ═══════════════════════════════════════════════════════════════════════════
 
 describe('typedSwitch annotated return type', () => {
 	interface HasId {

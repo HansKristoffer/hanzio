@@ -22,6 +22,7 @@ try {
 	assert.ok(files.has('LICENSE'), 'Package needs its declared license')
 	// Agents upgrading an app read node_modules/<pkg>/CHANGELOG.md to see what changed.
 	assert.ok(files.has('CHANGELOG.md'), 'Package needs its changelog')
+	// Test sources, TypeScript build caches and nested tarballs never ship, and neither do maintainer docs or CI config.
 	for (const file of files) {
 		assert.ok(!/\.(test|testing)\.[cm]?[jt]s$|\.tsbuildinfo$|\.tgz$/.test(file), `Unwanted package file: ${file}`)
 		assert.ok(!file.startsWith('docs/') && !file.startsWith('.github/'), `Unwanted package file: ${file}`)

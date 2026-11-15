@@ -79,6 +79,7 @@ export function promiseTimeout(
 			reject(signal.reason)
 			return
 		}
+
 		const onAbort = () => {
 			clearTimeout(timer)
 			reject(signal?.reason)
@@ -127,8 +128,11 @@ export async function withTimeout<T>(
 ): Promise<T> {
 	const controller = new AbortController()
 	const onAbort = () => controller.abort(options.signal?.reason)
-	if (options.signal?.aborted) onAbort()
-	else options.signal?.addEventListener('abort', onAbort, { once: true })
+	if (options.signal?.aborted) {
+		onAbort()
+	} else {
+		options.signal?.addEventListener('abort', onAbort, { once: true })
+	}
 
 	const timer = setTimeout(
 		() => controller.abort(new PromiseTimeoutError(ms, options.message)),
@@ -182,8 +186,10 @@ export function exponentialBackoff(
 		random = Math.random
 	} = options
 	const delay = Math.min(maxMs, baseMs * 2 ** Math.max(0, attempt - 1))
-	if (jitter === 'partial')
+
+	if (jitter === 'partial') {
 		return Math.round(delay * (1 + jitterRatio * random()))
+	}
 	return jitter ? Math.round(random() * delay) : delay
 }
 
@@ -213,16 +219,21 @@ export async function retry<T>(
 			if (attempt >= retries || shouldRetry?.(error, nextAttempt) === false) {
 				throw error
 			}
-			const delay =
-				delayMs === undefined
-					? exponentialBackoff(nextAttempt)
-					: typeof delayMs === 'function'
-						? delayMs(nextAttempt, error)
-						: delayMs
+			const delay = retryDelay(delayMs, nextAttempt, error)
 			onRetry?.(error, nextAttempt, delay)
 			await promiseTimeout(delay, { signal })
 		}
 	}
+}
+
+function retryDelay(
+	delayMs: RetryOptions['delayMs'],
+	attempt: number,
+	error: unknown
+): number {
+	if (delayMs === undefined) return exponentialBackoff(attempt)
+	if (typeof delayMs === 'function') return delayMs(attempt, error)
+	return delayMs
 }
 
 /** Maps with bounded concurrency; results keep input order. */
@@ -238,13 +249,13 @@ export async function pMap<T, R>(
 
 	const list = [...items]
 	const results = new Array<R>(list.length)
-	let next = 0
+	// One iterator shared by every worker: each item is claimed by exactly one of them.
+	const unclaimed = list.entries()
 
 	const worker = async () => {
-		while (next < list.length) {
+		for (const [index, item] of unclaimed) {
 			signal?.throwIfAborted()
-			const index = next++
-			results[index] = await fn(list[index]!, index)
+			results[index] = await fn(item, index)
 		}
 	}
 
@@ -287,10 +298,12 @@ export function createTaskPool(options: {
 	stopOnError?: boolean
 }): TaskPool {
 	const { concurrency, signal, stopOnError = true } = options
-	if (!Number.isInteger(concurrency) || concurrency < 1)
+	if (!Number.isInteger(concurrency) || concurrency < 1) {
 		throw new Error(
 			`Task concurrency must be a positive integer, got ${concurrency}`
 		)
+	}
+
 	const queued: { start: () => void; reject: (error: unknown) => void }[] = []
 	const idle: (() => void)[] = []
 	let active = 0
@@ -313,8 +326,9 @@ export function createTaskPool(options: {
 			active += 1
 			queued.shift()!.start()
 		}
-		if (!active && !queued.length)
+		if (!active && !queued.length) {
 			for (const resolve of idle.splice(0)) resolve()
+		}
 	}
 	const run = <T>(task: () => Promise<T>): Promise<T> => {
 		const result = new Promise<T>((resolve, reject) => {
@@ -326,6 +340,7 @@ export function createTaskPool(options: {
 			queued.push({
 				reject,
 				start: () => {
+					// Starting in a microtask makes a synchronous throw from `task` a rejection too.
 					void Promise.resolve()
 						.then(() => {
 							throwIfFailed()
@@ -347,8 +362,9 @@ export function createTaskPool(options: {
 		return result
 	}
 	const drain = async () => {
-		if (active || queued.length)
+		if (active || queued.length) {
 			await new Promise<void>((resolve) => idle.push(resolve))
+		}
 		throwIfFailed()
 	}
 	return { run, drain, throwIfFailed }
@@ -423,8 +439,11 @@ export async function raceAbort<T>(
 	let onAbort = () => {}
 	const aborted = new Promise<never>((_, reject) => {
 		onAbort = () => reject(signal.reason)
-		if (signal.aborted) onAbort()
-		else signal.addEventListener('abort', onAbort, { once: true })
+		if (signal.aborted) {
+			onAbort()
+		} else {
+			signal.addEventListener('abort', onAbort, { once: true })
+		}
 	})
 	try {
 		return await Promise.race([aborted, promise])

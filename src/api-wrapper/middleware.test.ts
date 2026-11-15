@@ -314,9 +314,8 @@ describe('checkResponse', () => {
 
 		test('absent uses the client check', async () => {
 			const { api } = client({ plain })
-			expect(
-				await api.request('plain').catch((e: unknown) => e)
-			).toBeInstanceOf(Error)
+			const error = await api.request('plain').catch((e: unknown) => e)
+			expect(isApiResponseError(error)).toBe(true)
 		})
 
 		test('a function replaces the client check and is not retried', async () => {

@@ -113,6 +113,10 @@ end
 return renewed
 `.trim()
 
+/**
+ * Only ever lengthens the shared cooldown: a shorter Retry-After must not cut a
+ * longer pause that another process already set.
+ */
 const TRIP_COOLDOWN_SCRIPT = `
 local key = KEYS[1]
 local waitMs = tonumber(ARGV[1])
@@ -238,6 +242,8 @@ export function createRedisConcurrencyLimit(
 	const commandTimeoutMs = input.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS
 	const send = withCommandTimeout(input.send, commandTimeoutMs)
 	const ttlMs = String(input.slotTtlMs)
+	// A third of the TTL leaves two missed heartbeats before a live slot can expire.
+	// The 100ms floor stops a tiny slotTtlMs from spinning the heartbeat.
 	const renewEveryMs = Math.max(100, Math.floor(input.slotTtlMs / 3))
 	const failOpenAfterMs = input.failOpenAfterMs ?? DEFAULT_FAIL_OPEN_AFTER_MS
 	const maxStartsPerSecond = input.maxStartsPerSecond
@@ -267,10 +273,15 @@ export function createRedisConcurrencyLimit(
 		logger.warn(message, { key: input.key, error })
 	}
 
-	// ---------------------------------------------------------------- breaker
+	// The breaker is shared by every caller of this limiter. `failing` holds the
+	// time of the first error in a row; `open` means Redis has been unreachable
+	// for `failOpenAfterMs`, so callers run uncapped until a probe succeeds.
+	type Breaker =
+		| { state: 'closed' }
+		| { state: 'failing'; sinceMs: number }
+		| { state: 'open' }
 
-	let firstFailureAtMs: number | null = null
-	let degraded = false
+	let breaker: Breaker = { state: 'closed' }
 	let probeTimer: ReturnType<typeof setTimeout> | null = null
 
 	function scheduleProbe() {
@@ -297,9 +308,10 @@ export function createRedisConcurrencyLimit(
 	}
 
 	function noteRedisSuccess() {
-		firstFailureAtMs = null
-		if (!degraded) return
-		degraded = false
+		const wasOpen = breaker.state === 'open'
+		breaker = { state: 'closed' }
+		if (!wasOpen) return
+
 		if (probeTimer) {
 			clearTimeout(probeTimer)
 			probeTimer = null
@@ -312,18 +324,20 @@ export function createRedisConcurrencyLimit(
 	/** True once Redis has been down long enough that callers should run uncapped. */
 	function noteRedisFailure(error: unknown) {
 		logFailure('Redis concurrency command failed, retrying', error)
-		if (degraded) return true
-		firstFailureAtMs ??= Date.now()
-		if (Date.now() - firstFailureAtMs < failOpenAfterMs) return false
-		degraded = true
+		if (breaker.state === 'open') return true
+
+		const nowMs = Date.now()
+		const sinceMs = breaker.state === 'failing' ? breaker.sinceMs : nowMs
+		breaker = { state: 'failing', sinceMs }
+		if (nowMs - sinceMs < failOpenAfterMs) return false
+
+		breaker = { state: 'open' }
 		scheduleProbe()
 		logger.warn('Redis unreachable, running without a concurrency slot', {
 			key: input.key
 		})
 		return true
 	}
-
-	// ------------------------------------------------------------------- pump
 
 	type Waiter = { token: string; settle: (grantedSlot: boolean) => void }
 
@@ -438,8 +452,6 @@ export function createRedisConcurrencyLimit(
 	const queueDepth = () => slotPump.depth() + (startPump?.depth() ?? 0)
 	let unregisterQueueDepth = input.onQueueDepth?.(queueDepth, metricLabel)
 
-	// -------------------------------------------------------------- heartbeat
-
 	const heldTokens = new Set<string>()
 	let heartbeatTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -468,8 +480,6 @@ export function createRedisConcurrencyLimit(
 		}
 		scheduleHeartbeat()
 	}
-
-	// ---------------------------------------------------------------- release
 
 	let pendingReleases: string[] = []
 	let releaseFlush: Promise<void> | null = null
@@ -542,7 +552,7 @@ export function createRedisConcurrencyLimit(
 		signal?: AbortSignal
 	) {
 		signal?.throwIfAborted()
-		if (degraded) return run()
+		if (breaker.state === 'open') return run()
 
 		const token = createToken()
 		const granted = await waitForGrant(slotPump.acquire(token), signal, () => {

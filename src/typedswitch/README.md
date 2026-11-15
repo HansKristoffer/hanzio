@@ -18,15 +18,15 @@ bun add typedswitch
 
 ## Features
 
-- **Full type inference** — Return types are automatically inferred from your handlers
-- **Exhaustiveness checking** — TypeScript ensures all cases are handled at compile time
-- **Discriminated union support** — Works with any discriminant key, not just `type`
-- **Async-aware** — Async handlers preserve their `Promise` return type
-- **Grouped cases** — Share one handler between several values, fully typed
-- **Default handlers** — Handle remaining cases with a fallback
-- **Nullable values** — `null` and `undefined` are cases like any other
-- **Typo-proof cases** — A case key that isn't a value of the union is a compile error
-- **`assertNever`** — Exhaustiveness checking for regular `switch` statements
+- **Full type inference.** Return types are automatically inferred from your handlers
+- **Exhaustiveness checking.** TypeScript ensures all cases are handled at compile time
+- **Discriminated union support.** Works with any discriminant key, not just `type`
+- **Async-aware.** Async handlers preserve their `Promise` return type
+- **Grouped cases.** Share one handler between several values, fully typed
+- **Default handlers.** Handle remaining cases with a fallback
+- **Nullable values.** `null` and `undefined` are cases like any other
+- **Typo-proof cases.** A case key that isn't a value of the union is a compile error
+- **`assertNever`.** Exhaustiveness checking for regular `switch` statements
 
 ## Usage
 
@@ -41,7 +41,7 @@ type Status = 'success' | 'error' | 'pending'
 
 const status: Status = 'success'
 
-// All cases required — TypeScript enforces exhaustiveness
+// All cases required. TypeScript enforces exhaustiveness
 const message = typedSwitch(status, {
   success: () => 'Operation completed!',
   error: () => 'Something went wrong',
@@ -241,7 +241,7 @@ typedSwitch(maybeEvent, 'type', {
 Mix sync and async handlers freely. `typedSwitch` returns the selected handler's value directly, so async branches preserve their `Promise` return type while sync branches remain sync:
 
 ```typescript
-// All sync — returns string
+// All sync: returns string
 const syncResult = typedSwitch(status, {
   success: () => 'ok',
   error: () => 'err',
@@ -249,7 +249,7 @@ const syncResult = typedSwitch(status, {
 })
 // syncResult: string
 
-// All async — returns Promise<string>
+// All async: returns Promise<string>
 const asyncResult = typedSwitch(status, {
   success: async () => {
     const data = await fetchData()
@@ -262,7 +262,7 @@ const asyncResult = typedSwitch(status, {
 
 const message = await asyncResult
 
-// Mixed sync/async — returns string | Promise<string>
+// Mixed sync/async: returns string | Promise<string>
 const mixedResult = typedSwitch(status, {
   success: () => 'ok',
   error: async () => 'err',

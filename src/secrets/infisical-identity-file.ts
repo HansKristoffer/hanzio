@@ -5,7 +5,7 @@ import { SecretLoadError } from './errors'
 const identityFileSchema = z.object({
 	clientId: z.string().min(1),
 	clientSecret: z.string().min(1),
-	siteUrl: z.string().url()
+	siteUrl: z.url()
 })
 
 /**

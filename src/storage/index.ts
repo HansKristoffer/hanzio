@@ -71,7 +71,9 @@ function defaultStorage(): SyncStorageLike {
 		const storage = (globalThis as { localStorage?: SyncStorageLike })
 			.localStorage
 		if (storage) return storage
-	} catch {}
+	} catch {
+		// Fall through to the shared in-memory store.
+	}
 	sharedMemoryStorage ??= createMemoryStorage()
 	return sharedMemoryStorage
 }

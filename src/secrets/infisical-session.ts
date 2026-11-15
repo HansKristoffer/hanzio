@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { SecretLoadError } from './errors'
 
+const JWT_FORMAT = /^[A-Za-z0-9_-]+\.([A-Za-z0-9_-]+)\.[A-Za-z0-9_-]+$/
+
 const sessionClaimsSchema = z.object({
 	organizationId: z.string().optional(),
 	subOrganizationId: z.string().optional(),
@@ -15,11 +17,13 @@ export function parseInfisicalSessionToken(token: string): {
 
 	try {
 		// Reject empty, formatted, or multiline CLI output before making an HTTP request.
-		if (!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) {
+		// The capture group is the payload segment.
+		const payload = JWT_FORMAT.exec(token)?.[1]
+
+		if (payload === undefined) {
 			throw new Error('Invalid token format')
 		}
 
-		const payload = token.split('.')[1]!
 		const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
 
 		claims = sessionClaimsSchema.parse(JSON.parse(json))

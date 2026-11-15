@@ -12,8 +12,7 @@ import type {
 	ApiWrapperResponse,
 	RequestInput
 } from './types'
-import type { PathParams, QueryParams } from './shared'
-import type { ApiErrorContext } from './shared'
+import type { ApiErrorContext, PathParams, QueryParams } from './shared'
 import {
 	buildHeaders,
 	buildPathParams,
@@ -52,6 +51,18 @@ export interface CreateApiClientFn {
 	): ApiClient<T, Record<string, never>>
 }
 
+// Errors raised before any endpoint runs have no request to describe.
+function unscopedContext(endpoint: string): ApiErrorContext {
+	return {
+		endpoint,
+		method: 'GET',
+		url: '',
+		attempt: 0,
+		maxRetries: 0,
+		elapsedMs: 0
+	}
+}
+
 function isActionInvokeOptionsOnly(
 	value: unknown
 ): value is ActionInvokeOptions {
@@ -84,14 +95,7 @@ function resolveActionInvocation(
 
 	throw new ConfigError(
 		`Action "${actionName}" does not accept input; pass only optional { signal, meta }`,
-		{
-			endpoint: actionName,
-			method: 'GET',
-			url: '',
-			attempt: 0,
-			maxRetries: 0,
-			elapsedMs: 0
-		}
+		unscopedContext(actionName)
 	)
 }
 
@@ -490,14 +494,7 @@ function createApiClientImpl<
 	if (reserved.length > 0) {
 		throw new ConfigError(
 			`Endpoint/action name(s) are reserved by the client: ${reserved.join(', ')}`,
-			{
-				endpoint: reserved[0]!,
-				method: 'GET',
-				url: '',
-				attempt: 0,
-				maxRetries: 0,
-				elapsedMs: 0
-			}
+			unscopedContext(reserved[0]!)
 		)
 	}
 
@@ -507,14 +504,7 @@ function createApiClientImpl<
 	if (collisions.length > 0) {
 		throw new ConfigError(
 			`Action name(s) collide with endpoint name(s): ${collisions.join(', ')}`,
-			{
-				endpoint: collisions[0]!,
-				method: 'GET',
-				url: '',
-				attempt: 0,
-				maxRetries: 0,
-				elapsedMs: 0
-			}
+			unscopedContext(collisions[0]!)
 		)
 	}
 

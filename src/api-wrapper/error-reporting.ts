@@ -30,7 +30,7 @@ export async function reportApiError(
 	try {
 		await config.onError?.(err)
 	} catch {
-		// ignore hook errors
+		// A throwing hook must not replace the request's error or skip logging.
 	}
 	config.logger?.error?.(describeApiError(err), apiErrorLogAttributes(err))
 	return err
