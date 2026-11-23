@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.2](https://github.com/HansKristoffer/hanzio/compare/v4.0.1...v4.0.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* **typedswitch:** tighten types and speed up type-checking and dispatch ([#42](https://github.com/HansKristoffer/hanzio/issues/42)) ([a9da444](https://github.com/HansKristoffer/hanzio/commit/a9da444b8fd7e32433170b738efc0933a3ba90c9))
+
 ## [4.0.1](https://github.com/HansKristoffer/hanzio/compare/v4.0.0...v4.0.1) (2026-11-14)
 
 
