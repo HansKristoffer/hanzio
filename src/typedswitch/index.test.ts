@@ -570,6 +570,45 @@ describe('typedSwitch object mode type inference', () => {
 		expect(fromShape).toBe(6)
 	})
 
+	test('with default: a member whose discriminant is a union is narrowed to unhandled values', () => {
+		type Row = { id: string; status: 'pending' | 'done' | 'cancelled' }
+		type Shape =
+			| { kind: 'circle' | 'ellipse'; radius: number }
+			| { kind: 'square'; side: number }
+		type NumericRow = { id: string; code: 200 | 404 | 500 }
+
+		const row = asType<Row>({ id: 'r1', status: 'cancelled' })
+		const shape = asType<Shape>({ kind: 'ellipse', radius: 3 })
+		const numericRow = asType<NumericRow>({ id: 'n1', code: 500 })
+
+		const rowResult = typedSwitch(
+			row,
+			'status',
+			{ pending: () => 'p' },
+			(r) => {
+				expectTypeOf(r.status).toEqualTypeOf<'done' | 'cancelled'>()
+				return `${r.id}:${r.status}`
+			}
+		)
+		const shapeResult = typedSwitch(
+			shape,
+			'kind',
+			{ circle: () => 'c' },
+			(s) => {
+				expectTypeOf(s.kind).toEqualTypeOf<'ellipse' | 'square'>()
+				return s.kind
+			}
+		)
+		const numResult = typedSwitch(numericRow, 'code', { 200: () => 0 }, (r) => {
+			expectTypeOf(r.code).toEqualTypeOf<404 | 500>()
+			return r.code
+		})
+
+		expect(rowResult).toBe('r1:cancelled')
+		expect(shapeResult).toBe('ellipse')
+		expect(numResult).toBe(500)
+	})
+
 	test('return type is inferred from handler return types', async () => {
 		const result = await typedSwitch(
 			getEvent({ type: 'click', x: 10, y: 20 }),
@@ -820,12 +859,70 @@ describe('typedSwitch negative type checking', () => {
 
 	test('rejects non-primitive object discriminant values', () => {
 		type ObjectKeyed = { type: { a: 1 } }
+		type Dated = { id: string; createdAt: Date }
+		type NullableStatus = { id: string; status: 'pending' | 'done' | null }
+		type NumericKeyed = { 0: 'a' | 'b' }
 
 		const assertTypeErrors = () => {
+			const dated = asType<Dated>({ id: '1', createdAt: new Date() })
+			const nullable = asType<NullableStatus>({ id: '1', status: null })
+			const numericKeyed = asType<NumericKeyed>({ 0: 'a' })
+
 			// @ts-expect-error object mode only supports string, number and boolean discriminants
 			const cases: ObjectSwitchCases<ObjectKeyed, 'type', string> = {}
+			// @ts-expect-error non-primitive discriminant key is rejected on typedSwitch
+			typedSwitch(asType<ObjectKeyed>({ type: { a: 1 } }), 'type', {})
+			// @ts-expect-error Date property is not a valid discriminant key
+			typedSwitch(dated, 'createdAt', {})
+			// @ts-expect-error nullable property is not a valid object discriminant
+			typedSwitch(nullable, 'status', { pending: () => 1, done: () => 2 })
+			// @ts-expect-error numeric property key is rejected in object mode
+			typedSwitch(numericKeyed, 0, { a: () => 1, b: () => 2 })
+			// @ts-expect-error Date property is not a valid discriminant key in typedSwitchGroup
+			typedSwitchGroup(dated, 'createdAt', [], () => 1)
 
 			expect(cases).toBeDefined()
+		}
+
+		expect(assertTypeErrors).toBeDefined()
+	})
+
+	test('colliding stringified keys require handlers to accept the full colliding union', () => {
+		const nullOrStr = asType<'null' | null>(null)
+		const numOrStr = asType<200 | '200'>(200)
+		const objOrNull = asType<{ status: 'null'; id: string } | null>(null)
+
+		const r1 = typedSwitch(nullOrStr, {
+			null: (v) => {
+				expectTypeOf(v).toEqualTypeOf<'null' | null>()
+				return v === null ? 'nil' : v
+			}
+		})
+		const r2 = typedSwitch(numOrStr, {
+			200: (v) => {
+				expectTypeOf(v).toEqualTypeOf<200 | '200'>()
+				return typeof v === 'number' ? v : Number(v)
+			}
+		})
+		const r3 = typedSwitch(objOrNull, 'status', {
+			null: (v) => {
+				expectTypeOf(v).toEqualTypeOf<{ status: 'null'; id: string } | null>()
+				return v ? v.id : 'none'
+			}
+		})
+
+		expect([r1, r2, r3]).toEqual(['nil', 200, 'none'])
+
+		const assertTypeErrors = () => {
+			const narrowObjCases = {
+				null: (v: { status: 'null'; id: string }) => v.id
+			}
+			// @ts-expect-error null can also hit the "null" case
+			typedSwitch(nullOrStr, { null: (v: 'null') => v.toUpperCase() })
+			// @ts-expect-error "200" can also hit the 200 case
+			typedSwitch(numOrStr, { 200: (v: 200) => v.toFixed() })
+			// @ts-expect-error null can also hit the "null" case
+			typedSwitch(objOrNull, 'status', narrowObjCases)
 		}
 
 		expect(assertTypeErrors).toBeDefined()
@@ -1071,6 +1168,38 @@ describe('typedSwitch annotated return type', () => {
 		])
 	})
 
+	test('an annotation keeps literals even when an object union has a "default" case', () => {
+		type Theme =
+			| { mode: 'default'; inherit: boolean }
+			| { mode: 'light'; contrast: number }
+		const theme = asType<Theme>({ mode: 'default', inherit: true })
+
+		const tone: Tone = typedSwitch(theme, 'mode', {
+			default: () => 'info',
+			light: () => 'danger'
+		})
+
+		expect(tone).toBe('info')
+	})
+
+	test('satisfies checks handlers against the constraint while keeping narrower return types', () => {
+		const withExtras = typedSwitch(getStatus('success'), {
+			success: () => ({ id: '1', name: 'John' }),
+			error: () => ({ id: '2', code: 500 })
+		}) satisfies HasId
+		const narrowTone = typedSwitch(getStatus('success'), {
+			success: () => 'info',
+			error: () => 'info'
+		}) satisfies Tone
+
+		expectTypeOf(withExtras).toEqualTypeOf<
+			{ id: string; name: string } | { id: string; code: number }
+		>()
+		expectTypeOf(narrowTone).toEqualTypeOf<'info'>()
+		expect(withExtras).toEqual({ id: '1', name: 'John' })
+		expect(narrowTone).toBe('info')
+	})
+
 	test('a declared return type keeps literals nested in objects and arrays', () => {
 		const badge = (status: 'success' | 'error'): Badge =>
 			typedSwitch(status, {
@@ -1142,6 +1271,31 @@ describe('typedSwitch plain number and boolean values', () => {
 
 		expectTypeOf(result).toEqualTypeOf<string>()
 		expect(result).toBe('missing 404')
+	})
+
+	test('handles negative, decimal, zero and -0 numbers', () => {
+		const run = (n: -1 | 0 | 1.5) =>
+			typedSwitch(n, {
+				'-1': (v) => {
+					expectTypeOf(v).toEqualTypeOf<-1>()
+					return 'neg'
+				},
+				0: (v) => {
+					expectTypeOf(v).toEqualTypeOf<0>()
+					return 'zero'
+				},
+				'1.5': (v) => {
+					expectTypeOf(v).toEqualTypeOf<1.5>()
+					return 'frac'
+				}
+			})
+
+		expect([run(-1), run(0), run(-0 as 0), run(1.5)]).toEqual([
+			'neg',
+			'zero',
+			'zero',
+			'frac'
+		])
 	})
 
 	test('switches on booleans', () => {
@@ -1327,6 +1481,59 @@ describe('typedSwitch values that can be null or undefined', () => {
 		})
 
 		expect(result).toBe('waiting')
+	})
+
+	test('object: nullable objects work with typedSwitchGroup and reusable case maps', () => {
+		const maybeEvent = asType<Event | null | undefined>(undefined)
+
+		const grouped = typedSwitch(maybeEvent, 'type', {
+			...typedSwitchGroup(maybeEvent, 'type', ['click', 'scroll'], (e) => {
+				expectTypeOf(e).toEqualTypeOf<ClickEvent | ScrollEvent>()
+				return e.type
+			}),
+			...typedSwitchGroup(maybeEvent, 'type', [null, undefined], (e) => {
+				expectTypeOf(e).toEqualTypeOf<null | undefined>()
+				return 'empty'
+			}),
+			key: (e) => e.key
+		})
+
+		const mixed = typedSwitch(maybeEvent, 'type', {
+			...typedSwitchGroup(
+				maybeEvent,
+				'type',
+				['click', null, undefined],
+				(e) => {
+					expectTypeOf(e).toEqualTypeOf<ClickEvent | null | undefined>()
+					return e ? e.x : -1
+				}
+			),
+			scroll: (e) => e.offset,
+			key: (e) => e.key.length
+		})
+
+		const reusable: ObjectSwitchCases<Event | undefined, 'type', number> = {
+			click: (e) => e.x,
+			scroll: (e) => e.offset,
+			key: (e) => e.key.length,
+			undefined: () => -1
+		}
+		const partialReusable: PartialObjectSwitchCases<
+			Event | null,
+			'type',
+			number
+		> = {
+			null: () => -1
+		}
+
+		expect(grouped).toBe('empty')
+		expect(mixed).toBe(-1)
+		expect(
+			typedSwitch(asType<Event | undefined>(undefined), 'type', reusable)
+		).toBe(-1)
+		expect(
+			typedSwitch(asType<Event | null>(null), 'type', partialReusable, () => 0)
+		).toBe(-1)
 	})
 
 	test('requires an undefined case when the value can be undefined', () => {
